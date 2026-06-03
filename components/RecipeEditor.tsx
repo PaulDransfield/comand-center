@@ -1377,8 +1377,51 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
   const [newPackSize, setNewPackSize]         = useState('')
   const [newBaseUnit, setNewBaseUnit]         = useState<'g' | 'ml' | 'st' | ''>('')
   const [newInvoiceUnit, setNewInvoiceUnit]   = useState('')
+  // Inline "did you mean?" suggestions surfaced while the chef types
+  // the new product name. Sourced from the same products/search endpoint
+  // that powers the "pick existing" tab — so by the time the chef finishes
+  // typing, they've already seen any close matches. Eliminates the
+  // duplicate-orphan-product class at the source.
+  const [inlineSuggestions, setInlineSuggestions] = useState<Array<{ product_id: string; name: string; category?: string; default_supplier?: string | null; invoice_unit?: string | null; latest_price?: number | null }>>([])
+  // After clicking Create, if server returns similar_product_exists, we
+  // surface the candidates in the form area and let the chef pick one or
+  // confirm "no, mine's different" (which retries with force_create:true).
+  const [serverCandidates, setServerCandidates] = useState<Array<{ product_id: string; name: string; category: string; default_supplier: string | null; similarity: number }> | null>(null)
 
-  async function createProduct() {
+  // Debounced incremental search while chef types newName.
+  useEffect(() => {
+    if (!creatingProduct) { setInlineSuggestions([]); return }
+    const nm = newName.trim()
+    if (nm.length < 3) { setInlineSuggestions([]); return }
+    const ctrl = new AbortController()
+    const timer = setTimeout(async () => {
+      try {
+        const r = await fetch(
+          `/api/inventory/products/search?business_id=${encodeURIComponent(bizId)}&q=${encodeURIComponent(nm)}`,
+          { cache: 'no-store', signal: ctrl.signal }
+        )
+        const j = await r.json().catch(() => ({}))
+        setInlineSuggestions((j.products ?? []).slice(0, 4))
+      } catch { /* silent */ }
+    }, 300)
+    return () => { ctrl.abort(); clearTimeout(timer) }
+  }, [creatingProduct, newName, bizId])
+
+  function useExistingProduct(prod: { product_id: string; name: string; category?: string; default_supplier?: string | null; invoice_unit?: string | null; latest_price?: number | null }) {
+    setPicked({
+      product_id:   prod.product_id,
+      name:         prod.name,
+      category:     prod.category,
+      invoice_unit: prod.invoice_unit ?? null,
+      latest_price: prod.latest_price ?? null,
+    })
+    setUnit(prod.invoice_unit || 'g')
+    setCreatingProduct(false)
+    setNewName(''); setNewPackSize(''); setNewBaseUnit(''); setNewInvoiceUnit('')
+    setServerCandidates(null); setInlineSuggestions([])
+  }
+
+  async function createProduct(opts: { force?: boolean } = {}) {
     const nm = newName.trim()
     if (!nm) { setErr('Product name required.'); return }
     setBusy(true); setErr(null)
@@ -1387,16 +1430,23 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
         method: 'POST', cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          business_id: bizId,
-          name:        nm,
-          category:    newCategory,
-          unit:        newInvoiceUnit || null,
-          base_unit:   newBaseUnit || null,
-          pack_size:   newPackSize ? Number(newPackSize) : null,
+          business_id:  bizId,
+          name:         nm,
+          category:     newCategory,
+          unit:         newInvoiceUnit || null,
+          base_unit:    newBaseUnit || null,
+          pack_size:    newPackSize ? Number(newPackSize) : null,
+          force_create: opts.force === true ? true : undefined,
         }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      // Server may return 200 with ok:false + candidates (similar exists).
+      if (j.ok === false && j.error === 'similar_product_exists') {
+        setServerCandidates(j.candidates ?? [])
+        setBusy(false)
+        return
+      }
       setPicked({
         product_id:   j.product_id,
         name:         nm,
@@ -1407,6 +1457,7 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
       setUnit(newBaseUnit || newInvoiceUnit || 'g')
       setCreatingProduct(false)
       setNewName(''); setNewPackSize(''); setNewBaseUnit(''); setNewInvoiceUnit('')
+      setServerCandidates(null); setInlineSuggestions([])
     } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
   }
 
@@ -1489,8 +1540,38 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
               <div style={{ padding: 14, fontSize: 11 }}>
                 <div style={{ fontWeight: 600, color: UXP.ink1, marginBottom: 8 }}>New product</div>
                 <Field label="Name">
-                  <input type="text" value={newName} onChange={e => setNewName(e.target.value)} autoFocus disabled={busy} style={inputStyle} />
+                  <input type="text" value={newName} onChange={e => { setNewName(e.target.value); setServerCandidates(null) }} autoFocus disabled={busy} style={inputStyle} />
                 </Field>
+                {/* Inline catalogue matches — appears while typing the
+                    name. Stops the chef from typing a duplicate and
+                    surfaces the existing canonical product with one
+                    click. */}
+                {inlineSuggestions.length > 0 && !serverCandidates && (
+                  <div style={{
+                    marginTop: 6, marginBottom: 6,
+                    padding: 8, background: UXP.lavFill, border: `0.5px solid ${UXP.border}`, borderRadius: 6,
+                  }}>
+                    <div style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, marginBottom: 4, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+                      Already in catalogue?
+                    </div>
+                    {inlineSuggestions.map(p => (
+                      <button key={p.product_id} type="button" onClick={() => useExistingProduct(p)}
+                        style={{
+                          display: 'block', width: '100%', textAlign: 'left' as const,
+                          padding: '5px 8px', marginBottom: 2,
+                          background: '#fff', border: `0.5px solid ${UXP.border}`, borderRadius: 4,
+                          cursor: 'pointer', fontFamily: 'inherit',
+                        }}>
+                        <div style={{ fontSize: 11, color: UXP.ink1, fontWeight: 500 }}>{p.name}</div>
+                        <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 1 }}>
+                          {p.category ?? '?'}
+                          {p.latest_price != null && <> · {fmtKr(p.latest_price)}/{p.invoice_unit ?? '?'}</>}
+                          {p.default_supplier && <> · {p.default_supplier}</>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <Field label="Category">
                   <select value={newCategory} onChange={e => setNewCategory(e.target.value as any)} disabled={busy} style={inputStyle}>
                     {PRODUCT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -1518,10 +1599,51 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
                   Pack + base unit lets the cost engine convert recipe grams → supplier kg automatically.
                   Skip if no price yet — you can set later.
                 </div>
+                {/* Server-side similar match — when chef clicked Create
+                    but the dedupe ladder found ≥1 candidate with Jaccard
+                    ≥ 0.7. Chef picks one or confirms "no, mine's
+                    different" via the force-create button. */}
+                {serverCandidates && serverCandidates.length > 0 && (
+                  <div style={{
+                    marginTop: 8, padding: 10,
+                    background: '#fff7e0', border: '0.5px solid #f5d99a', borderRadius: 6,
+                  }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#7a5a00', marginBottom: 6 }}>
+                      {serverCandidates.length} similar product{serverCandidates.length === 1 ? '' : 's'} already exist at this business
+                    </div>
+                    {serverCandidates.map(c => (
+                      <button key={c.product_id} type="button" onClick={() => useExistingProduct({
+                        product_id: c.product_id, name: c.name, category: c.category, default_supplier: c.default_supplier ?? null,
+                      })}
+                        style={{
+                          display: 'block', width: '100%', textAlign: 'left' as const,
+                          padding: '5px 8px', marginBottom: 2,
+                          background: '#fff', border: `0.5px solid ${UXP.border}`, borderRadius: 4,
+                          cursor: 'pointer', fontFamily: 'inherit',
+                        }}>
+                        <div style={{ fontSize: 11, color: UXP.ink1, fontWeight: 500 }}>{c.name}</div>
+                        <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 1 }}>
+                          {c.category}{c.default_supplier ? ` · ${c.default_supplier}` : ''} · {Math.round(c.similarity * 100)}% match
+                        </div>
+                      </button>
+                    ))}
+                    <div style={{ fontSize: 10, color: UXP.ink3, marginTop: 6 }}>
+                      Pick one to reuse, or confirm yours is different:
+                    </div>
+                    <button type="button" onClick={() => createProduct({ force: true })} disabled={busy}
+                      style={{
+                        marginTop: 6, padding: '4px 10px',
+                        background: 'transparent', color: '#7a5a00', border: '0.5px solid #f5d99a',
+                        borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                      }}>
+                      No, mine's different — create "{newName.trim()}" anyway
+                    </button>
+                  </div>
+                )}
                 {err && <div style={{ ...errBanner, marginTop: 6 }}>{err}</div>}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
-                  <button onClick={() => { setCreatingProduct(false); setErr(null) }} disabled={busy} style={overlayBtn.secondary}>Cancel</button>
-                  <button onClick={createProduct} disabled={busy || !newName.trim()} style={overlayBtn.primary}>{busy ? 'Saving…' : 'Create product'}</button>
+                  <button onClick={() => { setCreatingProduct(false); setErr(null); setServerCandidates(null) }} disabled={busy} style={overlayBtn.secondary}>Cancel</button>
+                  <button onClick={() => createProduct()} disabled={busy || !newName.trim() || !!serverCandidates} style={overlayBtn.primary}>{busy ? 'Saving…' : 'Create product'}</button>
                 </div>
               </div>
             )}

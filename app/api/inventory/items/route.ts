@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
+import { normaliseProductName, jaccardSimilarity } from '@/lib/inventory/normalise'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -59,6 +60,12 @@ export async function POST(req: NextRequest) {
   const baseUnit   = body.base_unit ? String(body.base_unit).trim() : null
   const packSize   = body.pack_size != null && body.pack_size !== '' ? Number(body.pack_size) : null
 
+  // Force-create flag: when the client wants to bypass the dedupe
+  // ladder (chef confirmed "no, mine's different" after seeing a
+  // similar-product suggestion). Audit signal — if we see lots of
+  // force_create:true, the suggestion threshold may be too loose.
+  const forceCreate = body.force_create === true
+
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
   if (!name)       return NextResponse.json({ error: 'name required' }, { status: 400 })
   if (name.length > 200) return NextResponse.json({ error: 'name too long (max 200)' }, { status: 400 })
@@ -81,12 +88,143 @@ export async function POST(req: NextRequest) {
   if (bizErr) return NextResponse.json({ error: `business lookup failed: ${bizErr.message}` }, { status: 500 })
   if (!biz)   return NextResponse.json({ error: 'business not found' }, { status: 404 })
 
-  // Find-or-create by name (matches the matcher's dedup key).
+  // ── DEDUPE LADDER ────────────────────────────────────────────────
+  //
+  // Step A: exact-name match — return existing (matches matcher's dedup key)
+  // Step B: normalised-name match — return existing
+  // Step C: Jaccard similarity ≥ 0.7 — DON'T auto-create; surface
+  //          candidates so the chef can pick "use existing" or pass
+  //          force_create:true to override.
+  //
+  // The whole ladder is skipped when force_create:true.
+
+  // Step A — exact name
   const { data: existing, error: exErr } = await db
     .from('products').select('id').eq('business_id', businessId).eq('name', name).maybeSingle()
   if (exErr) return NextResponse.json({ error: `existing-product lookup failed: ${exErr.message}` }, { status: 500 })
   if (existing?.id) {
     return NextResponse.json({ ok: true, product_id: existing.id, reused: true, message: `"${name}" already exists.` })
+  }
+
+  if (!forceCreate) {
+    // Pull all active products at this business — needed for B and C.
+    // (≤2000 rows per business in practice; cheap.)
+    const { data: catalogue, error: catErr } = await db
+      .from('products')
+      .select('id, name, category, default_supplier_name')
+      .eq('business_id', businessId)
+      .is('archived_at', null)
+      .limit(5000)
+    if (catErr) return NextResponse.json({ error: `catalogue lookup failed: ${catErr.message}` }, { status: 500 })
+
+    // Step B — normalised-name match
+    const normSelf = normaliseProductName(name)
+    if (normSelf) {
+      const normMatch = (catalogue ?? []).find(p => normaliseProductName(p.name) === normSelf)
+      if (normMatch) {
+        return NextResponse.json({
+          ok: true,
+          product_id: normMatch.id,
+          reused: true,
+          reason: 'normalised_match',
+          message: `Already exists as "${normMatch.name}" (normalised match — likely the same product with different capitalisation/punctuation).`,
+        })
+      }
+    }
+
+    // Step C — similarity match against the in-business catalogue
+    const candidates = (catalogue ?? [])
+      .map(p => ({ p, sim: jaccardSimilarity(name, p.name) }))
+      .filter(c => c.sim >= 0.7)
+      .sort((a, b) => b.sim - a.sim)
+      .slice(0, 5)
+
+    if (candidates.length > 0) {
+      return NextResponse.json({
+        ok: false,
+        error: 'similar_product_exists',
+        suggested_match_kind: 'name_similarity',
+        candidates: candidates.map(c => ({
+          product_id:       c.p.id,
+          name:             c.p.name,
+          category:         c.p.category,
+          default_supplier: c.p.default_supplier_name,
+          similarity:       Math.round(c.sim * 100) / 100,
+        })),
+        message: `${candidates.length} similar product${candidates.length === 1 ? ' already exists' : 's already exist'} at this business. Pick one to reuse, or pass force_create:true to create "${name}" anyway.`,
+      }, { status: 200 })
+    }
+
+    // Step D — supplier_invoice_lines name search.
+    // Catches the chef-short vs invoice-long case (the Antica Osteria
+    // pattern: chef types "Antica Osteria Rosso 75eg" but the canonical
+    // invoice line says "ANTICA OSTERIA ROSSO 75EG" linked to "Casa
+    // Vinicola Antica Osteria Rosso Montepulciano 12,5% 75cl"). The chef's
+    // name is similar to the LINE description even when it's not similar
+    // to the product NAME.
+    //
+    // Scope: last 18 months, lines with product_alias_id set, ilike pre-
+    // filter on the first token of the typed name to keep the in-Node
+    // similarity scan bounded.
+    const firstToken = name.split(/\s+/)[0]?.toLowerCase()
+    if (firstToken && firstToken.length >= 3) {
+      const cutoff = new Date(Date.now() - 18 * 30 * 86400000).toISOString().slice(0, 10)
+      const { data: lines } = await db.from('supplier_invoice_lines')
+        .select('product_alias_id, raw_description, article_number')
+        .eq('business_id', businessId)
+        .gte('invoice_date', cutoff)
+        .not('product_alias_id', 'is', null)
+        .not('raw_description', 'is', null)
+        .ilike('raw_description', `%${firstToken}%`)
+        .limit(500)
+      // Aggregate by alias_id; pick lines with name similarity ≥ 0.5.
+      const aliasHits = new Map<string, { lineCount: number; bestSim: number; sampleDesc: string }>()
+      for (const l of lines ?? []) {
+        const sim = jaccardSimilarity(name, l.raw_description as string)
+        if (sim < 0.5) continue
+        const prev = aliasHits.get(l.product_alias_id as string)
+        if (!prev) aliasHits.set(l.product_alias_id as string, { lineCount: 1, bestSim: sim, sampleDesc: l.raw_description as string })
+        else { prev.lineCount++; if (sim > prev.bestSim) { prev.bestSim = sim; prev.sampleDesc = l.raw_description as string } }
+      }
+      if (aliasHits.size > 0) {
+        // Map aliases → products
+        const aliasIds = [...aliasHits.keys()]
+        const { data: aliasRows } = await db.from('product_aliases')
+          .select('id, product_id').in('id', aliasIds).eq('is_active', true)
+        const productHits = new Map<string, { aliasCount: number; bestSim: number; sampleDesc: string }>()
+        for (const ar of aliasRows ?? []) {
+          const hit = aliasHits.get(ar.id); if (!hit) continue
+          const prev = productHits.get(ar.product_id)
+          if (!prev) productHits.set(ar.product_id, { aliasCount: 1, bestSim: hit.bestSim, sampleDesc: hit.sampleDesc })
+          else { prev.aliasCount++; if (hit.bestSim > prev.bestSim) { prev.bestSim = hit.bestSim; prev.sampleDesc = hit.sampleDesc } }
+        }
+        if (productHits.size > 0) {
+          // Resolve names from catalogue map
+          const catMap = new Map((catalogue ?? []).map(p => [p.id, p]))
+          const lineCandidates = [...productHits.entries()]
+            .map(([pid, h]) => ({ pid, ...h, product: catMap.get(pid) }))
+            .filter(c => c.product)
+            .sort((a, b) => b.bestSim - a.bestSim)
+            .slice(0, 5)
+          if (lineCandidates.length > 0) {
+            return NextResponse.json({
+              ok: false,
+              error: 'similar_product_exists',
+              suggested_match_kind: 'invoice_line_similarity',
+              candidates: lineCandidates.map(c => ({
+                product_id:       c.pid,
+                name:             c.product!.name,
+                category:         c.product!.category,
+                default_supplier: c.product!.default_supplier_name,
+                similarity:       Math.round(c.bestSim * 100) / 100,
+                via_line:         c.sampleDesc,
+              })),
+              message: `${lineCandidates.length} product${lineCandidates.length === 1 ? '' : 's'} at this business already receive${lineCandidates.length === 1 ? 's' : ''} invoice lines matching "${name}". Pick one to reuse, or pass force_create:true to create anyway.`,
+            }, { status: 200 })
+          }
+        }
+      }
+    }
   }
 
   const { data: prod, error } = await db
