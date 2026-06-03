@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { UXP, Z } from '@/lib/constants/tokens'
+import { useViewport } from '@/lib/hooks/useViewport'
 
 type JobState = 'queued' | 'running' | 'done' | 'failed'
 
@@ -73,6 +74,7 @@ function shouldShow(job: SyncJob): boolean {
 
 export default function SyncProgressBanner() {
   const pathname = usePathname() ?? ''
+  const viewportTier = useViewport()
   const [bizId,    setBizId]    = useState<string | null>(null)
   const [feed,     setFeed]     = useState<Feed | null>(null)
   const [collapsed, setCollapsed] = useState(false)
@@ -154,8 +156,14 @@ export default function SyncProgressBanner() {
   const accent = anyFailed ? UXP.rose : allDone ? UXP.greenDeep : UXP.lavDeep
   const fill   = anyFailed ? UXP.roseFill : allDone ? UXP.greenFill : UXP.lavFill
 
+  // Mobile gets the collapsed 3px strip ALWAYS — no overlap risk with
+  // the rest of the page chrome. Owner can tap the small "Syncing…"
+  // chip to expand if they want details. On tablet+desktop the rich
+  // layout shows, with JobRow children wrapping cleanly.
+  const effectiveCollapsed = collapsed || viewportTier === 'mobile'
+
   // ── Collapsed: a 3px gradient line + tiny re-open handle ──────────────
-  if (collapsed) {
+  if (effectiveCollapsed) {
     return (
       <div style={{ position: 'sticky', top: 0, zIndex: Z.banner }}>
         <div style={{ height: 3, background: UXP.borderSoft, position: 'relative' }}>
@@ -209,7 +217,8 @@ export default function SyncProgressBanner() {
         ))}
       </div>
 
-      {anyRunning && (
+      {anyRunning && viewportTier === 'desktop' && (
+        // Hint only fits on desktop — tablet drops it to save banner width.
         <span style={{ fontSize: 11, color: UXP.ink3, whiteSpace: 'nowrap' }}>
           Keep working — this runs in the background.
         </span>
@@ -238,7 +247,10 @@ function JobRow({ job }: { job: SyncJob }) {
   const eta      = fmtEta(job.etaSeconds)
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+    // flexWrap: 'wrap' lets the children stack onto a second line on
+    // narrow viewports instead of overflowing horizontally. The label +
+    // progress bar stay nowrap (visually atomic); the meta text wraps.
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flexWrap: 'wrap' as const }}>
       <span style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{job.label}</span>
 
       {/* Mini progress bar — only when we have a percent */}
