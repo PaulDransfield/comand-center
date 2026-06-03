@@ -837,7 +837,11 @@ function InsightsCards({ insights, loading, onRefresh }: { insights: InsightsRes
           <InsightColumn title="What customers love"          items={satisfactions} accent={UXP.greenDeep} fill={UXP.greenFill}  emptyText="Not enough praise signal yet." />
         </div>
       )}
-      <style>{`@media (max-width:680px){.cc-insights-grid{grid-template-columns:1fr !important}}`}</style>
+      {/* Collapse 2-col insights grid to single column on mobile.
+          The breakpoint matches BP.tablet (768) from
+          lib/constants/breakpoints.ts — migrated from the previous
+          one-off 680 as part of Phase 1 (G3). */}
+      <style>{`@media (max-width:767.98px){.cc-insights-grid{grid-template-columns:1fr !important}}`}</style>
     </div>
   )
 }

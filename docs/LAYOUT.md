@@ -134,14 +134,23 @@ return <DesktopLayout />
 
 The rule **warns** rather than errors so legitimate exceptions (modal widths, tooltip sizes) aren't broken. Reviewer judges. The intent is to nudge — if you find yourself bypassing the warning twice on the same kind of layout, add a primitive instead.
 
+### Escalate warn → error once the baseline is clean
+
+`warn` is the right setting **for now** because Phase 1 still has 23 + 65 legacy violations across the codebase that haven't been migrated. An `error` setting today would block every build.
+
+**Once Phase 2-6 lands and the legacy violations are gone**, the rule should be escalated from `warn` to `error`. A warning everyone ignores is theatre; the guardrail only has lasting value when a *new* fixed-width div added next month gets blocked at PR-time, not flagged. Path: `.eslintrc.cjs` → `overrides[0].rules['no-restricted-syntax'][0] = 'error'`.
+
+Verification before escalating: `npx eslint app components 2>&1 | grep -c "no-restricted-syntax"` should return `0`. If it returns anything else, that count is the migration debt remaining.
+
 ---
 
 ## Phased adoption
 
 Phase 1 (THIS BRANCH):
 - ✅ System shipped (primitives + 3 tiers + guardrail + this doc)
-- ✅ Banner fix
+- ✅ Banner fix (SyncProgressBanner; **broader 4-banner-stack collision** is a Phase 1.1 follow-up — see Step 0)
 - ✅ Overview rebuilt from primitives (proof the system works)
+- ✅ **G3:** legacy `/overheads/review` (880) and `/reviews` (680) breakpoints migrated to the canonical BP tokens — no two-system split-brain on main
 
 Phase 2 onward (planned in `docs/investigation/mobile-responsive-step0.md` Step 4):
 - Scheduling grid (interaction redesign — one-day view on mobile)

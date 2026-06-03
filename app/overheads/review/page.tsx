@@ -11,8 +11,10 @@
 // FlagDetailPane. The detail pane fires its own follow-up requests for
 // supplier-history and per-period drilldown.
 //
-// Mobile: at <880px the layout collapses to single-pane navigation
-// (list → detail → back).
+// Mobile: at tablet/mobile tiers the layout collapses to single-pane
+// navigation (list → detail → back). Tier resolution comes from the
+// canonical BP tokens — this page used to hardcode 880, migrated to
+// the shared token as part of Phase 1 (G3).
 
 export const dynamic = 'force-dynamic'
 
@@ -20,6 +22,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
+import { useViewport } from '@/lib/hooks/useViewport'
 import HeadlineStrip from '@/components/overheads/HeadlineStrip'
 import FlagListPane  from '@/components/overheads/FlagListPane'
 import FlagDetailPane from '@/components/overheads/FlagDetailPane'
@@ -38,8 +41,6 @@ interface FlagsResponse {
   }
   note?: string
 }
-
-const MOBILE_BREAKPOINT = 880
 
 export default function OverheadReviewPage() {
   const t  = useTranslations('overheads.review')
@@ -89,14 +90,11 @@ export default function OverheadReviewPage() {
   // Selected (supplier, category) group — by composite key.
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
 
-  // Mobile (single-pane) detection.
-  const [isMobile, setIsMobile] = useState<boolean>(false)
-  useEffect(() => {
-    const update = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
-    update()
-    window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
-  }, [])
+  // Mobile (single-pane) detection — switches to single-pane below
+  // desktop tier (i.e. on mobile + tablet). Uses the canonical viewport
+  // hook so the breakpoint stays in sync with the rest of the system.
+  const tier = useViewport()
+  const isMobile = tier !== 'desktop'
   const [mobileView, setMobileView] = useState<'list' | 'detail'>('list')
 
   // ── Data fetch ────────────────────────────────────────────────────────

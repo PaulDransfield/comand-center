@@ -456,13 +456,12 @@ function SubcategoryBreakdown({
   allRows, bizId, year, monthFilter,
 }: any) {
   const [openSub, setOpenSub] = useState<any>(null)
-  if (!subs || subs.length === 0) return null
-  const top = subs.slice(0, 12)
 
   // Build the per-subcategory 6-month series.
   // We bucket allRows by (subcategory_key, month) and emit the last 6
   // months that have ANY data across all subs (so all sparklines share
-  // the same x-axis).
+  // the same x-axis). Computed BEFORE any early-return so hook order is
+  // stable across renders (rules-of-hooks).
   const trendBySub = useMemo(() => {
     const monthsWithData = new Set<number>()
     const byKey: Record<string, Record<number, number>> = {}
@@ -482,6 +481,9 @@ function SubcategoryBreakdown({
     }
     return out
   }, [allRows])
+
+  if (!subs || subs.length === 0) return null
+  const top = subs.slice(0, 12)
 
   return (
     <div>

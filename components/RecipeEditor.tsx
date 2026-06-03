@@ -1407,7 +1407,7 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
     return () => { ctrl.abort(); clearTimeout(timer) }
   }, [creatingProduct, newName, bizId])
 
-  function useExistingProduct(prod: { product_id: string; name: string; category?: string; default_supplier?: string | null; invoice_unit?: string | null; latest_price?: number | null }) {
+  function pickExistingProduct(prod: { product_id: string; name: string; category?: string; default_supplier?: string | null; invoice_unit?: string | null; latest_price?: number | null }) {
     setPicked({
       product_id:   prod.product_id,
       name:         prod.name,
@@ -1555,7 +1555,7 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
                       Already in catalogue?
                     </div>
                     {inlineSuggestions.map(p => (
-                      <button key={p.product_id} type="button" onClick={() => useExistingProduct(p)}
+                      <button key={p.product_id} type="button" onClick={() => pickExistingProduct(p)}
                         style={{
                           display: 'block', width: '100%', textAlign: 'left' as const,
                           padding: '5px 8px', marginBottom: 2,
@@ -1612,7 +1612,7 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
                       {serverCandidates.length} similar product{serverCandidates.length === 1 ? '' : 's'} already exist at this business
                     </div>
                     {serverCandidates.map(c => (
-                      <button key={c.product_id} type="button" onClick={() => useExistingProduct({
+                      <button key={c.product_id} type="button" onClick={() => pickExistingProduct({
                         product_id: c.product_id, name: c.name, category: c.category, default_supplier: c.default_supplier ?? null,
                       })}
                         style={{

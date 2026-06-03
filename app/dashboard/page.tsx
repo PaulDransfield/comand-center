@@ -41,6 +41,8 @@ const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, lo
 
 import { createClient } from '@/lib/supabase/client'
 import AppShell from '@/components/AppShell'
+import { PageContainer } from '@/components/ui/Layout'
+import { ResponsiveChart } from '@/components/ui/ResponsiveChart'
 import KpiCardUX from '@/components/ux/KpiCard'
 import PairedBarChart from '@/components/ux/PairedBarChart'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
@@ -430,7 +432,8 @@ function DashboardInner() {
       onPrev={() => step(-1)}
       onNext={canStepNext ? () => step(1) : undefined}
     >
-      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
+      <PageContainer>
+      <div style={{ display: 'grid', gap: 14 }}>
 
         {showUpgrade && (
           <UpgradeBanner plan={upgradePlan} onClose={() => setShowUpgrade(false)} />
@@ -487,6 +490,7 @@ function DashboardInner() {
           <ReviewThemesCard themes={reviewThemes} />
         )}
       </div>
+      </PageContainer>
 
       <AskAI
         page="dashboard"
@@ -694,31 +698,38 @@ function ChartCard({ days, loading }: { days: any[]; loading: boolean }) {
       {loading ? (
         <div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3 }}>Loading…</div>
       ) : (
-        <PairedBarChart
-          groups={days.map(d => d.dayName)}
-          series={[
-            { label: 'Revenue', data: days.map(d => Number(d.revenue ?? 0)),    color: UXP.lav },
-            {
-              label: 'Labour',
-              data: days.map(d => Number(d.staff_cost ?? 0)),
-              color: UXP.lavDeep,
-              colorOverrides:  labourColors,
-              strokeOverrides: labourStroke,
-            },
-          ]}
-          lines={[{
-            label:  'Labour %',
-            data:   days.map(d => {
-              const r = Number(d.revenue ?? 0)
-              return r > 0 ? (Number(d.staff_cost ?? 0) / r) * 100 : null
-            }),
-            color:  UXP.coral,
-            dashed: false,
-          }]}
-          rightMax={100}
-          width={typeof window !== 'undefined' ? Math.min(window.innerWidth - 120, 1200) : 1100}
-          height={260}
-        />
+        // Container-aware width via <ResponsiveChart> — replaces the
+        // earlier `window.innerWidth - 120` hack so the chart resizes
+        // on rotate/sidebar-toggle/window-resize.
+        <ResponsiveChart minHeight={260} maxWidth={1200}>
+          {(width) => (
+            <PairedBarChart
+              groups={days.map(d => d.dayName)}
+              series={[
+                { label: 'Revenue', data: days.map(d => Number(d.revenue ?? 0)),    color: UXP.lav },
+                {
+                  label: 'Labour',
+                  data: days.map(d => Number(d.staff_cost ?? 0)),
+                  color: UXP.lavDeep,
+                  colorOverrides:  labourColors,
+                  strokeOverrides: labourStroke,
+                },
+              ]}
+              lines={[{
+                label:  'Labour %',
+                data:   days.map(d => {
+                  const r = Number(d.revenue ?? 0)
+                  return r > 0 ? (Number(d.staff_cost ?? 0) / r) * 100 : null
+                }),
+                color:  UXP.coral,
+                dashed: false,
+              }]}
+              rightMax={100}
+              width={width}
+              height={260}
+            />
+          )}
+        </ResponsiveChart>
       )}
     </Card>
   )
