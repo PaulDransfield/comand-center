@@ -1397,6 +1397,14 @@ function Card({ title, subtitle, info, children }: {
       padding:       '14px 16px',
       position:      'relative' as const,
       boxShadow:     UXP.shadowCard,
+      // CSS grid items default to `min-width: auto`, which resolves
+      // to the largest descendant's min-content width. If any child
+      // (e.g. the DemandOutlookStrip's 7×120px inner grid) declares a
+      // min-width, it would propagate up and force this Card's grid
+      // track wider than the viewport. `min-width: 0` breaks that
+      // chain so an internal overflow-x:auto wrapper can actually
+      // scroll without dragging the page sideways.
+      minWidth:      0,
     }}>
       <div style={{ marginBottom: 10, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
         <div style={{ flex: 1 }}>
