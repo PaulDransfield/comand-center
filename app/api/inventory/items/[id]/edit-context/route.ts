@@ -40,6 +40,24 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const forbidden = requireBusinessAccess(auth, product.business_id)
   if (forbidden) return forbidden
 
+  // M122 — weight_per_piece_g + weight_per_piece_source fetched separately
+  // and guarded so the endpoint keeps working before the SQL is applied.
+  // Once the column lands, both fields populate; until then they're null.
+  let weight_per_piece_g:      number | null = null
+  let weight_per_piece_source: string | null = null
+  {
+    const { data: wRow, error: wErr } = await db
+      .from('products')
+      .select('weight_per_piece_g, weight_per_piece_source')
+      .eq('id', params.id)
+      .maybeSingle()
+    if (!wErr && wRow) {
+      weight_per_piece_g      = (wRow as any).weight_per_piece_g != null ? Number((wRow as any).weight_per_piece_g) : null
+      weight_per_piece_source = (wRow as any).weight_per_piece_source ?? null
+    }
+    // 42703 = undefined_column. Anything else, leave the null defaults.
+  }
+
   // Latest cost — same reader the recipe drawer uses, so the modal can
   // never show a different cost than what cost recipes are computed at.
   const fxIndex   = await loadFxIndex(db, ['EUR', 'USD', 'NOK', 'DKK', 'GBP'])
@@ -173,6 +191,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     product:    {
       ...product,
       default_waste_pct: product.default_waste_pct != null ? Number(product.default_waste_pct) : 0,
+      weight_per_piece_g,
+      weight_per_piece_source,
     },
     latest_cost: latest ? {
       unit_price:       latest.latest_price,
