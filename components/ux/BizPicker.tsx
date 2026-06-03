@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { UXP } from '@/lib/constants/tokens'
+import { Popover } from '@/components/ui/Popover'
 
 interface Business {
   id:         string
@@ -115,48 +116,39 @@ export default function BizPicker() {
         <span aria-hidden style={{ color: UXP.ink3, fontSize: 10 }}>▾</span>
       </button>
 
-      {open && (
-        <div
-          style={{
-            position:     'absolute' as const,
-            top:          'calc(100% + 4px)',
-            left:         0,
-            minWidth:     200,
-            background:   UXP.cardBg,
-            border:       `0.5px solid ${UXP.border}`,
-            borderRadius: UXP.r_md,
-            padding:      4,
-            zIndex:       40,
-            boxShadow:    '0 8px 24px rgba(58,53,80,0.12)',
-          }}
-        >
-          {businesses.map(b => (
-            <button
-              key={b.id}
-              type="button"
-              onClick={() => pick(b)}
-              style={{
-                display:      'block',
-                width:        '100%',
-                textAlign:    'left' as const,
-                padding:      '7px 9px',
-                background:   selected?.id === b.id ? UXP.lavFill : 'transparent',
-                color:        selected?.id === b.id ? UXP.lavText : UXP.ink1,
-                border:       'none',
-                borderRadius: UXP.r_sm,
-                cursor:       'pointer',
-                fontSize:     11,
-                fontFamily:   'inherit',
-              }}
-            >
-              {b.name}
-              {b.city && (
-                <span style={{ color: UXP.ink3, marginLeft: 6, fontSize: 10 }}>{b.city}</span>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
+      <Popover
+        open={open}
+        onClose={() => setOpen(false)}
+        align="left"
+        menuWidth={200}
+        title="Select business"
+      >
+        {businesses.map(b => (
+          <button
+            key={b.id}
+            type="button"
+            onClick={() => pick(b)}
+            style={{
+              display:      'block',
+              width:        '100%',
+              textAlign:    'left' as const,
+              padding:      '9px 10px',
+              background:   selected?.id === b.id ? UXP.lavFill : 'transparent',
+              color:        selected?.id === b.id ? UXP.lavText : UXP.ink1,
+              border:       'none',
+              borderRadius: UXP.r_sm,
+              cursor:       'pointer',
+              fontSize:     12,
+              fontFamily:   'inherit',
+            }}
+          >
+            {b.name}
+            {b.city && (
+              <span style={{ color: UXP.ink3, marginLeft: 6, fontSize: 10 }}>{b.city}</span>
+            )}
+          </button>
+        ))}
+      </Popover>
     </div>
   )
 }
