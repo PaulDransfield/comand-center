@@ -409,10 +409,12 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
     ingredients:            Ingredient[]
     // Duplicate-detection. Set after parse() matches the draft name
     // (case-insensitive, trimmed) against the existing recipe list.
-    // skip=true on duplicates by default — owner unchecks to overwrite
-    // (still doesn't overwrite ingredients, but updates name/notes).
+    // action defaults to 'skip' on duplicates; owner can switch to
+    // 'replace' which clears the existing recipe's ingredients +
+    // updates its metadata in place (same recipe_id preserved, so
+    // prep_session_lines etc. that referenced it still resolve).
     existing_recipe_id?:    string | null
-    skip?:                  boolean
+    action?:                'skip' | 'replace'
   }
   const [stage,   setStage]   = useState<'paste' | 'preview' | 'saving' | 'done'>('paste')
   const [text,    setText]    = useState('')
@@ -458,8 +460,8 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
       const annotated: Draft[] = j.drafts.map((d: Draft) => {
         const hit = existingByName.get(String(d.name).trim().toLowerCase())
         return hit
-          ? { ...d, existing_recipe_id: hit, skip: true }
-          : { ...d, existing_recipe_id: null, skip: false }
+          ? { ...d, existing_recipe_id: hit, action: 'skip' as const }
+          : { ...d, existing_recipe_id: null, action: undefined }
       })
       setDrafts(annotated)
       setMeta({ tokens_in: j.tokens_in, tokens_out: j.tokens_out, catalogue_size: j.catalogue_size })
@@ -475,15 +477,18 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
     setBusy(true); setErr(null); setStage('saving')
     const results = { created: 0, failed: [] as { name: string; error: string }[] }
 
-    // Skip duplicates the owner left checked. Their existing recipe id
-    // still seeds the sub-recipe name→id map so PARENT drafts that
-    // reference these subs (by exact name) still resolve correctly.
-    const willSave = drafts.filter(d => !d.skip)
+    // Three classes of draft:
+    //   - new (no existing_recipe_id)         → createOne
+    //   - duplicate with action='skip'        → ignored, existing id still
+    //                                            seeds nameToId for sub refs
+    //   - duplicate with action='replace'     → replaceOne (PATCH + clear +
+    //                                            re-add ingredients in place)
+    const willSave = drafts.filter(d => d.action !== 'skip')
     const subs    = willSave.filter(d => d.is_subrecipe)
     const parents = willSave.filter(d => !d.is_subrecipe)
     const nameToId = new Map<string, string>()
     for (const d of drafts) {
-      if (d.skip && d.existing_recipe_id) {
+      if (d.action === 'skip' && d.existing_recipe_id) {
         nameToId.set(d.name.trim().toLowerCase(), d.existing_recipe_id)
       }
     }
@@ -557,11 +562,91 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
       }
     }
 
+    async function replaceOne(d: Draft): Promise<string | null> {
+      const recipeId = d.existing_recipe_id
+      if (!recipeId) return createOne(d)
+      try {
+        // 1. PATCH the metadata. Notes get appended-prefix to surface the
+        // re-import in audit; method / yield / price / portions / type
+        // overwrite. is_subrecipe + price flow through the same resolver
+        // the editor uses.
+        const patchBody: any = {
+          name:                  d.name,
+          type:                  d.type,
+          portions:              d.portions,
+          notes:                 d.note ? `AI DRAFT (re-imported) — ${d.note}` : 'AI DRAFT (re-imported) — review quantities before trusting cost.',
+          method:                d.method ?? null,
+          yield_amount:          d.yield_amount,
+          yield_unit:            d.yield_unit,
+          is_subrecipe:          d.is_subrecipe === true,
+        }
+        if (d.selling_price_inc_vat != null) {
+          patchBody.menu_price_inc_vat = d.selling_price_inc_vat
+          patchBody.vat_rate = 12
+          patchBody.channel  = 'dine_in'
+        }
+        const pr = await fetch(`/api/inventory/recipes/${recipeId}`, {
+          method: 'PATCH', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patchBody),
+        })
+        if (!pr.ok) {
+          const j = await pr.json().catch(() => ({}))
+          throw new Error(j.error ?? `PATCH HTTP ${pr.status}`)
+        }
+
+        // 2. Fetch + DELETE existing ingredients so we start fresh.
+        const gr = await fetch(`/api/inventory/recipes/${recipeId}`, { cache: 'no-store' })
+        const gj = await gr.json().catch(() => ({}))
+        const existingIngs: { id: string }[] = gj?.summary?.ingredients ?? []
+        for (const ing of existingIngs) {
+          await fetch(`/api/inventory/recipes/${recipeId}/ingredients/${ing.id}`, {
+            method: 'DELETE', cache: 'no-store',
+          })
+        }
+
+        // 3. Re-add the draft's ingredients (same path as createOne).
+        for (let pos = 0; pos < d.ingredients.length; pos++) {
+          const g = d.ingredients[pos]
+          const payload: any = { quantity: g.quantity, unit: g.unit, position: pos }
+          if (g.kind === 'product') {
+            payload.product_id = g.product_id
+          } else {
+            const subId = nameToId.get(g.sub_name.trim().toLowerCase())
+            if (!subId) {
+              results.failed.push({ name: d.name, error: `Sub-recipe "${g.sub_name}" not found — skipped` })
+              continue
+            }
+            payload.subrecipe_id = subId
+          }
+          const ar = await fetch(`/api/inventory/recipes/${recipeId}/ingredients`, {
+            method:  'POST', cache: 'no-store',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(payload),
+          })
+          if (!ar.ok) {
+            const j2 = await ar.json().catch(() => ({}))
+            const label = g.kind === 'product' ? g.product_name : `sub: ${g.sub_name}`
+            results.failed.push({ name: d.name, error: `${label}: ${j2.error ?? 'HTTP ' + ar.status}` })
+          }
+        }
+        results.created++
+        return recipeId
+      } catch (e: any) {
+        results.failed.push({ name: d.name, error: `replace: ${String(e?.message ?? e).slice(0, 200)}` })
+        return null
+      }
+    }
+
+    async function saveOne(d: Draft): Promise<string | null> {
+      return d.action === 'replace' ? replaceOne(d) : createOne(d)
+    }
+
     for (const d of subs) {
-      const id = await createOne(d)
+      const id = await saveOne(d)
       if (id) nameToId.set(d.name.trim().toLowerCase(), id)
     }
-    for (const d of parents) await createOne(d)
+    for (const d of parents) await saveOne(d)
 
     setSaveResults(results)
     setStage('done')
@@ -603,7 +688,11 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
     )
     const hit = existingByName.get(name.trim().toLowerCase())
     setDrafts(prev => prev.map((d, i) => i === di
-      ? { ...d, name, existing_recipe_id: hit ?? null, skip: hit ? (d.skip ?? true) : false }
+      ? {
+          ...d, name,
+          existing_recipe_id: hit ?? null,
+          action: hit ? (d.action ?? 'skip') : undefined,
+        }
       : d))
   }
   function editDraftPrice(di: number, price: string) {
@@ -717,8 +806,8 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
                   border:        `1px solid ${d.existing_recipe_id ? UXP.coral : d.is_subrecipe ? UXP.lavMid : UXP.border}`,
                   borderRadius:  8,
                   padding:       '10px 12px',
-                  background:    d.existing_recipe_id && d.skip ? '#fef3e0' : d.is_subrecipe ? UXP.subtleBg : 'transparent',
-                  opacity:       d.existing_recipe_id && d.skip ? 0.75 : 1,
+                  background:    d.existing_recipe_id && d.action === 'skip' ? '#fef3e0' : d.is_subrecipe ? UXP.subtleBg : 'transparent',
+                  opacity:       d.existing_recipe_id && d.action === 'skip' ? 0.75 : 1,
                 }}>
                   {d.existing_recipe_id && (
                     <div style={{
@@ -726,15 +815,31 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
                       padding: '6px 8px', background: '#fef3e0', borderRadius: 4,
                       fontSize: 11, color: UXP.coral, fontWeight: 500,
                     }}>
-                      <span>Already in your recipe book — {d.skip ? 'will be SKIPPED' : 'WILL OVERWRITE'}</span>
-                      <label style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={d.skip === true}
-                          onChange={e => setDrafts(prev => prev.map((x, i) => i === di ? { ...x, skip: e.target.checked } : x))}
-                        />
-                        Skip
-                      </label>
+                      <span style={{ flex: 1 }}>
+                        Already in your recipe book — {d.action === 'replace' ? 'WILL REPLACE existing' : 'will be SKIPPED'}
+                      </span>
+                      <div style={{ display: 'inline-flex', borderRadius: 4, overflow: 'hidden', border: `0.5px solid ${UXP.coral}` }}>
+                        <button
+                          type="button"
+                          onClick={() => setDrafts(prev => prev.map((x, i) => i === di ? { ...x, action: 'skip' as const } : x))}
+                          style={{
+                            padding: '4px 10px', fontSize: 11, fontWeight: 500, fontFamily: 'inherit',
+                            background: d.action === 'skip' ? UXP.coral : 'transparent',
+                            color: d.action === 'skip' ? '#fff' : UXP.coral,
+                            border: 'none', cursor: 'pointer',
+                          }}
+                        >Skip</button>
+                        <button
+                          type="button"
+                          onClick={() => setDrafts(prev => prev.map((x, i) => i === di ? { ...x, action: 'replace' as const } : x))}
+                          style={{
+                            padding: '4px 10px', fontSize: 11, fontWeight: 500, fontFamily: 'inherit',
+                            background: d.action === 'replace' ? UXP.coral : 'transparent',
+                            color: d.action === 'replace' ? '#fff' : UXP.coral,
+                            border: 'none', borderLeft: `0.5px solid ${UXP.coral}`, cursor: 'pointer',
+                          }}
+                        >Replace</button>
+                      </div>
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
