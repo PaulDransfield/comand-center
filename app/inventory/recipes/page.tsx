@@ -52,6 +52,7 @@ export default function InventoryRecipesPage() {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
+  const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null)
 
   useEffect(() => {
     const s = localStorage.getItem('cc_selected_biz')
@@ -180,10 +181,14 @@ export default function InventoryRecipesPage() {
             { id: 'img', header: '',
               cell: r => r.image_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={r.image_url} alt="" loading="lazy" style={{
-                  width: 36, height: 36, borderRadius: 5, objectFit: 'cover',
-                  border: `0.5px solid ${UXP.border}`, background: '#fff', display: 'block',
-                }} />
+                <img src={r.image_url} alt="" loading="lazy"
+                  onClick={e => { e.stopPropagation(); setLightbox({ url: r.image_url!, name: r.name }) }}
+                  title="Click to enlarge"
+                  style={{
+                    width: 36, height: 36, borderRadius: 5, objectFit: 'cover',
+                    border: `0.5px solid ${UXP.border}`, background: '#fff', display: 'block',
+                    cursor: 'zoom-in',
+                  }} />
               ) : (
                 <div style={{
                   width: 36, height: 36, borderRadius: 5,
@@ -250,7 +255,62 @@ export default function InventoryRecipesPage() {
       {importing && bizId && (
         <BulkImportModal bizId={bizId} existingRecipes={allRows} onClose={() => setImporting(false)} onSaved={() => { setImporting(false); load() }} />
       )}
+      {lightbox && (
+        <ImageLightbox url={lightbox.url} name={lightbox.name} onClose={() => setLightbox(null)} />
+      )}
     </AppShell>
+  )
+}
+
+// ── ImageLightbox ─────────────────────────────────────────────────────
+// Click-to-enlarge dish photo. Used by service chefs to reference
+// plating. Click backdrop or press Esc to close.
+function ImageLightbox({ url, name, onClose }: { url: string; name: string; onClose: () => void }) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div
+      onClick={onClose}
+      role="dialog"
+      aria-label={`Image: ${name}`}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 500,
+        background: 'rgba(0,0,0,0.85)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24, cursor: 'zoom-out',
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, maxWidth: '100%', maxHeight: '100%' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={url}
+          alt={name}
+          onClick={e => e.stopPropagation()}
+          style={{
+            maxWidth: '100%', maxHeight: 'calc(100vh - 100px)',
+            objectFit: 'contain', borderRadius: 6, background: '#fff',
+            cursor: 'default',
+          }}
+        />
+        <div style={{ color: '#fff', fontSize: 14, fontWeight: 500, textAlign: 'center' as const }}>{name}</div>
+      </div>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close"
+        style={{
+          position: 'absolute', top: 16, right: 16,
+          width: 36, height: 36, borderRadius: '50%',
+          background: 'rgba(255,255,255,0.15)', border: '0.5px solid rgba(255,255,255,0.2)',
+          color: '#fff', fontSize: 18, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 0, fontFamily: 'inherit',
+        }}
+      >×</button>
+    </div>
   )
 }
 
