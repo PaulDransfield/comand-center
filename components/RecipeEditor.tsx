@@ -103,7 +103,6 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
   // it on every reload.
   const [openGeneral, setOpenGeneral] = useSectionState('general', false)
   const [openPrice,   setOpenPrice]   = useSectionState('price',   false)
-  const [openMethod,  setOpenMethod]  = useSectionState('method',  false)
   const [openYield,   setOpenYield]   = useSectionState('yield',   false)
   const [openSales,   setOpenSales]   = useSectionState('sales',   false)
   const [openBreakdown, setOpenBreakdown] = useSectionState('breakdown', false)
@@ -584,17 +583,11 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
         </div>
       </Collapsible>
 
-      {/* ── COLLAPSIBLE — Method / instructions ─────────────────────── */}
-      <Collapsible
-        open={openMethod}
-        onToggle={() => setOpenMethod(v => !v)}
-        title="Method / instructions"
-        subtitle={recipe.method && recipe.method.trim()
-          ? (recipe.method.trim().slice(0, 80) + (recipe.method.trim().length > 80 ? '…' : ''))
-          : 'Not set'}
-      >
-        <MethodEditor recipe={recipe} onSave={patchRecipe} />
-      </Collapsible>
+      {/* ── Method / instructions — direct tap to popup ─────────────── */}
+      {/* Skipping the Collapsible wrapper: chefs reach the readable
+          modal in ONE tap. Method text gets long (full prep + plating);
+          they read it on phones at the pass. */}
+      <MethodEditor recipe={recipe} onSave={patchRecipe} />
 
       {/* ── COLLAPSIBLE — Yield (sub-recipe only) ───────────────────── */}
       <Collapsible
@@ -1020,20 +1013,22 @@ function MethodEditor({ recipe, onSave }: {
         type="button"
         onClick={() => setOpen(true)}
         style={{
-          width: '100%', boxSizing: 'border-box', padding: '10px 12px',
-          textAlign: 'left' as const, fontFamily: 'inherit', fontSize: 12,
-          color: preview ? UXP.ink2 : UXP.ink4,
-          background: UXP.subtleBg, border: `1px solid ${UXP.border}`,
-          borderRadius: 6, cursor: 'pointer', lineHeight: 1.5,
-          display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center',
-          minHeight: 50,
+          width: '100%', boxSizing: 'border-box', padding: '14px 16px',
+          textAlign: 'left' as const, fontFamily: 'inherit',
+          background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+          borderRadius: 8, cursor: 'pointer',
+          display: 'flex', flexDirection: 'column' as const, gap: 6,
+          marginBottom: 12,
         }}
       >
-        <span style={{ flex: 1, overflow: 'hidden' as const }}>
-          {previewShort || 'Click to write the method (cooking, preparation, plating)…'}
-        </span>
-        <span style={{ fontSize: 11, color: UXP.lavText, whiteSpace: 'nowrap' as const, fontWeight: 600 }}>
-          {preview ? 'Edit →' : 'Add →'}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: UXP.ink1 }}>Method / instructions</span>
+          <span style={{ fontSize: 11, color: UXP.lavText, fontWeight: 600, whiteSpace: 'nowrap' as const }}>
+            {preview ? 'Open →' : 'Add →'}
+          </span>
+        </div>
+        <span style={{ fontSize: 12, color: preview ? UXP.ink2 : UXP.ink4, lineHeight: 1.5 }}>
+          {previewShort || 'Tap to write or read the method (cooking, prep, plating)…'}
         </span>
       </button>
 
@@ -1044,6 +1039,16 @@ function MethodEditor({ recipe, onSave }: {
         title="Method / instructions"
         subtitle={recipe.name}
         ariaLabel="Edit method"
+        bodyStyle={{
+          // Fill the viewport on mobile, generous height on desktop.
+          // Chef reads at the pass on a phone — needs scrollable space.
+          width: '100%',
+          maxWidth: 880,
+          height: '92vh',
+          maxHeight: '92vh',
+          display: 'flex',
+          flexDirection: 'column' as const,
+        }}
         footer={
           <>
             <button type="button" onClick={() => { setVal(recipe.method ?? ''); setOpen(false) }} disabled={busy} style={overlayBtn.secondary}>Cancel</button>
@@ -1056,19 +1061,17 @@ function MethodEditor({ recipe, onSave }: {
         <textarea
           value={val}
           onChange={e => setVal(e.target.value.slice(0, 20000))}
-          autoFocus
           disabled={busy}
           maxLength={20000}
           placeholder="Cooking method, preparation, plating notes…"
-          rows={14}
           style={{
-            width: '100%', boxSizing: 'border-box', padding: '10px 12px',
-            fontSize: 12, lineHeight: 1.6, border: `1px solid ${UXP.border}`,
-            borderRadius: 6, fontFamily: 'inherit', resize: 'vertical' as const,
-            color: UXP.ink1, minHeight: 240,
+            width: '100%', flex: 1, boxSizing: 'border-box', padding: '14px 16px',
+            fontSize: 15, lineHeight: 1.65, border: `1px solid ${UXP.border}`,
+            borderRadius: 6, fontFamily: 'inherit', resize: 'none' as const,
+            color: UXP.ink1, minHeight: 0,
           }}
         />
-        <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 8, textAlign: 'right' as const }}>
+        <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 8, textAlign: 'right' as const, flexShrink: 0 }}>
           {val.length.toLocaleString()} / 20,000 chars
           {dirty && !busy && ' · unsaved'}
           {busy && ' · saving…'}
