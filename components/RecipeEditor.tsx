@@ -28,7 +28,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useViewport } from '@/lib/hooks/useViewport'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { UXP } from '@/lib/constants/tokens'
 import { Modal, overlayBtn } from '@/components/ui/Overlay'
@@ -526,7 +526,7 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
                 onRemove={() => removeIngredient(ing.id)}
                 onChange={(patch) => updateIngredient(ing.id, patch)}
                 onProductEdit={load}
-                onOpenSubrecipe={(id) => router.push(`/inventory/recipes/${id}`)}
+                onOpenSubrecipe={(id) => router.push(`/inventory/recipes/${id}?from=${recipe.id}`)}
                 onOpenEditModal={(pid) => setEditingProductId(pid)}
               />
             ))}
@@ -666,16 +666,27 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
 
 // ── BackLink ──────────────────────────────────────────────────────────
 function BackLink({ router }: { router: ReturnType<typeof useRouter> }) {
-  // router.refresh() invalidates the App Router cache so the recipes
-  // list refetches — without this, toggling is_subrecipe (or any
-  // recipe edit) doesn't surface on the list page until a hard reload.
+  // ?from=<parentRecipeId> means we drilled in from a parent recipe
+  // (sub-recipe link). Route back to that parent instead of the list
+  // so the kitchen doesn't lose its place.
+  // router.refresh() invalidates the App Router cache so the list
+  // refetches after edits.
+  const params = useSearchParams()
+  const from   = params?.get('from')
   return (
-    <button onClick={() => { router.push('/inventory/recipes'); router.refresh() }} style={{
-      background: 'transparent', border: 'none', cursor: 'pointer',
-      color: UXP.ink3, fontSize: 12, padding: 0, marginBottom: 10,
-      fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4,
-    }}>
-      ← Back to recipes
+    <button
+      onClick={() => {
+        if (from) router.push(`/inventory/recipes/${from}`)
+        else      router.push('/inventory/recipes')
+        router.refresh()
+      }}
+      style={{
+        background: 'transparent', border: 'none', cursor: 'pointer',
+        color: UXP.ink3, fontSize: 12, padding: 0, marginBottom: 10,
+        fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4,
+      }}
+    >
+      ← {from ? 'Back to parent recipe' : 'Back to recipes'}
     </button>
   )
 }
