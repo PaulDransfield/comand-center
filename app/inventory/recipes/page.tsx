@@ -36,6 +36,7 @@ interface RecipeRow {
   missing_prices:   number
   unit_mismatches:  number
   updated_at:       string
+  image_url:        string | null
 }
 
 interface ListResponse {
@@ -176,6 +177,19 @@ export default function InventoryRecipesPage() {
         {!loading && rows.length > 0 && (() => {
           const incomplete = (r: RecipeRow) => r.missing_prices > 0 || r.unit_mismatches > 0
           const cols: Array<DataTableColumn<RecipeRow>> = [
+            { id: 'img', header: '',
+              cell: r => r.image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={r.image_url} alt="" loading="lazy" style={{
+                  width: 36, height: 36, borderRadius: 5, objectFit: 'cover',
+                  border: `0.5px solid ${UXP.border}`, background: '#fff', display: 'block',
+                }} />
+              ) : (
+                <div style={{
+                  width: 36, height: 36, borderRadius: 5,
+                  background: UXP.subtleBg, border: `0.5px dashed ${UXP.border}`,
+                }} />
+              ) },
             { id: 'name',  header: t('colName'),  primary: true,
               cell: r => <span style={{ fontWeight: 500, color: UXP.ink1 }}>{r.name}</span> },
             { id: 'type',  header: t('colType'),

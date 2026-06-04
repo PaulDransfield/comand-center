@@ -33,11 +33,11 @@ export async function GET(req: NextRequest) {
   // every business. If the column is missing, retry without it.
   let { data: recipes, error: rErr } = await db
     .from('recipes')
-    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, is_subrecipe, updated_at')
+    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, is_subrecipe, image_url, updated_at')
     .eq('business_id', businessId)
     .is('archived_at', null)
     .order('name')
-  if (rErr && /is_subrecipe/.test(rErr.message)) {
+  if (rErr && /is_subrecipe|image_url/.test(rErr.message)) {
     const retry = await db
       .from('recipes')
       .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, updated_at')
@@ -106,6 +106,7 @@ export async function GET(req: NextRequest) {
       unit_mismatches:      summary.unit_mismatches,
       subrecipe_count:      ings.filter(i => i.subrecipe_id != null).length,
       is_subrecipe:         r.is_subrecipe === true,
+      image_url:            r.image_url ?? null,
     }
   })
 
@@ -179,7 +180,7 @@ export async function POST(req: NextRequest) {
   let { data, error } = await db
     .from('recipes')
     .insert({ ...baseRow, is_subrecipe })
-    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, is_subrecipe, updated_at')
+    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, is_subrecipe, image_url, updated_at')
     .single()
   // Defensive: M124 may not be applied yet (or PostgREST schema cache stale).
   if (error && /is_subrecipe/.test(error.message)) {

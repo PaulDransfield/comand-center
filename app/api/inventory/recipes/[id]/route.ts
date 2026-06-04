@@ -24,10 +24,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // Defensive: M124 may not be applied yet.
   let { data: r, error: rErr } = await db
     .from('recipes')
-    .select('id, business_id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, is_subrecipe, updated_at')
+    .select('id, business_id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, is_subrecipe, image_url, updated_at')
     .eq('id', params.id)
     .maybeSingle()
-  if (rErr && /is_subrecipe/.test(rErr.message)) {
+  if (rErr && /is_subrecipe|image_url/.test(rErr.message)) {
     const retry = await db
       .from('recipes')
       .select('id, business_id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, updated_at')

@@ -62,6 +62,7 @@ interface DetailResponse {
     yield_unit?:   string | null
     method?: string | null
     is_subrecipe?: boolean
+    image_url?: string | null
   }
   summary: {
     food_cost: number; food_pct: number | null; gp_pct: number | null; gp_kr: number | null
@@ -396,6 +397,7 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
       {/* ── HEADER ──────────────────────────────────────────────────── */}
       <div style={headerCard}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14 }}>
+          <RecipeImageEditor recipeId={recipe.id} imageUrl={recipe.image_url ?? null} onChange={load} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <select
               value={recipe.type ?? ''}
@@ -688,6 +690,90 @@ function BackLink({ router }: { router: ReturnType<typeof useRouter> }) {
     >
       ← {from ? 'Back to parent recipe' : 'Back to recipes'}
     </button>
+  )
+}
+
+// ── RecipeImageEditor ─────────────────────────────────────────────────
+// Square thumbnail tile in the header. Click to upload (file picker),
+// click again on an existing image to replace, tiny × removes.
+function RecipeImageEditor({ recipeId, imageUrl, onChange }: {
+  recipeId: string
+  imageUrl: string | null
+  onChange: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  async function upload(file: File) {
+    setBusy(true)
+    const fd = new FormData()
+    fd.append('file', file)
+    const r = await fetch(`/api/inventory/recipes/${recipeId}/image`, {
+      method: 'POST', cache: 'no-store', body: fd,
+    })
+    const j = await r.json().catch(() => ({}))
+    setBusy(false)
+    if (!r.ok) { alert(j.error ?? `HTTP ${r.status}`); return }
+    onChange()
+  }
+
+  async function remove() {
+    if (!confirm('Remove this image?')) return
+    setBusy(true)
+    const r = await fetch(`/api/inventory/recipes/${recipeId}/image`, { method: 'DELETE', cache: 'no-store' })
+    setBusy(false)
+    if (!r.ok) { alert('Failed to remove'); return }
+    onChange()
+  }
+
+  return (
+    <div style={{ position: 'relative', flexShrink: 0 }}>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; if (f) upload(f); e.currentTarget.value = '' }}
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={busy}
+        title={imageUrl ? 'Click to replace' : 'Click to upload a photo'}
+        style={{
+          width: 90, height: 90, borderRadius: 8,
+          background: imageUrl ? '#fff' : UXP.subtleBg,
+          border: `0.5px solid ${UXP.border}`,
+          cursor: busy ? 'wait' : 'pointer', padding: 0, overflow: 'hidden',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: 'inherit',
+        }}
+      >
+        {imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <span style={{ fontSize: 10, color: UXP.ink4, textAlign: 'center', lineHeight: 1.3, padding: 4 }}>
+            {busy ? 'Uploading…' : '+ Add photo'}
+          </span>
+        )}
+      </button>
+      {imageUrl && !busy && (
+        <button
+          type="button"
+          onClick={remove}
+          aria-label="Remove image"
+          style={{
+            position: 'absolute', top: -6, right: -6,
+            width: 20, height: 20, borderRadius: '50%',
+            background: '#fff', border: `0.5px solid ${UXP.border}`,
+            cursor: 'pointer', fontSize: 12, lineHeight: 1, color: UXP.ink3,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 0, fontFamily: 'inherit',
+          }}
+        >×</button>
+      )}
+    </div>
   )
 }
 
