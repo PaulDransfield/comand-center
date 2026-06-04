@@ -43,6 +43,28 @@ export function fmtKr(
 }
 
 /**
+ * Recipe-line cost formatter. Per-ingredient costs are routinely sub-1-kr
+ * (10 g of beetroot at 0.055 kr/g = 0.055 kr) — rounding to integer kr
+ * gives a misleading "0 kr" everywhere. This formatter keeps 2 decimals
+ * for |n| < 10, integers above. NEVER use this on dashboard / P&L /
+ * any aggregate surface — it implies precision the upstream rollups
+ * don't carry.
+ */
+export function fmtKrCost(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return '—'
+  const abs = Math.abs(n)
+  const sign = n < 0 ? '−' : ''
+  if (abs >= 10) {
+    return sign + Math.round(abs).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
+  }
+  // 2 decimals for the small-cost band, trim trailing zero (so "0.40 kr" -> "0.40 kr"
+  // but "5.00 kr" -> "5 kr"). Keeps the chef's eye on the precision when it matters.
+  const rounded = Math.round(abs * 100) / 100
+  const txt = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2)
+  return sign + txt + ' kr'
+}
+
+/**
  * Same as `fmtKr` but prefixes `+` for non-negative values. Used on
  * cash-flow surfaces where direction (in/out) is the headline.
  */

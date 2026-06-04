@@ -34,7 +34,7 @@ import { UXP } from '@/lib/constants/tokens'
 import { Modal, overlayBtn } from '@/components/ui/Overlay'
 import { ProductThumb } from '@/components/ui/ProductThumb'
 import { EditItemModal } from '@/components/EditItemModal'
-import { fmtKr } from '@/lib/format'
+import { fmtKr, fmtKrCost } from '@/lib/format'
 import { convertQuantity } from '@/lib/inventory/unit-conversion'
 
 // ── Types — mirror the GET /api/inventory/recipes/[id] response ──────
@@ -907,7 +907,7 @@ function CostBreakdown({ summary, recipe }: { summary: DetailResponse['summary']
                     : '—'}
                 </td>
                 <td style={{ ...breakdownTd, textAlign: 'right' as const, fontWeight: 500 }}>
-                  {ing.line_cost != null ? fmtKr(ing.line_cost) : '—'}
+                  {ing.line_cost != null ? fmtKrCost(ing.line_cost) : '—'}
                 </td>
                 <td style={{ ...breakdownTd, textAlign: 'right' as const, color: UXP.ink3 }}>
                   {pct != null ? `${pct.toFixed(1)}%` : '—'}
@@ -1535,7 +1535,7 @@ function IngredientRow({ ing, imageUrl, highlighted, onRemove, onChange, onProdu
         />
         <div style={{ textAlign: isMobile ? 'left' : 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: ing.no_price ? UXP.ink4 : UXP.ink1, fontWeight: 500, gridArea: isMobile ? 'cost' : undefined }}>
           {isMobile && <span style={{ fontSize: 10, color: UXP.ink4, marginRight: 4 }}>Cost:</span>}
-          {ing.line_cost != null ? fmtKr(ing.line_cost) : '—'}
+          {ing.line_cost != null ? fmtKrCost(ing.line_cost) : '—'}
         </div>
         <div style={{ gridArea: isMobile ? 'acts' : undefined, display: 'flex', justifyContent: isMobile ? 'flex-end' : 'flex-start', alignItems: 'center', gap: 2 }}>
         {ing.is_subrecipe ? (
