@@ -1664,6 +1664,8 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
   const t = useTranslations('operations.inventory.recipes')
   const [tab,       setTab]       = useState<'product' | 'recipe'>('product')
   const [q,         setQ]         = useState('')
+  const [supplier,  setSupplier]  = useState<string>('')
+  const [suppliers, setSuppliers] = useState<Array<{ name: string; count: number }>>([])
   const [results,   setResults]   = useState<any[]>([])
   const [picked,    setPicked]    = useState<any | null>(null)
   const [qty,       setQty]       = useState('')
@@ -1763,17 +1765,30 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
   useEffect(() => {
     const timer = setTimeout(async () => {
       const path = tab === 'product'
-        ? `/api/inventory/products/search?business_id=${encodeURIComponent(bizId)}&q=${encodeURIComponent(q)}`
+        ? `/api/inventory/products/search?business_id=${encodeURIComponent(bizId)}&q=${encodeURIComponent(q)}${supplier ? `&supplier=${encodeURIComponent(supplier)}` : ''}`
         : `/api/inventory/recipes/search?business_id=${encodeURIComponent(bizId)}&q=${encodeURIComponent(q)}&exclude_recipe_id=${encodeURIComponent(recipeId)}`
       const r = await fetch(path, { cache: 'no-store' })
       const j = await r.json().catch(() => ({}))
       setResults(tab === 'product' ? (j.products ?? []) : (j.recipes ?? []))
     }, 200)
     return () => clearTimeout(timer)
-  }, [q, bizId, recipeId, tab])
+  }, [q, supplier, bizId, recipeId, tab])
+
+  // Suppliers list — fetched once per modal open so the dropdown is ready
+  // by the time the chef wants to filter.
+  useEffect(() => {
+    if (tab !== 'product') return
+    let cancelled = false
+    ;(async () => {
+      const r = await fetch(`/api/inventory/products/suppliers?business_id=${encodeURIComponent(bizId)}`, { cache: 'no-store' })
+      const j = await r.json().catch(() => ({}))
+      if (!cancelled) setSuppliers(j.suppliers ?? [])
+    })()
+    return () => { cancelled = true }
+  }, [bizId, tab])
 
   function switchTab(next: 'product' | 'recipe') {
-    setTab(next); setQ(''); setResults([]); setPicked(null); setErr(null); setUnit(''); setQty('')
+    setTab(next); setQ(''); setSupplier(''); setResults([]); setPicked(null); setErr(null); setUnit(''); setQty('')
   }
 
   async function add() {
@@ -1815,8 +1830,24 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
             <TabBtn active={tab === 'product'} onClick={() => switchTab('product')}>{t('picker.tabProduct')}</TabBtn>
             <TabBtn active={tab === 'recipe'}  onClick={() => switchTab('recipe')}>{t('picker.tabRecipe')}</TabBtn>
           </div>
-          <input type="text" value={q} onChange={e => setQ(e.target.value)} autoFocus
-                 placeholder={tab === 'product' ? t('picker.search') : t('picker.searchRecipes')} style={inputStyle} />
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input type="text" value={q} onChange={e => setQ(e.target.value)} autoFocus
+                   placeholder={tab === 'product' ? t('picker.search') : t('picker.searchRecipes')}
+                   style={{ ...inputStyle, flex: 1 }} />
+            {tab === 'product' && suppliers.length > 0 && (
+              <select
+                value={supplier}
+                onChange={e => setSupplier(e.target.value)}
+                title="Filter by supplier"
+                style={{ ...inputStyle, width: 200, color: supplier ? UXP.ink1 : UXP.ink3 }}
+              >
+                <option value="">All suppliers</option>
+                {suppliers.map(s => (
+                  <option key={s.name} value={s.name}>{s.name} ({s.count})</option>
+                ))}
+              </select>
+            )}
+          </div>
           <div style={{ maxHeight: 280, overflowY: 'auto' as const, marginTop: 8, border: `0.5px solid ${UXP.border}`, borderRadius: 6 }}>
             {results.length === 0 && !creatingProduct && (
               <div style={{ padding: 14, color: UXP.ink4, fontSize: 12, textAlign: 'center' as const }}>

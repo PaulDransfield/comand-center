@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const businessId = String(url.searchParams.get('business_id') ?? '').trim()
   const query      = String(url.searchParams.get('q')           ?? '').trim()
+  const supplier   = String(url.searchParams.get('supplier')    ?? '').trim()
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
   const forbidden = requireBusinessAccess(auth, businessId)
   if (forbidden) return forbidden
@@ -36,7 +37,8 @@ export async function GET(req: NextRequest) {
     .is('archived_at', null)
     .order('name')
     .limit(20)
-  if (query) qB = qB.ilike('name', `%${query}%`)
+  if (query)    qB = qB.ilike('name', `%${query}%`)
+  if (supplier) qB = qB.eq('default_supplier_name', supplier)
 
   const { data: products, error } = await qB
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
