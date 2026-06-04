@@ -197,7 +197,7 @@ export default function InventoryRecipesPage() {
             { id: 'ing',   header: t('colIngredients'), align: 'right' as const,
               cell: r => <span style={{ color: UXP.ink3 }}>{r.ingredient_count}</span> },
             { id: 'menu',  header: t('colMenuPrice'),   align: 'right' as const, hideOnMobile: true,
-              cell: r => r.menu_price != null ? fmtKr(r.menu_price) : '—' },
+              cell: r => <InlineMenuPrice recipeId={r.id} value={r.menu_price} onSaved={load} /> },
             { id: 'food',  header: t('colFoodCost'),    align: 'right' as const, hideOnMobile: true,
               cell: r => fmtKr(r.food_cost) },
             { id: 'foodpct', header: t('colFoodPct'),   align: 'right' as const, hideOnMobile: true,
@@ -251,6 +251,80 @@ export default function InventoryRecipesPage() {
         <BulkImportModal bizId={bizId} existingRecipes={allRows} onClose={() => setImporting(false)} onSaved={() => { setImporting(false); load() }} />
       )}
     </AppShell>
+  )
+}
+
+// ── InlineMenuPrice ───────────────────────────────────────────────────
+// Click-to-edit menu price on the recipe list row. Stops row navigation
+// while focused so the user can type a number without being routed to
+// the editor. PATCHes menu_price (legacy passthrough — the resolver
+// stores it as-is; owner refines VAT in the editor if needed).
+function InlineMenuPrice({ recipeId, value, onSaved }: { recipeId: string; value: number | null; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [val, setVal]         = useState(value != null ? String(value) : '')
+  const [busy, setBusy]       = useState(false)
+  useEffect(() => { setVal(value != null ? String(value) : '') }, [value])
+
+  async function save() {
+    const trimmed = val.trim()
+    const num     = trimmed === '' ? null : Number(trimmed)
+    if (trimmed !== '' && (!Number.isFinite(num) || (num as number) <= 0)) {
+      setVal(value != null ? String(value) : ''); setEditing(false); return
+    }
+    if (num === value) { setEditing(false); return }
+    setBusy(true)
+    try {
+      const r = await fetch(`/api/inventory/recipes/${recipeId}`, {
+        method: 'PATCH', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ menu_price: num }),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}))
+        alert(j.error ?? `HTTP ${r.status}`)
+        setVal(value != null ? String(value) : '')
+      } else {
+        onSaved()
+      }
+    } finally { setBusy(false); setEditing(false) }
+  }
+
+  if (!editing) {
+    return (
+      <span
+        onClick={e => { e.stopPropagation(); setEditing(true) }}
+        title="Click to edit"
+        style={{
+          display: 'inline-block', minWidth: 56, padding: '2px 6px',
+          borderRadius: 4, cursor: 'pointer',
+          color: value != null ? UXP.ink1 : UXP.ink4,
+        }}
+      >
+        {value != null ? fmtKr(value) : '—'}
+      </span>
+    )
+  }
+  return (
+    <input
+      autoFocus
+      type="number"
+      step="1"
+      min="0"
+      value={val}
+      disabled={busy}
+      onClick={e => e.stopPropagation()}
+      onChange={e => setVal(e.target.value)}
+      onBlur={save}
+      onKeyDown={e => {
+        if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() }
+        if (e.key === 'Escape') { setVal(value != null ? String(value) : ''); setEditing(false) }
+      }}
+      style={{
+        width: 78, padding: '2px 6px', fontSize: 12, fontFamily: 'inherit',
+        textAlign: 'right' as const, border: `1px solid ${UXP.lav}`,
+        borderRadius: 4, background: '#fff', color: UXP.ink1,
+      }}
+    />
   )
 }
 
