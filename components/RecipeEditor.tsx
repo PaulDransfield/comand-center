@@ -134,26 +134,60 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
   }, [recipeId])
   useEffect(() => { if (recipeId) load() }, [recipeId, load])
 
-  // Auto-apply yield once per recipe load when it's unset AND the
-  // ingredients sum to something measurable. Owners shouldn't have to
-  // open the collapsible and re-key a number they already typed. Drift
-  // / cooking-reduction case keeps the suggestion chip in YieldEditor —
-  // that needs owner judgement, so it stays explicit.
-  const autoYieldAppliedFor = useRef<string | null>(null)
+  // Two-phase yield auto-management:
+  //   (1) FIRST LOAD — auto-fill yield when it's unset AND ingredients
+  //       sum to something measurable. Existing behaviour.
+  //   (2) PORTIONS CHANGED — owner asked 2026-06-05: when they edit
+  //       portions (e.g. "this batch makes 25 plates, not 7"), the
+  //       per-portion yield should rescale automatically. We preserve
+  //       the TOTAL batch yield and divide by the new portion count,
+  //       so any cooking-reduction override the owner had set survives.
+  //
+  // Drift on ingredient changes (vs portion changes) keeps the chip in
+  // YieldEditor — that needs owner judgement so it stays explicit.
+  const lastYieldStateRef = useRef<
+    { recipeId: string; portions: number; yieldAmount: number | null; yieldUnit: string | null } | null
+  >(null)
   useEffect(() => {
     if (!data) return
     const { recipe, summary } = data
     if (!recipe.id) return
-    if (autoYieldAppliedFor.current === recipe.id) return
-    if (recipe.yield_amount != null && recipe.yield_unit) return
-    const sug = suggestYieldFromIngredients(summary.ingredients, recipe.portions)
-    if (!sug) return
-    autoYieldAppliedFor.current = recipe.id
-    void fetch(`/api/inventory/recipes/${recipe.id}`, {
-      method: 'PATCH', cache: 'no-store',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ yield_amount: sug.amount, yield_unit: sug.unit }),
-    }).then(r => { if (r.ok) load() })
+
+    const prev = lastYieldStateRef.current
+    // Always update tracking BEFORE deciding so subsequent runs compare
+    // against the latest observed state, not an arbitrary stale snapshot.
+    lastYieldStateRef.current = {
+      recipeId:    recipe.id,
+      portions:    recipe.portions,
+      yieldAmount: recipe.yield_amount ?? null,
+      yieldUnit:   recipe.yield_unit   ?? null,
+    }
+
+    // (1) First time we see this recipe — auto-fill only when empty.
+    if (prev?.recipeId !== recipe.id) {
+      if (recipe.yield_amount != null && recipe.yield_unit) return
+      const sug = suggestYieldFromIngredients(summary.ingredients, recipe.portions)
+      if (!sug) return
+      void fetch(`/api/inventory/recipes/${recipe.id}`, {
+        method: 'PATCH', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ yield_amount: sug.amount, yield_unit: sug.unit }),
+      }).then(r => { if (r.ok) load() })
+      return
+    }
+
+    // (2) Same recipe, portions changed — rescale to preserve total batch yield.
+    if (prev.portions !== recipe.portions && recipe.portions > 0 && prev.yieldAmount != null && prev.yieldUnit) {
+      const oldTotal       = prev.yieldAmount * prev.portions
+      const newPerPortion  = Math.round((oldTotal / recipe.portions) * 10) / 10
+      if (newPerPortion > 0 && newPerPortion !== recipe.yield_amount) {
+        void fetch(`/api/inventory/recipes/${recipe.id}`, {
+          method: 'PATCH', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ yield_amount: newPerPortion, yield_unit: prev.yieldUnit }),
+        }).then(r => { if (r.ok) load() })
+      }
+    }
   }, [data, load])
 
   // ── Supplier-article thumbnails ─────────────────────────────────────
