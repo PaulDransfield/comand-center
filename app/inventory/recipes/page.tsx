@@ -81,17 +81,33 @@ export default function InventoryRecipesPage() {
 
   const allRows = data?.recipes ?? []
   const [viewFilter, setViewFilter] = useState<'dishes' | 'subrecipes' | 'all'>('dishes')
+  const [typeFilter, setTypeFilter] = useState<string>('')   // empty = all types
+  const [search, setSearch] = useState<string>('')
   const DISH_TYPES = new Set(['starter', 'main', 'pasta', 'pizza', 'dessert', 'drink', 'cocktail', 'side'])
   const isDish = (r: any) =>
     r.is_subrecipe === true ? false :
     (r.selling_price_ex_vat != null && Number(r.selling_price_ex_vat) > 0)
     || (r.menu_price != null && Number(r.menu_price) > 0)
     || (r.type && DISH_TYPES.has(String(r.type).toLowerCase()))
-  const rows = viewFilter === 'dishes'     ? allRows.filter(isDish)
-            : viewFilter === 'subrecipes'  ? allRows.filter((r: any) => !isDish(r))
-            :                                allRows
+  // Reset type filter when switching off dishes view (type pills only apply there)
+  useEffect(() => { if (viewFilter !== 'dishes' && typeFilter) setTypeFilter('') }, [viewFilter, typeFilter])
+  const baseRows = viewFilter === 'dishes'     ? allRows.filter(isDish)
+                : viewFilter === 'subrecipes'  ? allRows.filter((r: any) => !isDish(r))
+                :                                allRows
+  // Type-filter (only meaningful on the dishes tab — sub-recipes share NULL/sauce types)
+  const typedRows = viewFilter === 'dishes' && typeFilter
+    ? baseRows.filter((r: any) => String(r.type ?? '').toLowerCase() === typeFilter)
+    : baseRows
+  // Search by recipe name (case-insensitive substring)
+  const q = search.trim().toLowerCase()
+  const rows = q
+    ? typedRows.filter((r: any) => String(r.name ?? '').toLowerCase().includes(q))
+    : typedRows
   const dishCount = allRows.filter(isDish).length
   const subCount  = allRows.length - dishCount
+  // Counts per type (over the Dishes set) so pills can show how many in each
+  const dishesAll = allRows.filter(isDish)
+  const typeCountFor = (t: string) => dishesAll.filter((r: any) => String(r.type ?? '').toLowerCase() === t).length
   const visibleSummary = (() => {
     const visGp = rows.filter((r: any) => r.gp_pct != null && r.missing_prices === 0 && r.unit_mismatches === 0) as any[]
     const avgGp = visGp.length ? visGp.reduce((s: number, r: any) => s + r.gp_pct, 0) / visGp.length : null
@@ -142,21 +158,46 @@ export default function InventoryRecipesPage() {
         </div>
 
         {bizId && allRows.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' as const }}>
-            <ViewPill active={viewFilter === 'dishes'}     onClick={() => setViewFilter('dishes')}     label="Dishes"      count={dishCount} />
-            <ViewPill active={viewFilter === 'subrecipes'} onClick={() => setViewFilter('subrecipes')} label="Sub-recipes" count={subCount} />
-            <ViewPill active={viewFilter === 'all'}        onClick={() => setViewFilter('all')}        label="All"         count={allRows.length} />
-            {visibleSummary.incomplete_count > 0 && (
-              <span style={{
-                marginLeft: 'auto', fontSize: 10, padding: '3px 9px',
-                background: '#fef3e0', color: UXP.coral, fontWeight: 600,
-                borderRadius: 999, letterSpacing: '0.02em',
-              }}
-              title="Dishes with unmapped or missing-cost ingredients. Their GP% is shown as 'Incomplete cost' until the gap is fixed.">
-                {visibleSummary.incomplete_count} incomplete cost
-              </span>
+          <>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' as const }}>
+              <ViewPill active={viewFilter === 'dishes'}     onClick={() => setViewFilter('dishes')}     label="Dishes"      count={dishCount} />
+              <ViewPill active={viewFilter === 'subrecipes'} onClick={() => setViewFilter('subrecipes')} label="Sub-recipes" count={subCount} />
+              <ViewPill active={viewFilter === 'all'}        onClick={() => setViewFilter('all')}        label="All"         count={allRows.length} />
+              <input
+                type="text"
+                placeholder="Search recipes…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                style={{
+                  marginLeft: 'auto', minWidth: 180, padding: '6px 10px', fontSize: 12,
+                  border: `1px solid ${UXP.border}`, borderRadius: 6, fontFamily: 'inherit',
+                  background: UXP.cardBg, color: UXP.ink1,
+                }}
+              />
+              {visibleSummary.incomplete_count > 0 && (
+                <span style={{
+                  fontSize: 10, padding: '3px 9px',
+                  background: '#fef3e0', color: UXP.coral, fontWeight: 600,
+                  borderRadius: 999, letterSpacing: '0.02em',
+                }}
+                title="Dishes with unmapped or missing-cost ingredients. Their GP% is shown as 'Incomplete cost' until the gap is fixed.">
+                  {visibleSummary.incomplete_count} incomplete cost
+                </span>
+              )}
+            </div>
+
+            {viewFilter === 'dishes' && dishCount > 0 && (
+              <div style={{ display: 'flex', gap: 5, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' as const }}>
+                <span style={{ fontSize: 10, color: UXP.ink4, marginRight: 2 }}>Type:</span>
+                <TypePill active={typeFilter === ''} onClick={() => setTypeFilter('')} label="All" count={dishCount} />
+                {['starter','pasta','pizza','main','side','dessert','drink','cocktail','other'].map(t => {
+                  const c = typeCountFor(t)
+                  if (c === 0) return null
+                  return <TypePill key={t} active={typeFilter === t} onClick={() => setTypeFilter(t)} label={t[0].toUpperCase() + t.slice(1)} count={c} />
+                })}
+              </div>
             )}
-          </div>
+          </>
         )}
 
         {error && (
@@ -1071,6 +1112,29 @@ function ViewPill({ active, onClick, label, count }: { active: boolean; onClick:
       }}
     >
       {label} <span style={{ color: UXP.ink4, marginLeft: 4 }}>· {count}</span>
+    </button>
+  )
+}
+function TypePill({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {
+  // Smaller, denser variant — sits under the main Dishes/Sub-recipes row.
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding:       '2px 9px',
+        background:    active ? UXP.lavFill : 'transparent',
+        color:         active ? UXP.lavText : UXP.ink3,
+        border:        `0.5px solid ${active ? UXP.lav : UXP.border}`,
+        borderRadius:  999,
+        fontSize:      10,
+        fontWeight:    500,
+        fontFamily:    'inherit',
+        cursor:        'pointer',
+        letterSpacing: '0.02em',
+      }}
+    >
+      {label} <span style={{ color: UXP.ink4, marginLeft: 3 }}>{count}</span>
     </button>
   )
 }
