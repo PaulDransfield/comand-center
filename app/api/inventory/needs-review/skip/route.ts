@@ -91,6 +91,24 @@ export async function POST(req: NextRequest) {
     updated += data?.length ?? 0
   }
 
+  // M129 — persist the skip so rematch + future invoice lines respect it.
+  // Defensive: if the table isn't there yet, log + continue (the status
+  // update above is the immediate win; the rule layer is the durability
+  // layer). Without this, rematch re-classifies the line back to needs_review.
+  const { error: skipUpsertErr } = await db
+    .from('inventory_skipped_descriptions')
+    .upsert({
+      business_id:             businessId,
+      supplier_fortnox_number: supplierFortnoxNumber,
+      normalised_description:  normalisedTarget,
+      unit:                    unitTarget,
+      skipped_by_user_id:      auth.userId ?? null,
+      skip_reason:             'owner_bulk_review',
+    }, { onConflict: 'business_id,supplier_fortnox_number,normalised_description,unit' })
+  if (skipUpsertErr) {
+    console.warn('[skip] persistent rule upsert failed (M129 not applied?):', skipUpsertErr.message)
+  }
+
   return NextResponse.json({
     ok: true,
     lines_skipped: updated,

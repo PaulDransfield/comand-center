@@ -103,6 +103,31 @@ export async function matchInvoiceLine(
     }
   }
 
+  // Gate 0a-prime — owner manually skipped this (supplier, description, unit)
+  // signature from the bulk-review queue (M129). Persistent across rematch
+  // sweeps and future invoice lines from the same supplier with the same
+  // description auto-skip too. Defensive PostgREST retry — if the M129
+  // migration hasn't been applied yet, missing-table errors are silent and
+  // the matcher proceeds as if no skip exists.
+  const ownerSkippedNormalised = normaliseDescription(line.raw_description)
+  if (ownerSkippedNormalised) {
+    const { data: skipRow, error: skipErr } = await db
+      .from('inventory_skipped_descriptions')
+      .select('business_id')
+      .eq('business_id', line.business_id)
+      .eq('supplier_fortnox_number', line.supplier_fortnox_number)
+      .eq('normalised_description', ownerSkippedNormalised)
+      .eq('unit', (line.unit ?? '').trim().toLowerCase())
+      .maybeSingle()
+    if (!skipErr && skipRow) {
+      return {
+        status: 'not_inventory', product_id: null, alias_id: null,
+        method: null, confidence: null, candidates: [],
+      }
+    }
+    // skipErr (missing table / RLS issue) → silently proceed, never block matching.
+  }
+
   // Gate 0b — description-level veto. Pallets, deposits, rebates, freight
   // and packaging units are never inventory regardless of which BAS account
   // the accountant booked them to. See lib/inventory/description-rules.ts
