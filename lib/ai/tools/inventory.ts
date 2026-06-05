@@ -67,6 +67,27 @@ export const INVENTORY_TOOLS: AnthropicToolDef[] = [
     },
   },
   {
+    name: 'top_products_by_supplier',
+    description:
+      `Rank products by total quantity OR total spend across every supplier invoice ` +
+      `line at this business. Filter by supplier name (substring match) and/or date ` +
+      `range. Returns the top N products with their aggregated stats.\n\n` +
+      `Use for "top 20 most-bought items from Martin Servera", "biggest spend ` +
+      `with Spendrups this year", "what's our highest-volume product?". Without a ` +
+      `supplier_filter the ranking spans every supplier. Without date filters it ` +
+      `spans every line in history.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        supplier_filter: { type: 'string', description: 'Substring match on supplier name (e.g. "martin servera"). Omit for all suppliers.' },
+        date_from:       { type: 'string', description: 'ISO date YYYY-MM-DD (inclusive). Omit for no lower bound.' },
+        date_to:         { type: 'string', description: 'ISO date YYYY-MM-DD (inclusive). Omit for no upper bound.' },
+        rank_by:         { type: 'string', enum: ['spend', 'quantity', 'invoice_count'], description: 'spend = sum(total_excl_vat) [default], quantity = sum(quantity), invoice_count = distinct invoice count' },
+        limit:           { type: 'integer', description: 'Top N to return (default 20, max 100)' },
+      },
+    },
+  },
+  {
     name: 'get_product_price_history',
     description:
       `Return the full price history for one product — every supplier-invoice ` +
@@ -88,9 +109,99 @@ export const INVENTORY_TOOLS: AnthropicToolDef[] = [
 
 export async function runInventoryTool(
   ctx:  ToolContext,
-  name: 'search_inventory_products' | 'get_invoice_lines' | 'get_inventory_summary' | 'get_product_price_history',
+  name: 'search_inventory_products' | 'get_invoice_lines' | 'get_inventory_summary' | 'get_product_price_history' | 'top_products_by_supplier',
   args: any,
 ): Promise<any> {
+  if (name === 'top_products_by_supplier') {
+    const supplierFilter = args.supplier_filter ? String(args.supplier_filter).trim().toLowerCase() : null
+    const dateFrom       = args.date_from ? String(args.date_from).trim() : null
+    const dateTo         = args.date_to   ? String(args.date_to).trim()   : null
+    const rankBy         = (['spend','quantity','invoice_count'] as const).includes(args.rank_by) ? args.rank_by : 'spend'
+    const limit          = Math.min(100, Math.max(1, parseInt(String(args.limit ?? 20), 10) || 20))
+
+    // Pull all matching lines. Bound by date if given. Aggregation is
+    // client-side because PostgREST doesn't expose SQL GROUP BY directly
+    // without a view/RPC, and supplier_invoice_lines is bounded per
+    // business (Chicce: 9k, Vero: 8k — well within memory).
+    let q = ctx.db
+      .from('supplier_invoice_lines')
+      .select('product_alias_id, raw_description, supplier_name_snapshot, supplier_fortnox_number, quantity, unit, total_excl_vat, price_per_unit, invoice_date, fortnox_invoice_number')
+      .eq('business_id', ctx.businessId)
+      .not('product_alias_id', 'is', null)   // only matched lines roll up cleanly
+    if (supplierFilter) q = q.ilike('supplier_name_snapshot', `%${supplierFilter}%`)
+    if (dateFrom)       q = q.gte('invoice_date', dateFrom)
+    if (dateTo)         q = q.lte('invoice_date', dateTo)
+    const { data: lines, error } = await q.range(0, 49_999)
+    if (error) return { error: 'query_failed', detail: error.message }
+    if (!lines || lines.length === 0) {
+      return { matches: [], message: 'No matched supplier_invoice_lines for the given filters.', filters: { supplierFilter, dateFrom, dateTo, rankBy, limit } }
+    }
+
+    // Map alias_id → product_id → product_name. Batch the alias lookup.
+    const aliasIds = Array.from(new Set(lines.map((l: any) => l.product_alias_id).filter(Boolean)))
+    const aliasToProduct = new Map<string, string>()
+    for (let i = 0; i < aliasIds.length; i += 100) {
+      const slice = aliasIds.slice(i, i + 100)
+      const { data: aRows } = await ctx.db.from('product_aliases').select('id, product_id').in('id', slice)
+      for (const a of aRows ?? []) aliasToProduct.set((a as any).id, (a as any).product_id)
+    }
+    const productIds = Array.from(new Set(Array.from(aliasToProduct.values())))
+    const productById = new Map<string, any>()
+    for (let i = 0; i < productIds.length; i += 100) {
+      const slice = productIds.slice(i, i + 100)
+      const { data: pRows } = await ctx.db.from('products').select('id, name, category, default_supplier_name').in('id', slice)
+      for (const p of pRows ?? []) productById.set((p as any).id, p)
+    }
+
+    // Aggregate.
+    type Agg = { product_id: string; name: string; category: string | null; supplier: string | null; total_spend: number; total_quantity: number; line_count: number; invoice_numbers: Set<string>; last_date: string | null }
+    const agg = new Map<string, Agg>()
+    for (const l of lines as any[]) {
+      const pid = aliasToProduct.get(l.product_alias_id)
+      if (!pid) continue
+      const prod = productById.get(pid)
+      if (!prod) continue
+      let row = agg.get(pid)
+      if (!row) {
+        row = { product_id: pid, name: prod.name, category: prod.category, supplier: prod.default_supplier_name ?? l.supplier_name_snapshot ?? null,
+                total_spend: 0, total_quantity: 0, line_count: 0, invoice_numbers: new Set(), last_date: null }
+        agg.set(pid, row)
+      }
+      const spend = l.total_excl_vat != null ? Number(l.total_excl_vat)
+                  : (l.price_per_unit != null && l.quantity != null) ? Number(l.price_per_unit) * Number(l.quantity)
+                  : 0
+      row.total_spend    += Number.isFinite(spend) ? spend : 0
+      row.total_quantity += l.quantity != null ? Number(l.quantity) : 0
+      row.line_count     += 1
+      if (l.fortnox_invoice_number) row.invoice_numbers.add(String(l.fortnox_invoice_number))
+      if (l.invoice_date && (!row.last_date || l.invoice_date > row.last_date)) row.last_date = l.invoice_date
+    }
+
+    const ranked = Array.from(agg.values()).sort((a, b) => {
+      if (rankBy === 'quantity')      return b.total_quantity - a.total_quantity
+      if (rankBy === 'invoice_count') return b.invoice_numbers.size - a.invoice_numbers.size
+      return b.total_spend - a.total_spend
+    }).slice(0, limit)
+
+    return {
+      filters: { supplierFilter, dateFrom, dateTo, rankBy, limit },
+      total_lines_aggregated: lines.length,
+      total_products_aggregated: agg.size,
+      top: ranked.map((r, i) => ({
+        rank:           i + 1,
+        product_id:     r.product_id,
+        name:           r.name,
+        category:       r.category,
+        supplier:       r.supplier,
+        total_spend:    Math.round(r.total_spend * 100) / 100,
+        total_quantity: Math.round(r.total_quantity * 1000) / 1000,
+        invoice_count:  r.invoice_numbers.size,
+        line_count:     r.line_count,
+        last_seen:      r.last_date,
+      })),
+    }
+  }
+
   if (name === 'get_product_price_history') {
     const productId = String(args.product_id ?? '').trim()
     if (!productId) return { error: 'invalid_args', detail: 'product_id required' }
