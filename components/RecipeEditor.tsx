@@ -72,13 +72,17 @@ interface DetailResponse {
   }
 }
 
-const RECIPE_TYPES   = ['starter','main','pasta','pizza','dessert','drink','cocktail','side','sauce','other']
+const RECIPE_TYPES   = ['starter','main','pasta','pizza','dessert','side','sauce','cocktail','drink','wine','beer','spirit','softdrink','cider','alcohol_free','other']
 const VAT_RATES      = [6, 12, 25] as const
 const UNIT_OPTIONS   = ['g','kg','ml','l','st','styck','msk','tsk','krm','knippe','klyfta','skiva','bunt','pkt','burk','flaska','portion'] as const
 const PRODUCT_CATEGORIES = ['food','beverage','alcohol','disposables','takeaway_material','cleaning','other'] as const
 
-const DISH_TYPES = new Set(['starter','main','pasta','pizza','dessert','drink','cocktail','side'])
-const SUB_TYPES  = new Set(['sauce'])
+const FOOD_TYPES  = new Set(['starter','main','pasta','pizza','dessert','side','other'])
+const DRINK_TYPES = new Set(['cocktail','drink','wine','beer','spirit','softdrink','cider','alcohol_free'])
+// Combined dish-shaped types — anything that can be sold to a customer.
+// Used by isSubRecipe derivation: if type is in DISH_TYPES → not a sub.
+const DISH_TYPES  = new Set([...FOOD_TYPES, ...DRINK_TYPES])
+const SUB_TYPES   = new Set(['sauce'])
 
 // ── Component ─────────────────────────────────────────────────────────
 export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; bizId: string }) {

@@ -80,34 +80,44 @@ export default function InventoryRecipesPage() {
   }, [bizId, load])
 
   const allRows = data?.recipes ?? []
-  const [viewFilter, setViewFilter] = useState<'dishes' | 'subrecipes' | 'all'>('dishes')
+  const [viewFilter, setViewFilter] = useState<'food' | 'drinks' | 'subrecipes' | 'all'>('food')
   const [typeFilter, setTypeFilter] = useState<string>('')   // empty = all types
   const [search, setSearch] = useState<string>('')
-  const DISH_TYPES = new Set(['starter', 'main', 'pasta', 'pizza', 'dessert', 'drink', 'cocktail', 'side'])
-  const isDish = (r: any) =>
-    r.is_subrecipe === true ? false :
-    (r.selling_price_ex_vat != null && Number(r.selling_price_ex_vat) > 0)
-    || (r.menu_price != null && Number(r.menu_price) > 0)
-    || (r.type && DISH_TYPES.has(String(r.type).toLowerCase()))
-  // Reset type filter when switching off dishes view (type pills only apply there)
-  useEffect(() => { if (viewFilter !== 'dishes' && typeFilter) setTypeFilter('') }, [viewFilter, typeFilter])
-  const baseRows = viewFilter === 'dishes'     ? allRows.filter(isDish)
-                : viewFilter === 'subrecipes'  ? allRows.filter((r: any) => !isDish(r))
+  const FOOD_TYPES  = new Set(['starter', 'main', 'pasta', 'pizza', 'dessert', 'side', 'other'])
+  const DRINK_TYPES = new Set(['cocktail', 'drink', 'wine', 'beer', 'spirit', 'softdrink', 'cider', 'alcohol_free'])
+  const typeLower = (r: any) => String(r.type ?? '').toLowerCase()
+  // Sub-recipe owner-toggle wins. Otherwise a recipe is food/drink based on
+  // its type, falling back to "food" when type is null but the row has a
+  // selling price (legacy bulk-imported items without explicit type).
+  const isSub  = (r: any) => r.is_subrecipe === true
+  const isFood = (r: any) => !isSub(r) && (FOOD_TYPES.has(typeLower(r))
+                                          || (!typeLower(r) && (r.selling_price_ex_vat || r.menu_price)))
+  const isDrink = (r: any) => !isSub(r) && DRINK_TYPES.has(typeLower(r))
+  // Reset type filter when switching to a view where it doesn't apply
+  useEffect(() => { if ((viewFilter !== 'food' && viewFilter !== 'drinks') && typeFilter) setTypeFilter('') }, [viewFilter, typeFilter])
+  // When the active view changes, the type-filter set changes too — clear
+  // it so a 'pizza' filter doesn't silently linger on the drinks tab.
+  useEffect(() => { setTypeFilter('') }, [viewFilter])
+  const baseRows = viewFilter === 'food'       ? allRows.filter(isFood)
+                : viewFilter === 'drinks'      ? allRows.filter(isDrink)
+                : viewFilter === 'subrecipes'  ? allRows.filter(isSub)
                 :                                allRows
-  // Type-filter (only meaningful on the dishes tab — sub-recipes share NULL/sauce types)
-  const typedRows = viewFilter === 'dishes' && typeFilter
-    ? baseRows.filter((r: any) => String(r.type ?? '').toLowerCase() === typeFilter)
+  const typedRows = typeFilter && (viewFilter === 'food' || viewFilter === 'drinks')
+    ? baseRows.filter((r: any) => typeLower(r) === typeFilter)
     : baseRows
   // Search by recipe name (case-insensitive substring)
   const q = search.trim().toLowerCase()
   const rows = q
     ? typedRows.filter((r: any) => String(r.name ?? '').toLowerCase().includes(q))
     : typedRows
-  const dishCount = allRows.filter(isDish).length
-  const subCount  = allRows.length - dishCount
-  // Counts per type (over the Dishes set) so pills can show how many in each
-  const dishesAll = allRows.filter(isDish)
-  const typeCountFor = (t: string) => dishesAll.filter((r: any) => String(r.type ?? '').toLowerCase() === t).length
+  const foodCount  = allRows.filter(isFood).length
+  const drinkCount = allRows.filter(isDrink).length
+  const subCount   = allRows.filter(isSub).length
+  // Counts per type within the current Food / Drinks bucket
+  const bucketRows = viewFilter === 'food' ? allRows.filter(isFood)
+                   : viewFilter === 'drinks' ? allRows.filter(isDrink)
+                   : []
+  const typeCountFor = (t: string) => bucketRows.filter((r: any) => typeLower(r) === t).length
   const visibleSummary = (() => {
     const visGp = rows.filter((r: any) => r.gp_pct != null && r.missing_prices === 0 && r.unit_mismatches === 0) as any[]
     const avgGp = visGp.length ? visGp.reduce((s: number, r: any) => s + r.gp_pct, 0) / visGp.length : null
@@ -160,7 +170,8 @@ export default function InventoryRecipesPage() {
         {bizId && allRows.length > 0 && (
           <>
             <div style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' as const }}>
-              <ViewPill active={viewFilter === 'dishes'}     onClick={() => setViewFilter('dishes')}     label="Dishes"      count={dishCount} />
+              <ViewPill active={viewFilter === 'food'}       onClick={() => setViewFilter('food')}       label="Food"        count={foodCount} />
+              <ViewPill active={viewFilter === 'drinks'}     onClick={() => setViewFilter('drinks')}     label="Drinks"      count={drinkCount} />
               <ViewPill active={viewFilter === 'subrecipes'} onClick={() => setViewFilter('subrecipes')} label="Sub-recipes" count={subCount} />
               <ViewPill active={viewFilter === 'all'}        onClick={() => setViewFilter('all')}        label="All"         count={allRows.length} />
               <input
@@ -180,20 +191,40 @@ export default function InventoryRecipesPage() {
                   background: '#fef3e0', color: UXP.coral, fontWeight: 600,
                   borderRadius: 999, letterSpacing: '0.02em',
                 }}
-                title="Dishes with unmapped or missing-cost ingredients. Their GP% is shown as 'Incomplete cost' until the gap is fixed.">
+                title="Recipes with unmapped or missing-cost ingredients. Their GP% is shown as 'Incomplete cost' until the gap is fixed.">
                   {visibleSummary.incomplete_count} incomplete cost
                 </span>
               )}
             </div>
 
-            {viewFilter === 'dishes' && dishCount > 0 && (
+            {viewFilter === 'food' && foodCount > 0 && (
               <div style={{ display: 'flex', gap: 5, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' as const }}>
                 <span style={{ fontSize: 10, color: UXP.ink4, marginRight: 2 }}>Type:</span>
-                <TypePill active={typeFilter === ''} onClick={() => setTypeFilter('')} label="All" count={dishCount} />
-                {['starter','pasta','pizza','main','side','dessert','drink','cocktail','other'].map(t => {
+                <TypePill active={typeFilter === ''} onClick={() => setTypeFilter('')} label="All" count={foodCount} />
+                {['starter','pasta','pizza','main','side','dessert','other'].map(t => {
                   const c = typeCountFor(t)
                   if (c === 0) return null
                   return <TypePill key={t} active={typeFilter === t} onClick={() => setTypeFilter(t)} label={t[0].toUpperCase() + t.slice(1)} count={c} />
+                })}
+              </div>
+            )}
+            {viewFilter === 'drinks' && drinkCount > 0 && (
+              <div style={{ display: 'flex', gap: 5, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' as const }}>
+                <span style={{ fontSize: 10, color: UXP.ink4, marginRight: 2 }}>Type:</span>
+                <TypePill active={typeFilter === ''} onClick={() => setTypeFilter('')} label="All" count={drinkCount} />
+                {[
+                  { k: 'cocktail',     l: 'Cocktail' },
+                  { k: 'wine',         l: 'Wine' },
+                  { k: 'beer',         l: 'Beer' },
+                  { k: 'spirit',       l: 'Spirit' },
+                  { k: 'cider',        l: 'Cider' },
+                  { k: 'softdrink',    l: 'Soft drink' },
+                  { k: 'alcohol_free', l: 'Alcohol-free' },
+                  { k: 'drink',        l: 'Other' },
+                ].map(t => {
+                  const c = typeCountFor(t.k)
+                  if (c === 0) return null
+                  return <TypePill key={t.k} active={typeFilter === t.k} onClick={() => setTypeFilter(t.k)} label={t.l} count={c} />
                 })}
               </div>
             )}
