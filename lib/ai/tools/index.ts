@@ -20,6 +20,7 @@
 import { runRevisorTool,   REVISOR_TOOLS }   from './revisor'
 import { runVoucherTool,   VOUCHER_TOOLS }   from './vouchers'
 import { runInventoryTool, INVENTORY_TOOLS } from './inventory'
+import { runOperationsTool, OPERATIONS_TOOLS } from './operations'
 
 const MAX_TOOL_OUTPUT_CHARS = 12_000
 
@@ -54,6 +55,12 @@ export type ToolName =
   | 'get_product_price_history'
   | 'top_products_by_supplier'
   | 'generate_report'
+  | 'get_revenue'
+  | 'get_pnl'
+  | 'get_labour_summary'
+  | 'list_recipes'
+  | 'get_reviews_summary'
+  | 'get_upcoming_calendar'
 
 // Document generation. The 'generate_report' tool now lives in
 // INVENTORY_TOOLS (lib/ai/tools/inventory.ts) which carries the full
@@ -65,6 +72,7 @@ export const TOOL_CATALOGUE: AnthropicToolDef[] = [
   ...REVISOR_TOOLS,
   ...VOUCHER_TOOLS,
   ...INVENTORY_TOOLS,
+  ...OPERATIONS_TOOLS,
 ]
 
 /**
@@ -96,6 +104,14 @@ export async function runTool(
       case 'top_products_by_supplier':
       case 'generate_report':
         result = await runInventoryTool(ctx, name as any, args ?? {})
+        break
+      case 'get_revenue':
+      case 'get_pnl':
+      case 'get_labour_summary':
+      case 'list_recipes':
+      case 'get_reviews_summary':
+      case 'get_upcoming_calendar':
+        result = await runOperationsTool(ctx, name as any, args ?? {})
         break
       default:
         return JSON.stringify({ error: 'unknown_tool', name })
