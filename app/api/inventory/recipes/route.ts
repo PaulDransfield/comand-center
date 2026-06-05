@@ -112,6 +112,24 @@ export async function GET(req: NextRequest) {
       // ingredient's supplier_article when no image_url is uploaded. We
       // surface the product_id here; the list page batch-fetches the URL.
       fallback_product_id:  (!r.image_url && ings.length === 1 && !ings[0].subrecipe_id && ings[0].product_id) ? ings[0].product_id : null,
+      // Per-glass margin (wines only) — bottle cost / portions, glass
+      // price inc-VAT to ex-VAT via vat_rate.
+      glass_price:          r.glass_price != null ? Number(r.glass_price) : null,
+      ...((() => {
+        if (r.type !== 'wine' || r.glass_price == null || Number(r.glass_price) <= 0 || !r.portions || r.portions <= 0) {
+          return { glass_cost: null, glass_cost_pct: null, glass_gp_pct: null, glass_gp_kr: null }
+        }
+        const vat            = r.vat_rate != null ? Number(r.vat_rate) : 25
+        const glassPriceEx   = Number(r.glass_price) / (1 + vat / 100)
+        const glassCost      = summary.food_cost / r.portions
+        const glassGpKr      = glassPriceEx - glassCost
+        return {
+          glass_cost:     glassCost,
+          glass_cost_pct: glassPriceEx > 0 ? (glassCost / glassPriceEx) * 100 : null,
+          glass_gp_pct:   glassPriceEx > 0 ? (glassGpKr / glassPriceEx) * 100 : null,
+          glass_gp_kr:    glassGpKr,
+        }
+      })()),
     }
   })
 

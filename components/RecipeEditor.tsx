@@ -472,18 +472,44 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
 
         {/* Live cost summary — always visible, never hidden behind an
             accordion. Incomplete-cost badge replaces the GP numbers
-            when warnings fire (honest-incomplete rule). */}
+            when warnings fire (honest-incomplete rule).
+            Wines with glass_price set get a second row of per-glass
+            metrics so the by-the-glass margin is as prominent as the
+            by-the-bottle one. */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginTop: 16, padding: '14px 16px', background: UXP.subtleBg, borderRadius: 8 }}>
-          <HeroStat label={costLabel}  value={fmtKr(summary.food_cost)} />
-          <HeroStat label={pctLabel}   value={summary.food_pct != null ? `${summary.food_pct.toFixed(1)} %` : '—'}
+          <HeroStat label={isDrink && recipe.type === 'wine' ? 'Bottle cost' : costLabel}  value={fmtKr(summary.food_cost)} />
+          <HeroStat label={isDrink && recipe.type === 'wine' ? 'Bottle cost %' : pctLabel} value={summary.food_pct != null ? `${summary.food_pct.toFixed(1)} %` : '—'}
                     color={summary.food_pct != null ? foodPctColor(summary.food_pct) : undefined} />
-          <HeroStat label="GP %"
+          <HeroStat label={isDrink && recipe.type === 'wine' ? 'Bottle GP %' : 'GP %'}
                     value={isIncomplete ? '—' : (summary.gp_pct != null ? `${summary.gp_pct.toFixed(1)} %` : '—')}
                     color={!isIncomplete && summary.gp_pct != null ? gpColor(summary.gp_pct) : undefined} />
-          <HeroStat label="GP kr"      value={isIncomplete ? '—' : (summary.gp_kr != null ? fmtKr(summary.gp_kr) : '—')}
+          <HeroStat label={isDrink && recipe.type === 'wine' ? 'Bottle GP kr' : 'GP kr'} value={isIncomplete ? '—' : (summary.gp_kr != null ? fmtKr(summary.gp_kr) : '—')}
                     color={!isIncomplete && summary.gp_pct != null ? gpColor(summary.gp_pct) : undefined} />
-          <HeroStat label="Menu price" value={recipe.menu_price != null ? fmtKr(recipe.menu_price) : '—'} />
+          <HeroStat label={isDrink && recipe.type === 'wine' ? 'Bottle price' : 'Menu price'} value={recipe.menu_price != null ? fmtKr(recipe.menu_price) : '—'} />
         </div>
+
+        {/* Per-glass strip — wine only when glass_price set. */}
+        {recipe.type === 'wine' && recipe.glass_price != null && Number(recipe.glass_price) > 0 && recipe.portions > 0 && (() => {
+          const glassPriceIncVat = Number(recipe.glass_price)
+          const vat              = recipe.vat_rate != null ? Number(recipe.vat_rate) : 25
+          const glassPriceExVat  = glassPriceIncVat / (1 + vat / 100)
+          const glassCost        = summary.food_cost / recipe.portions
+          const glassGpKr        = glassPriceExVat - glassCost
+          const glassGpPct       = glassPriceExVat > 0 ? (glassGpKr / glassPriceExVat) * 100 : null
+          const glassCostPct     = glassPriceExVat > 0 ? (glassCost   / glassPriceExVat) * 100 : null
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginTop: 8, padding: '14px 16px', background: UXP.lavFill, border: `0.5px solid ${UXP.lavMid}`, borderRadius: 8 }}>
+              <HeroStat label="Glass cost"   value={fmtKr(glassCost)} />
+              <HeroStat label="Glass cost %" value={glassCostPct != null ? `${glassCostPct.toFixed(1)} %` : '—'}
+                        color={glassCostPct != null ? foodPctColor(glassCostPct) : undefined} />
+              <HeroStat label="Glass GP %"   value={isIncomplete ? '—' : (glassGpPct != null ? `${glassGpPct.toFixed(1)} %` : '—')}
+                        color={!isIncomplete && glassGpPct != null ? gpColor(glassGpPct) : undefined} />
+              <HeroStat label="Glass GP kr"  value={isIncomplete ? '—' : fmtKr(glassGpKr)}
+                        color={!isIncomplete && glassGpPct != null ? gpColor(glassGpPct) : undefined} />
+              <HeroStat label="Glass price"  value={fmtKr(glassPriceIncVat)} />
+            </div>
+          )
+        })()}
 
         {isIncomplete && (
           <div style={{ marginTop: 10 }}>

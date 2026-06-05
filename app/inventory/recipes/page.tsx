@@ -38,6 +38,11 @@ interface RecipeRow {
   updated_at:       string
   image_url:        string | null
   fallback_product_id: string | null
+  glass_price:      number | null
+  glass_cost:       number | null
+  glass_cost_pct:   number | null
+  glass_gp_pct:     number | null
+  glass_gp_kr:      number | null
 }
 
 interface ListResponse {
@@ -312,11 +317,25 @@ export default function InventoryRecipesPage() {
             { id: 'menu',  header: t('colMenuPrice'),   align: 'right' as const, hideOnMobile: true,
               cell: r => <InlineMenuPrice recipeId={r.id} value={r.menu_price} onSaved={load} /> },
             { id: 'food',  header: viewFilter === 'drinks' ? 'Cost' : t('colFoodCost'),    align: 'right' as const, hideOnMobile: true,
-              cell: r => fmtKr(r.food_cost) },
+              cell: r => (
+                <span>
+                  {fmtKr(r.food_cost)}
+                  {r.glass_cost != null && (
+                    <span style={{ display: 'block', fontSize: 10, color: UXP.ink4, marginTop: 1 }}>
+                      glass {fmtKr(r.glass_cost)}
+                    </span>
+                  )}
+                </span>
+              ) },
             { id: 'foodpct', header: viewFilter === 'drinks' ? 'Cost %' : t('colFoodPct'),   align: 'right' as const, hideOnMobile: true,
               cell: r => (
                 <span style={{ color: r.food_pct == null ? UXP.ink3 : foodPctColor(r.food_pct) }}>
                   {r.food_pct != null ? `${r.food_pct.toFixed(1)} %` : '—'}
+                  {r.glass_cost_pct != null && (
+                    <span style={{ display: 'block', fontSize: 10, color: UXP.ink4, marginTop: 1, fontWeight: 400 }}>
+                      glass {r.glass_cost_pct.toFixed(1)} %
+                    </span>
+                  )}
                 </span>
               ) },
             // GP renders Incomplete badge on top — chef-readable. Shown on every tier.
@@ -333,6 +352,16 @@ export default function InventoryRecipesPage() {
                   {r.gp_kr != null && (
                     <span style={{ display: 'block', fontSize: 10, color: UXP.ink4, fontWeight: 400, marginTop: 1 }}>
                       {fmtKr(r.gp_kr)}
+                    </span>
+                  )}
+                  {r.glass_gp_pct != null && (
+                    <span style={{ display: 'block', fontSize: 10, color: gpColor(r.glass_gp_pct), fontWeight: 500, marginTop: 3 }}>
+                      glass {r.glass_gp_pct.toFixed(1)} %
+                      {r.glass_gp_kr != null && (
+                        <span style={{ display: 'block', fontSize: 9, color: UXP.ink4, fontWeight: 400 }}>
+                          {fmtKr(r.glass_gp_kr)}
+                        </span>
+                      )}
                     </span>
                   )}
                 </span>
