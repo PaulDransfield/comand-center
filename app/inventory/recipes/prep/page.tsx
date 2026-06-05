@@ -146,6 +146,12 @@ function formatPrepQty(qty: number, unit: string): { qty: number; unit: string }
 function round2(n: number) { return Math.round(n * 100) / 100 }
 
 const DISH_TYPES = new Set(['starter','main','pasta','pizza','dessert','drink','cocktail','side'])
+// Mirror /inventory/recipes/page.tsx — same buckets so Food/Drinks here lines
+// up with what the owner picked on the list. Wine, beer, spirits etc. count
+// as drinks even though they sit on the menu like a dish.
+const DRINK_TYPES = new Set(['cocktail','drink','wine','beer','spirit','softdrink','cider','alcohol_free'])
+const typeLower = (r: any) => String(r?.type ?? '').toLowerCase()
+const isDrink   = (r: any) => DRINK_TYPES.has(typeLower(r))
 const isDish = (r: any) =>
   (r.selling_price_ex_vat != null && Number(r.selling_price_ex_vat) > 0)
   || (r.menu_price != null && Number(r.menu_price) > 0)
@@ -566,11 +572,21 @@ function PrepListPageInner() {
     if (recomputeTimerRef.current) clearTimeout(recomputeTimerRef.current)
   }, [])
 
+  // View toggle — Food / Drinks. Chef and bartender prep separately, so the
+  // dish picker AND the aggregated prep output split by this. A line that
+  // has contributing dishes in both buckets shows in BOTH views (with the
+  // qty representing only that view's contribution to avoid double-prep).
+  const [view, setView] = useState<'food' | 'drinks'>('food')
+
+  const foodDishes  = useMemo(() => dishes.filter(d => !isDrink(d)), [dishes])
+  const drinkDishes = useMemo(() => dishes.filter(d =>  isDrink(d)), [dishes])
+
   const filteredDishes = useMemo(() => {
+    const bucket = view === 'drinks' ? drinkDishes : foodDishes
     const q = search.trim().toLowerCase()
-    if (!q) return dishes
-    return dishes.filter(d => d.name.toLowerCase().includes(q))
-  }, [dishes, search])
+    if (!q) return bucket
+    return bucket.filter(d => d.name.toLowerCase().includes(q))
+  }, [foodDishes, drinkDishes, view, search])
 
   const dishById = useMemo(() => {
     const m = new Map<string, DishRow>()
@@ -578,9 +594,41 @@ function PrepListPageInner() {
     return m
   }, [dishes])
 
+  // A prep line belongs to a view if ANY contributing dish is of that type.
+  // Shared lines (e.g. simple syrup used by both desserts and cocktails)
+  // appear in both views — better to show twice than miss it in one.
+  function lineMatchesView(sourceIds: string[] | undefined, target: 'food' | 'drinks'): boolean {
+    if (!sourceIds || sourceIds.length === 0) return target === 'food'   // safety: unknown source goes to Food
+    for (const id of sourceIds) {
+      const d = dishById.get(id)
+      if (!d) continue
+      if (target === 'drinks' && isDrink(d)) return true
+      if (target === 'food'   && !isDrink(d)) return true
+    }
+    return false
+  }
+
   // Split session lines by kind for the tabbed prep-mode display.
-  const sessionComponents = useMemo(() => sessionLines.filter(l => l.kind === 'component'), [sessionLines])
-  const sessionProducts   = useMemo(() => sessionLines.filter(l => l.kind === 'product'),   [sessionLines])
+  // ALSO filter by the active view so the bar staff don't see kitchen
+  // prep lines and vice versa.
+  const sessionComponents = useMemo(
+    () => sessionLines.filter(l => l.kind === 'component' && lineMatchesView(l.source_recipe_ids, view)),
+    [sessionLines, dishById, view],
+  )
+  const sessionProducts   = useMemo(
+    () => sessionLines.filter(l => l.kind === 'product'   && lineMatchesView(l.source_recipe_ids, view)),
+    [sessionLines, dishById, view],
+  )
+  // Same filtering for the create-mode preview output (computed from
+  // selected dishes, before a session is saved).
+  const previewComponents = useMemo(
+    () => (result?.components ?? []).filter(c => lineMatchesView(c.source_recipes, view)),
+    [result, dishById, view],
+  )
+  const previewProducts   = useMemo(
+    () => (result?.products ?? []).filter(p => lineMatchesView(p.source_recipes, view)),
+    [result, dishById, view],
+  )
   const totalLines        = sessionLines.length
   const doneLines         = useMemo(() => sessionLines.filter(l => l.checked_at != null).length, [sessionLines])
   const allDone           = totalLines > 0 && doneLines === totalLines
@@ -623,6 +671,39 @@ function PrepListPageInner() {
             </button>
           ) : null}
         </div>
+
+        {/* View toggle — separate Food and Drinks workflows for kitchen
+            vs bar staff. Filters the dish picker AND the aggregated prep
+            output. Counts reflect dishes per bucket so the chef sees
+            how many of each kind of recipe is available. */}
+        {bizId && !loadingDishes && dishes.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+            <button
+              onClick={() => setView('food')}
+              style={{
+                padding: '5px 12px', fontSize: 12, fontWeight: view === 'food' ? 600 : 500,
+                background: view === 'food' ? UXP.lavDeep : 'transparent',
+                color: view === 'food' ? '#fff' : UXP.ink3,
+                border: `0.5px solid ${view === 'food' ? UXP.lavDeep : UXP.border}`,
+                borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              Food <span style={{ opacity: 0.7, fontWeight: 400, marginLeft: 4 }}>{foodDishes.length}</span>
+            </button>
+            <button
+              onClick={() => setView('drinks')}
+              style={{
+                padding: '5px 12px', fontSize: 12, fontWeight: view === 'drinks' ? 600 : 500,
+                background: view === 'drinks' ? UXP.lavDeep : 'transparent',
+                color: view === 'drinks' ? '#fff' : UXP.ink3,
+                border: `0.5px solid ${view === 'drinks' ? UXP.lavDeep : UXP.border}`,
+                borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              Drinks & alcohol <span style={{ opacity: 0.7, fontWeight: 400, marginLeft: 4 }}>{drinkDishes.length}</span>
+            </button>
+          </div>
+        )}
 
         {error && (
           <div style={{ padding: '10px 14px', background: UXP.roseFill, border: `0.5px solid ${UXP.rose}`,
@@ -1254,10 +1335,10 @@ function PrepListPageInner() {
                       title="Components to prep"
                       subtitle="Sub-recipes rolled up across the entered dishes. Make this much of each."
                     >
-                      {result && result.components.length === 0 && (
-                        <Empty label="None of the entered dishes use sub-recipes." />
+                      {result && previewComponents.length === 0 && (
+                        <Empty label={view === 'drinks' ? 'No drink sub-recipes in the selected dishes.' : 'None of the entered dishes use sub-recipes.'} />
                       )}
-                      {result && result.components.length > 0 && (
+                      {result && previewComponents.length > 0 && (
                         <table style={tableStyle}>
                           <thead>
                             <tr style={{ background: UXP.subtleBg }}>
@@ -1268,7 +1349,7 @@ function PrepListPageInner() {
                             </tr>
                           </thead>
                           <tbody>
-                            {result.components.map(c => {
+                            {previewComponents.map(c => {
                               const f = formatPrepQty(c.total_qty, c.unit)
                               const sourceNames = c.source_recipes.map(rid => dishById.get(rid)?.name ?? '?')
                               return (
@@ -1313,10 +1394,10 @@ function PrepListPageInner() {
                       title="Raw ingredients to pull"
                       subtitle="Aggregated leaf ingredients across dishes and sub-recipes (where yields are set)."
                     >
-                      {result && result.products.length === 0 && (
-                        <Empty label="No raw ingredients aggregated yet. If some components are flagged 'Set yield', their ingredients can't roll up until you fix that." />
+                      {result && previewProducts.length === 0 && (
+                        <Empty label={view === 'drinks' ? 'No raw ingredients for drinks in the selected dishes yet.' : "No raw ingredients aggregated yet. If some components are flagged 'Set yield', their ingredients can't roll up until you fix that."} />
                       )}
-                      {result && result.products.length > 0 && (
+                      {result && previewProducts.length > 0 && (
                         <table style={tableStyle}>
                           <thead>
                             <tr style={{ background: UXP.subtleBg }}>
@@ -1326,7 +1407,7 @@ function PrepListPageInner() {
                             </tr>
                           </thead>
                           <tbody>
-                            {result.products.map(p => {
+                            {previewProducts.map(p => {
                               const f = formatPrepQty(p.total_qty, p.unit)
                               const sourceNames = p.source_recipes.map(rid => dishById.get(rid)?.name ?? '?')
                               return (
