@@ -39,14 +39,30 @@ export async function POST(req: NextRequest) {
   const db = createAdminClient()
 
   // 1. Get business_ids for these products (auth scope — only return
-  // data for products the caller actually has access to).
+  // data for products the caller actually has access to). Also pull
+  // external_catalogue_* so we can fall through to scraped catalogues
+  // (Spendrups etc.) when the regular (customer_fnx, article) join
+  // misses for products that were never invoiced via Fortnox supplier
+  // article numbers (wines bought direct, Systembolaget walk-ins, etc.).
   const allowedProducts = new Map<string, string>()   // product_id → business_id
+  const externalCatalogue = new Map<string, { source: string; article: string }>()
   for (let i = 0; i < productIds.length; i += 100) {
     const slice = productIds.slice(i, i + 100)
-    const { data } = await db.from('products').select('id, business_id').in('id', slice)
-    for (const p of data ?? []) {
+    let q = db.from('products').select('id, business_id, external_catalogue_source, external_catalogue_article').in('id', slice)
+    let { data, error } = await q
+    // Defensive: M128 may not be applied yet — retry without the columns.
+    if (error && /external_catalogue_/.test(error.message)) {
+      const fallback = await db.from('products').select('id, business_id').in('id', slice)
+      data = fallback.data as any; error = fallback.error as any
+    }
+    for (const p of (data ?? []) as any[]) {
       const allowed = new Set(auth.businessIds ?? [])
-      if (allowed.size === 0 || allowed.has(p.business_id)) allowedProducts.set(p.id, p.business_id)
+      if (allowed.size === 0 || allowed.has(p.business_id)) {
+        allowedProducts.set(p.id, p.business_id)
+        if (p.external_catalogue_source && p.external_catalogue_article) {
+          externalCatalogue.set(p.id, { source: p.external_catalogue_source, article: p.external_catalogue_article })
+        }
+      }
     }
   }
   if (allowedProducts.size === 0) {
@@ -68,13 +84,21 @@ export async function POST(req: NextRequest) {
   const aliasToProduct = new Map<string, string>()
   for (const [pid, ids] of aliasesByProduct) for (const aid of ids) aliasToProduct.set(aid, pid)
   const allAliasIds = [...aliasToProduct.keys()]
-  if (allAliasIds.length === 0) {
+  // Note: do NOT early-return on empty aliases — products with
+  // external_catalogue_* set but never invoiced still have a sentinel
+  // combo seeded in step 3 below.
+  if (allAliasIds.length === 0 && externalCatalogue.size === 0) {
     return NextResponse.json({ ok: true, by_product: {} }, { headers: { 'Cache-Control': 'no-store' } })
   }
 
   // 3. Pull recent supplier_invoice_lines for those aliases — we need
   // the (supplier, article) combo per product, latest first.
+  // Seed productToCombos with external_catalogue links so the fallback
+  // sentinel rows are looked up in the same supplier_articles round-trip.
   const productToCombos = new Map<string, Set<string>>()
+  for (const [pid, ec] of externalCatalogue) {
+    productToCombos.set(pid, new Set([`${ec.source}|${ec.article}`]))
+  }
   for (let i = 0; i < allAliasIds.length; i += 100) {
     const slice = allAliasIds.slice(i, i + 100)
     const { data } = await db.from('supplier_invoice_lines')
