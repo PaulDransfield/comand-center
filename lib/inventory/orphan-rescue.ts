@@ -75,11 +75,24 @@ interface RescueResult {
 
 const SYSTEM_PROMPT = `You verify whether two restaurant-catalogue products are the same SKU. The orphan is a newly-discovered product with no purchase history yet. The canonical is an existing product the matcher learned previously.
 
-Return verdict='same' ONLY when you're confident they refer to the same real-world item — same flavour, same fat %, same grade, same vintage, same brand line, same country origin where mentioned. Pack-size variations (e.g. 12kg vs 2kg) ALWAYS mean different SKUs.
+Return verdict='same' (confidence 0.95+) when they refer to the same real-world item even if one carries extra annotation suffixes that the other lacks:
+  - Certification labels (KRAV, EU-ekologisk, Nyckelhål, FSC, MSC, DOP, IGP, ASC)
+  - Origin descriptors as suffix (";Från Sverige", ";Mjölk fr Sverige", "Svensk Fågel")
+  - Supplier marketing tags (DG = Dagens Goda, RB, SC)
+  - Spelling / casing variation, accent differences, ä vs a
+  - Word-order swap, unit abbreviation (g vs gr, l vs L, kg vs k)
+  These are annotations on the same product; e.g. "KRAV MOROT SKALAD 5KG EU-ekologisk;KRAV;Nyckelhål" and "Krav Morot Skalad 5kg" are the same item.
 
-Return verdict='different' when any of the following differ: fat % (10% vs 23% mince), grade markings (Kl1 vs other), brand line (Mascarpone 47% vs 48%), country/origin codes (BR vs CR), vintage year, color/variety (Röd vs Gul), bone-in vs boneless.
+Return verdict='different' (confidence 0.9+) when ANY of the following materially differ:
+  - Fat percentage (Mascarpone 47% vs 48%, Nötfärs 10% vs 23%, Standardmjölk no-spec vs 3% — the 3%-explicit version is a different product since plain standardmjölk is also a real SKU)
+  - Quality grade indicators (Kl1 vs Kl4, Paprika 70+ vs 141+, marble grade)
+  - Vintage year on wines (Nebbiolo 2023 vs 2022)
+  - Country/origin code embedded in name as variant (Lök Röd 12kg ES vs 12kg SE — when origin is part of the SKU identity, not a metadata suffix)
+  - Color / variety (Tomat Röd vs Gul, Apelsin vs Apelsin Röd)
+  - Bone-in vs boneless, smoked vs unsmoked
+  - Pack count or size embedded in name (Lime 54st vs 60st, S.Pellegrino 75clx12 vs 25clx24, Lök Gul 12kg vs 2kg)
 
-Return verdict='uncertain' when the difference might just be supplier abbreviation or labelling style (KRAV vs Krav, Nyckelhål annotation, supplier code suffix) but you can't be sure.
+Return verdict='uncertain' only when you genuinely can't tell from the names whether the difference matters (e.g. a trailing "Gt" suffix of unknown meaning, an unfamiliar abbreviation that COULD be a brand or COULD be a size code).
 
 Reply ONLY with valid JSON: {"verdict":"same|different|uncertain","confidence":0.95,"reasoning":"<one short sentence>"}`
 
@@ -150,11 +163,13 @@ export async function runOrphanRescueForBusiness(
   const canonicals: Product[] = allProducts.filter((p: any) => (aliasCount.get(p.id) ?? 0) > 0)
   result.orphans_scanned = orphans.length
 
-  // 3. Skip orphans we've already touched in the last 7 days — agent should
-  //    not re-LLM the same orphan-canonical pairs every hour.
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  // 3. Skip orphans we've already touched in the last 24 hours — daily
+  //    cron retries everything else, including yesterday's
+  //    skipped_low_confidence cases (the candidate set may have changed
+  //    after new invoices land).
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   const { data: recent } = await db.from('orphan_rescue_log')
-    .select('orphan_product_id').eq('business_id', businessId).gte('created_at', sevenDaysAgo)
+    .select('orphan_product_id').eq('business_id', businessId).gte('created_at', oneDayAgo)
   const seenRecently = new Set((recent ?? []).map((r: any) => r.orphan_product_id))
 
   // 4. Index canonicals by default_supplier_fortnox_number for fast lookup.

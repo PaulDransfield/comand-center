@@ -25,11 +25,23 @@ function jaccard(a,b){const A=new Set(a),B=new Set(b);const inter=[...A].filter(
 
 const SYSTEM_PROMPT = `You verify whether two restaurant-catalogue products are the same SKU. The orphan is a newly-discovered product with no purchase history yet. The canonical is an existing product the matcher learned previously.
 
-Return verdict='same' ONLY when you're confident they refer to the same real-world item — same flavour, same fat %, same grade, same vintage, same brand line, same country origin where mentioned. Pack-size variations (e.g. 12kg vs 2kg) ALWAYS mean different SKUs.
+Return verdict='same' (confidence 0.95+) when they refer to the same real-world item even if one carries extra annotation suffixes that the other lacks:
+  - Certification labels (KRAV, EU-ekologisk, Nyckelhål, FSC, MSC, DOP, IGP, ASC)
+  - Origin descriptors as suffix (";Från Sverige", ";Mjölk fr Sverige", "Svensk Fågel")
+  - Supplier marketing tags (DG = Dagens Goda, RB, SC)
+  - Spelling / casing variation, accent differences
+  - Word-order swap, unit abbreviation (g vs gr, l vs L, kg vs k)
 
-Return verdict='different' when any of the following differ: fat % (10% vs 23% mince), grade markings (Kl1 vs other), brand line (Mascarpone 47% vs 48%), country/origin codes (BR vs CR), vintage year, color/variety (Röd vs Gul), bone-in vs boneless.
+Return verdict='different' (confidence 0.9+) when ANY of the following materially differ:
+  - Fat percentage (Mascarpone 47% vs 48%, Standardmjölk no-spec vs 3%)
+  - Quality grade indicators (Kl1 vs Kl4, marble grade)
+  - Vintage year on wines
+  - Country/origin code as variant (Lök Röd 12kg ES vs 12kg SE)
+  - Color / variety (Tomat Röd vs Gul)
+  - Bone-in vs boneless, smoked vs unsmoked
+  - Pack count or size embedded in name (Lime 54st vs 60st, Lök Gul 12kg vs 2kg)
 
-Return verdict='uncertain' when the difference might just be supplier abbreviation or labelling style (KRAV vs Krav, Nyckelhål annotation, supplier code suffix) but you can't be sure.
+Return verdict='uncertain' only when you genuinely can't tell.
 
 Reply ONLY with valid JSON: {"verdict":"same|different|uncertain","confidence":0.95,"reasoning":"<one short sentence>"}`
 
@@ -112,9 +124,9 @@ for (const biz of BUSINESSES) {
   const canonicals = (allProducts ?? []).filter(p => (aliasCount.get(p.id) ?? 0) > 0)
   console.log(`  Orphans: ${orphans.length}  Canonicals: ${canonicals.length}`)
 
-  const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString()
-  const { data: recent } = await db.from('orphan_rescue_log').select('orphan_product_id').eq('business_id', biz.id).gte('created_at', sevenDaysAgo)
-  const seen = new Set((recent ?? []).map(r => r.orphan_product_id))
+  // Manual re-run: drop the cooldown so we re-evaluate everything
+  // against the updated prompt.
+  const seen = new Set()
 
   const canonicalsBySupplier = new Map()
   for (const c of canonicals) {
