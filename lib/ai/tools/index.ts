@@ -54,6 +54,7 @@ export type ToolName =
   | 'get_inventory_summary'
   | 'get_product_price_history'
   | 'top_products_by_supplier'
+  | 'analyse_avtal_candidates'
   | 'generate_report'
   | 'get_revenue'
   | 'get_pnl'
@@ -102,6 +103,7 @@ export async function runTool(
       case 'get_inventory_summary':
       case 'get_product_price_history':
       case 'top_products_by_supplier':
+      case 'analyse_avtal_candidates':
       case 'generate_report':
         result = await runInventoryTool(ctx, name as any, args ?? {})
         break

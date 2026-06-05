@@ -113,6 +113,28 @@ export const INVENTORY_TOOLS: AnthropicToolDef[] = [
     },
   },
   {
+    name: 'analyse_avtal_candidates',
+    description:
+      `Rank products by how attractive they would be on a supplier contract ` +
+      `("avtal" — Swedish for negotiated-price agreement). Combines spend, ` +
+      `purchase frequency, price volatility, and price trend into a single ` +
+      `avtal_score. Each row carries reason flags explaining WHY it scored high.\n\n` +
+      `Use for "which items should I put on my avtal list", "what should I ` +
+      `negotiate a contract for", "where can I save the most money on procurement". ` +
+      `Default looks at last 12 months across every supplier; pass supplier_filter ` +
+      `to scope to one. Products bought fewer than min_invoices times are excluded ` +
+      `(default 3) — one-off purchases aren't real contract candidates.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        supplier_filter: { type: 'string', description: 'Substring match on supplier name. Omit for all suppliers.' },
+        months_back:     { type: 'integer', description: 'Trailing months to analyse (default 12, max 24).' },
+        min_invoices:    { type: 'integer', description: 'Minimum distinct invoices required to qualify (default 3).' },
+        top_n:           { type: 'integer', description: 'Top N candidates to return (default 20, max 50).' },
+      },
+    },
+  },
+  {
     name: 'get_product_price_history',
     description:
       `Return the full price history for one product — every supplier-invoice ` +
@@ -134,7 +156,7 @@ export const INVENTORY_TOOLS: AnthropicToolDef[] = [
 
 export async function runInventoryTool(
   ctx:  ToolContext,
-  name: 'search_inventory_products' | 'get_invoice_lines' | 'get_inventory_summary' | 'get_product_price_history' | 'top_products_by_supplier' | 'generate_report',
+  name: 'search_inventory_products' | 'get_invoice_lines' | 'get_inventory_summary' | 'get_product_price_history' | 'top_products_by_supplier' | 'analyse_avtal_candidates' | 'generate_report',
   args: any,
 ): Promise<any> {
   if (name === 'generate_report') {
@@ -248,6 +270,148 @@ export async function runInventoryTool(
         line_count:     r.line_count,
         last_seen:      r.last_date,
       })),
+    }
+  }
+
+  if (name === 'analyse_avtal_candidates') {
+    const supplierFilter = args.supplier_filter ? String(args.supplier_filter).trim().toLowerCase() : null
+    const monthsBack     = Math.min(24, Math.max(1, parseInt(String(args.months_back ?? 12), 10) || 12))
+    const minInvoices    = Math.max(1, parseInt(String(args.min_invoices ?? 3), 10) || 3)
+    const topN           = Math.min(50, Math.max(1, parseInt(String(args.top_n ?? 20), 10) || 20))
+    const cutoff         = new Date(Date.now() - monthsBack * 30 * 86400_000).toISOString().slice(0, 10)
+
+    let q = ctx.db
+      .from('supplier_invoice_lines')
+      .select('product_alias_id, supplier_name_snapshot, supplier_fortnox_number, quantity, total_excl_vat, price_per_unit, invoice_date, fortnox_invoice_number')
+      .eq('business_id', ctx.businessId)
+      .not('product_alias_id', 'is', null)
+      .gte('invoice_date', cutoff)
+    if (supplierFilter) q = q.ilike('supplier_name_snapshot', `%${supplierFilter}%`)
+    const { data: lines, error } = await q.range(0, 49_999)
+    if (error) return { error: 'query_failed', detail: error.message }
+    if (!lines || lines.length === 0) {
+      return { candidates: [], message: 'No matched invoice lines in window.', filters: { supplierFilter, monthsBack, minInvoices, topN } }
+    }
+
+    // alias → product lookup (batched)
+    const aliasIds = Array.from(new Set(lines.map((l: any) => l.product_alias_id).filter(Boolean)))
+    const aliasToProduct = new Map<string, string>()
+    for (let i = 0; i < aliasIds.length; i += 100) {
+      const slice = aliasIds.slice(i, i + 100)
+      const { data: aRows } = await ctx.db.from('product_aliases').select('id, product_id').in('id', slice)
+      for (const a of aRows ?? []) aliasToProduct.set((a as any).id, (a as any).product_id)
+    }
+    const productIds = Array.from(new Set(Array.from(aliasToProduct.values())))
+    const productById = new Map<string, any>()
+    for (let i = 0; i < productIds.length; i += 100) {
+      const slice = productIds.slice(i, i + 100)
+      const { data: pRows } = await ctx.db.from('products').select('id, name, category, default_supplier_name, invoice_unit').in('id', slice)
+      for (const p of pRows ?? []) productById.set((p as any).id, p)
+    }
+
+    // Per-product aggregation: spend, line count, suppliers, monthly buckets, unit-price series.
+    type Agg = {
+      product_id: string; name: string; category: string | null; supplier: string | null; invoice_unit: string | null
+      total_spend: number; line_count: number
+      invoice_numbers: Set<string>; months: Set<string>; suppliers: Set<string>
+      pricePoints: Array<{ date: string; unit_price: number }>
+    }
+    const agg = new Map<string, Agg>()
+    for (const l of lines as any[]) {
+      const pid = aliasToProduct.get(l.product_alias_id); if (!pid) continue
+      const prod = productById.get(pid); if (!prod) continue
+      let row = agg.get(pid)
+      if (!row) {
+        row = { product_id: pid, name: prod.name, category: prod.category, supplier: prod.default_supplier_name ?? l.supplier_name_snapshot ?? null, invoice_unit: prod.invoice_unit,
+                total_spend: 0, line_count: 0, invoice_numbers: new Set(), months: new Set(), suppliers: new Set(), pricePoints: [] }
+        agg.set(pid, row)
+      }
+      const spend = l.total_excl_vat != null ? Number(l.total_excl_vat)
+                  : (l.price_per_unit != null && l.quantity != null) ? Number(l.price_per_unit) * Number(l.quantity)
+                  : 0
+      row.total_spend += Number.isFinite(spend) ? spend : 0
+      row.line_count  += 1
+      if (l.fortnox_invoice_number)  row.invoice_numbers.add(String(l.fortnox_invoice_number))
+      if (l.supplier_fortnox_number) row.suppliers.add(String(l.supplier_fortnox_number))
+      if (l.invoice_date)            row.months.add(String(l.invoice_date).slice(0, 7))
+      const up = l.price_per_unit != null ? Number(l.price_per_unit) : null
+      if (up != null && Number.isFinite(up) && up > 0 && l.invoice_date) row.pricePoints.push({ date: l.invoice_date, unit_price: up })
+    }
+
+    // Score each candidate.
+    type Scored = ReturnType<typeof scoreCandidate>
+    function scoreCandidate(a: Agg) {
+      const points = a.pricePoints.sort((x, y) => x.date.localeCompare(y.date))
+      const prices = points.map(p => p.unit_price)
+      const mean = prices.length ? prices.reduce((s, x) => s + x, 0) / prices.length : 0
+      const variance = prices.length > 1 ? prices.reduce((s, x) => s + (x - mean) ** 2, 0) / (prices.length - 1) : 0
+      const stdev = Math.sqrt(variance)
+      const volatilityPct = mean > 0 ? (stdev / mean) * 100 : 0   // coefficient of variation
+      // Trend: avg of last 25% vs avg of first 25%.
+      let trendPct = 0
+      if (points.length >= 4) {
+        const qsize = Math.max(1, Math.floor(points.length / 4))
+        const head = prices.slice(0, qsize).reduce((s, x) => s + x, 0) / qsize
+        const tail = prices.slice(-qsize).reduce((s, x) => s + x, 0) / qsize
+        if (head > 0) trendPct = ((tail - head) / head) * 100
+      }
+      const monthsCovered = a.months.size
+      const purchaseConsistency = Math.min(1, monthsCovered / monthsBack)
+      // Score: log-scaled spend × consistency × (1 + volatility bonus + trend bonus) × (1 + multi-supplier bonus)
+      // - log10(spend+1): dampens so a 10× spend bump is ~+1 in score, not 10×
+      // - consistency: bias toward items bought every month
+      // - volatility bonus: capped at +0.75 (CV 50% → +0.75)
+      // - trend bonus: only positive (upward price) trends boost; capped at +0.5
+      // - multi-supplier bonus: if 2+ suppliers seen, +0.25 (consolidation savings)
+      const volBonus  = Math.min(0.75, volatilityPct / 50 * 0.75)
+      const trendBonus= Math.max(0, Math.min(0.5, trendPct / 20 * 0.5))
+      const multiSupBonus = a.suppliers.size >= 2 ? 0.25 : 0
+      const score = Math.log10(a.total_spend + 1) * (0.5 + purchaseConsistency) * (1 + volBonus + trendBonus + multiSupBonus)
+
+      const reasons: string[] = []
+      if (a.total_spend >= 50_000)        reasons.push(`Large spend: SEK ${Math.round(a.total_spend).toLocaleString('sv-SE')} over ${monthsCovered} month${monthsCovered === 1 ? '' : 's'}`)
+      else if (a.total_spend >= 10_000)   reasons.push(`Mid-tier spend: SEK ${Math.round(a.total_spend).toLocaleString('sv-SE')}`)
+      if (purchaseConsistency >= 0.8)     reasons.push(`Bought every month — predictable demand`)
+      else if (purchaseConsistency >= 0.5)reasons.push(`Bought ${monthsCovered}/${monthsBack} months`)
+      if (volatilityPct >= 15)            reasons.push(`Price varies ±${volatilityPct.toFixed(0)}% — locking in saves on volatility`)
+      if (trendPct >= 8)                  reasons.push(`Price trending up ${trendPct.toFixed(0)}% — avtal protects against further increases`)
+      if (a.suppliers.size >= 2)          reasons.push(`Bought from ${a.suppliers.size} suppliers — avtal would consolidate`)
+
+      // Annualised projection if current pace continues, plus a 5%-discount savings illustration.
+      const annualisedSpend = monthsCovered > 0 ? a.total_spend * (12 / monthsCovered) : a.total_spend
+      const estSavings5pct  = annualisedSpend * 0.05
+
+      return {
+        product_id:        a.product_id,
+        name:              a.name,
+        category:          a.category,
+        primary_supplier:  a.supplier,
+        supplier_count:    a.suppliers.size,
+        unit:              a.invoice_unit,
+        total_spend:       Math.round(a.total_spend),
+        annualised_spend_sek: Math.round(annualisedSpend),
+        est_savings_at_5pct_avtal_sek: Math.round(estSavings5pct),
+        invoice_count:     a.invoice_numbers.size,
+        months_covered:    monthsCovered,
+        purchase_consistency_pct: Math.round(purchaseConsistency * 100),
+        avg_unit_price:    mean > 0 ? Math.round(mean * 100) / 100 : null,
+        price_volatility_pct: Math.round(volatilityPct * 10) / 10,
+        price_trend_pct:   Math.round(trendPct * 10) / 10,
+        avtal_score:       Math.round(score * 100) / 100,
+        why:               reasons,
+      }
+    }
+
+    const qualifying = Array.from(agg.values()).filter(a => a.invoice_numbers.size >= minInvoices)
+    const ranked = qualifying.map(scoreCandidate).sort((a, b) => b.avtal_score - a.avtal_score).slice(0, topN)
+
+    return {
+      filters: { supplierFilter, monthsBack, minInvoices, topN, since: cutoff },
+      products_analysed: agg.size,
+      products_qualifying: qualifying.length,
+      lines_aggregated: lines.length,
+      candidates: ranked,
+      methodology: `avtal_score combines: spend (log-scaled), purchase consistency (months covered ÷ months in window), price volatility bonus (CV up to +75%), upward-price-trend bonus (up to +50%), and multi-supplier consolidation bonus (+25% when 2+ suppliers seen). Higher score = stronger contract candidate.`,
     }
   }
 
