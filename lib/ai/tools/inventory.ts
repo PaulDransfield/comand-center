@@ -71,27 +71,22 @@ export const INVENTORY_TOOLS: AnthropicToolDef[] = [
     description:
       `Build a downloadable PDF / Word / PowerPoint report for the current business. ` +
       `Returns a URL the user can click to download.\n\n` +
-      `Report types — READ CAREFULLY, the names overlap:\n` +
-      `  • 'top-products' — TOP N PURCHASED ITEMS (one row per PRODUCT). Use this ` +
-      `whenever the user asks for "top items / products / purchases from supplier X", ` +
-      `"top 20 most bought from Martin Servera", "biggest purchases", "what did I ` +
-      `buy the most of". Accepts supplier_filter, date_from, date_to, rank_by, limit.\n` +
-      `  • 'supplier' — SUPPLIER-LEVEL SPEND ROLLUP (one row per SUPPLIER, total SEK ` +
-      `per supplier). Use only when the user asks for "spend by supplier", "which ` +
-      `suppliers cost me the most", "supplier breakdown". This is a SUPPLIER summary, ` +
-      `NOT a product list.\n` +
+      `Report types:\n` +
+      `  • 'top-products' — TOP N PURCHASED ITEMS / PRODUCTS. One row per PRODUCT. ` +
+      `Use this for ANY question about purchases, items, products, or top-N at a ` +
+      `supplier (e.g. "top 20 from Martin Servera", "biggest purchases", "what did ` +
+      `I buy the most of", "show me my top items"). Pass supplier_filter for ` +
+      `single-supplier scoping. ALSO accepts date_from, date_to, rank_by, limit.\n` +
       `  • 'margin' — recipe/menu margin analysis (food cost vs menu price per dish).\n` +
       `  • 'cost' — overhead/operating cost breakdown.\n\n` +
-      `If unsure between supplier and top-products: "X items / X products / top N" → ` +
-      `always top-products. "X spend / X breakdown / cost by supplier" → supplier.\n\n` +
       `Use AFTER you've already shown the answer in chat — the report is for the user ` +
       `to save / share / print.`,
     input_schema: {
       type: 'object',
       properties: {
-        report_type:     { type: 'string', enum: ['margin','cost','supplier','top-products'], description: "Which report. 'top-products' = top N PRODUCTS purchased. 'supplier' = spend rolled up PER SUPPLIER (no product breakdown)." },
+        report_type:     { type: 'string', enum: ['margin','cost','top-products'], description: "Which report. Default to 'top-products' for any purchase/item/product question." },
         format:          { type: 'string', enum: ['pdf','docx','pptx'], description: 'Output format (default pdf).' },
-        supplier_filter: { type: 'string', description: 'top-products only — substring on supplier name.' },
+        supplier_filter: { type: 'string', description: 'top-products only — substring on supplier name (e.g. "martin servera").' },
         date_from:       { type: 'string', description: 'top-products only — YYYY-MM-DD.' },
         date_to:         { type: 'string', description: 'top-products only — YYYY-MM-DD.' },
         rank_by:         { type: 'string', enum: ['spend','quantity','invoice_count'], description: 'top-products only — ranking metric.' },
@@ -172,9 +167,13 @@ export async function runInventoryTool(
   args: any,
 ): Promise<any> {
   if (name === 'generate_report') {
-    const reportType = String(args.report_type ?? '').trim()
-    if (!['margin','cost','supplier','top-products'].includes(reportType)) {
-      return { error: 'invalid_args', detail: 'report_type must be margin | cost | supplier | top-products' }
+    let reportType = String(args.report_type ?? '').trim()
+    // Coerce 'supplier' → 'top-products'. The LLM still confuses these because
+    // both mention suppliers; we never want the per-supplier rollup PDF from
+    // chat — a "top items from supplier X" question is always per-product.
+    if (reportType === 'supplier') reportType = 'top-products'
+    if (!['margin','cost','top-products'].includes(reportType)) {
+      return { error: 'invalid_args', detail: 'report_type must be margin | cost | top-products' }
     }
     const format = ['pdf','docx','pptx'].includes(args.format) ? args.format : 'pdf'
     const qs = new URLSearchParams({ business_id: ctx.businessId, format })

@@ -242,7 +242,12 @@ export async function POST(req: NextRequest) {
   let downloads: Array<{ label: string; url: string }> | undefined
   const reportCall = toolsCalled.find(t => t.name === 'generate_report')
   if (reportCall && businessId) {
-    const rtype = ['margin', 'cost', 'supplier', 'top-products'].includes(reportCall.args?.report_type) ? reportCall.args.report_type : 'margin'
+    // Coerce 'supplier' → 'top-products' (see lib/ai/tools/inventory.ts). The LLM
+    // still picks 'supplier' for "top items from supplier X" questions; the
+    // user always wants the per-product list, never the supplier-spend rollup.
+    let rtype = reportCall.args?.report_type
+    if (rtype === 'supplier') rtype = 'top-products'
+    rtype = ['margin', 'cost', 'top-products'].includes(rtype) ? rtype : 'top-products'
     const fmts: string[] = Array.isArray(reportCall.args?.formats) && reportCall.args.formats.length ? reportCall.args.formats : ['pdf', 'docx', 'pptx']
     // Pass-through filter params for top-products. Margin/cost/supplier ignore them.
     const filterQs = new URLSearchParams()
