@@ -1,9 +1,9 @@
 // scripts/diag/match-spendrups-products.mjs
 //
 // Walk every business's beverage/alcohol products + match against the
-// scraped Spendrups catalogue by NAME + VOLUME + ABV. When a confident
-// single match is found, set products.external_catalogue_source='SPENDRUPS'
-// + products.external_catalogue_article=<spendrups article number>.
+// scraped supplier_articles catalogues (Spendrups + Carlsberg) by
+// NAME + VOLUME + ABV. When a confident single match is found, set
+// products.external_catalogue_source + external_catalogue_article.
 // Downstream the supplier-article batch endpoint reads these to surface
 // the Spendrups thumbnail + spec data on recipe rows + EditItemModal.
 //
@@ -87,17 +87,31 @@ function inferProductAbv(name) {
   return m ? Number(m[1].replace(',', '.')) : null
 }
 
-// 1. Load all Spendrups articles
-const { data: spendrups } = await db.from('supplier_articles')
-  .select('article_number, official_name, properties, image_cached_path, brand, country_origin')
-  .eq('supplier_fortnox_number', 'SPENDRUPS').eq('source', 'spendrups_scrape').eq('fetch_status', 'ok')
-console.log(`Spendrups articles loaded: ${spendrups.length}`)
-const spendrupsIndex = spendrups.map(s => ({
-  ...s,
-  tokens:  tokens(s.official_name),
-  vol_ml:  s.properties?.volume_ml ?? null,
-  abv:     s.properties?.alcohol_pct ?? null,
-}))
+// 1. Load all external-catalogue articles (Spendrups + Carlsberg).
+//    Carlsberg tiles are brand-level (no volume_ml) so the matcher
+//    needs Jaccard + ABV alone for those — the volume gate already
+//    skips when either side is null so the same engine handles both.
+const SOURCES = [
+  { sentinel: 'SPENDRUPS', source: 'spendrups_scrape' },
+  { sentinel: 'CARLSBERG', source: 'carlsberg_scrape' },
+]
+const catalogueIndex = []
+for (const src of SOURCES) {
+  const { data } = await db.from('supplier_articles')
+    .select('article_number, official_name, properties, image_cached_path, brand, country_origin')
+    .eq('supplier_fortnox_number', src.sentinel).eq('source', src.source).eq('fetch_status', 'ok')
+  console.log(`${src.sentinel} articles loaded: ${data?.length ?? 0}`)
+  for (const s of data ?? []) {
+    catalogueIndex.push({
+      ...s,
+      sentinel: src.sentinel,
+      tokens:  tokens(s.official_name),
+      vol_ml:  s.properties?.volume_ml ?? null,
+      abv:     s.properties?.alcohol_pct ?? null,
+    })
+  }
+}
+const spendrupsIndex = catalogueIndex   // legacy var name preserved
 
 for (const biz of BUSINESSES) {
   console.log(`\n══ ${biz.name} ══════════════════════════════════════════════════════`)
@@ -155,7 +169,7 @@ for (const biz of BUSINESSES) {
 
   console.log(`\n  Sample matches:`)
   for (const { p, hit } of matched.slice(0, 12)) {
-    console.log(`    "${p.name?.slice(0,40).padEnd(40)}"  →  "${hit.s.official_name?.slice(0,40)}"  j=${hit.j.toFixed(2)}  art=${hit.s.article_number}`)
+    console.log(`    "${p.name?.slice(0,40).padEnd(40)}"  →  [${hit.s.sentinel}] "${hit.s.official_name?.slice(0,40)}"  j=${hit.j.toFixed(2)}  art=${hit.s.article_number}`)
   }
   if (ambiguous.length > 0) {
     console.log(`\n  Sample ambiguous (top 2 candidates):`)
@@ -169,7 +183,7 @@ for (const biz of BUSINESSES) {
     let ok = 0
     for (const { p, hit } of matched) {
       const { error } = await db.from('products').update({
-        external_catalogue_source:  'SPENDRUPS',
+        external_catalogue_source:  hit.s.sentinel,
         external_catalogue_article: hit.s.article_number,
       }).eq('id', p.id)
       if (error) console.error(`  ${p.id.slice(0,8)} ${error.message}`)

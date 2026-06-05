@@ -402,7 +402,23 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
       {/* ── HEADER ──────────────────────────────────────────────────── */}
       <div style={headerCard}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14 }}>
-          <RecipeImageEditor recipeId={recipe.id} imageUrl={recipe.image_url ?? null} onChange={load} />
+          <RecipeImageEditor
+            recipeId={recipe.id}
+            imageUrl={recipe.image_url ?? null}
+            fallbackImageUrl={
+              // 1-ingredient recipe (drinks, single-product dishes etc.) gets
+              // the product's supplier_article thumbnail as a free header image
+              // until the owner uploads their own. Pure display fallback —
+              // not persisted to recipes.image_url, so re-scrapes flow through.
+              !recipe.image_url
+              && summary.ingredients.length === 1
+              && !summary.ingredients[0].is_subrecipe
+              && summary.ingredients[0].product_id
+                ? imageByProduct[summary.ingredients[0].product_id!]?.image_url ?? null
+                : null
+            }
+            onChange={load}
+          />
           <div style={{ flex: 1, minWidth: 0 }}>
             <select
               value={recipe.type ?? ''}
@@ -702,11 +718,14 @@ function BackLink({ router }: { router: ReturnType<typeof useRouter> }) {
 // ── RecipeImageEditor ─────────────────────────────────────────────────
 // Square thumbnail tile in the header. Click to upload (file picker),
 // click again on an existing image to replace, tiny × removes.
-function RecipeImageEditor({ recipeId, imageUrl, onChange }: {
+function RecipeImageEditor({ recipeId, imageUrl, fallbackImageUrl, onChange }: {
   recipeId: string
   imageUrl: string | null
+  fallbackImageUrl?: string | null
   onChange: () => void
 }) {
+  const showFallback = !imageUrl && !!fallbackImageUrl
+  const displayUrl = imageUrl ?? (showFallback ? fallbackImageUrl! : null)
   const [busy, setBusy] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
@@ -745,23 +764,31 @@ function RecipeImageEditor({ recipeId, imageUrl, onChange }: {
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={busy}
-        title={imageUrl ? 'Click to replace' : 'Click to upload a photo'}
+        title={displayUrl ? (showFallback ? 'Auto-shown from ingredient. Click to upload your own.' : 'Click to replace') : 'Click to upload a photo'}
         style={{
           width: 90, height: 90, borderRadius: 8,
-          background: imageUrl ? '#fff' : UXP.subtleBg,
+          background: displayUrl ? '#fff' : UXP.subtleBg,
           border: `0.5px solid ${UXP.border}`,
           cursor: busy ? 'wait' : 'pointer', padding: 0, overflow: 'hidden',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: 'inherit',
+          fontFamily: 'inherit', position: 'relative',
         }}
       >
-        {imageUrl ? (
+        {displayUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <img src={displayUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', padding: showFallback ? 4 : 0 }} />
         ) : (
           <span style={{ fontSize: 10, color: UXP.ink4, textAlign: 'center', lineHeight: 1.3, padding: 4 }}>
             {busy ? 'Uploading…' : '+ Add photo'}
           </span>
+        )}
+        {showFallback && !busy && (
+          <span style={{
+            position: 'absolute', bottom: 2, left: 2,
+            fontSize: 8, color: UXP.ink4, background: 'rgba(255,255,255,0.85)',
+            padding: '1px 4px', borderRadius: 3, lineHeight: 1.2,
+            textTransform: 'uppercase', letterSpacing: 0.3,
+          }}>auto</span>
         )}
       </button>
       {imageUrl && !busy && (
