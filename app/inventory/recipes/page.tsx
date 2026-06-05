@@ -117,6 +117,13 @@ export default function InventoryRecipesPage() {
   const [viewFilter, setViewFilter] = useState<'food' | 'drinks' | 'subrecipes' | 'all'>('food')
   const [typeFilter, setTypeFilter] = useState<string>('')   // empty = all types
   const [search, setSearch] = useState<string>('')
+  // Click-to-sort column. null = default (alphabetical by name from API).
+  const [sortKey, setSortKey] = useState<'type'|'menu_price'|'food_cost'|'food_pct'|'gp_pct'|null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  function toggleSort(k: typeof sortKey) {
+    if (sortKey === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(k); setSortDir('asc') }
+  }
   const FOOD_TYPES  = new Set(['starter', 'main', 'pasta', 'pizza', 'dessert', 'side', 'other'])
   const DRINK_TYPES = new Set(['cocktail', 'drink', 'wine', 'beer', 'spirit', 'softdrink', 'cider', 'alcohol_free'])
   const typeLower = (r: any) => String(r.type ?? '').toLowerCase()
@@ -141,9 +148,21 @@ export default function InventoryRecipesPage() {
     : baseRows
   // Search by recipe name (case-insensitive substring)
   const q = search.trim().toLowerCase()
-  const rows = q
+  const searchedRows = q
     ? typedRows.filter((r: any) => String(r.name ?? '').toLowerCase().includes(q))
     : typedRows
+  // Apply click-to-sort. Nulls sink to the bottom regardless of direction
+  // so the chef always sees the populated rows together.
+  const rows = sortKey == null ? searchedRows : [...searchedRows].sort((a: any, b: any) => {
+    const av = sortKey === 'type' ? String(a.type ?? '').toLowerCase() : (a[sortKey] ?? null)
+    const bv = sortKey === 'type' ? String(b.type ?? '').toLowerCase() : (b[sortKey] ?? null)
+    if (av == null && bv == null) return 0
+    if (av == null) return 1
+    if (bv == null) return -1
+    if (av < bv) return sortDir === 'asc' ? -1 : 1
+    if (av > bv) return sortDir === 'asc' ? 1 : -1
+    return 0
+  })
   const foodCount  = allRows.filter(isFood).length
   const drinkCount = allRows.filter(isDrink).length
   const subCount   = allRows.filter(isSub).length
@@ -283,6 +302,27 @@ export default function InventoryRecipesPage() {
 
         {!loading && rows.length > 0 && (() => {
           const incomplete = (r: RecipeRow) => r.missing_prices > 0 || r.unit_mismatches > 0
+          // Sortable header helper — clickable label + tiny arrow when active.
+          // Keyboard-accessible via tabIndex/onKeyDown.
+          function SortHdr({ k, children }: { k: NonNullable<typeof sortKey>, children: React.ReactNode }) {
+            const active = sortKey === k
+            return (
+              <span
+                role="button" tabIndex={0}
+                onClick={(e) => { e.stopPropagation(); toggleSort(k) }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort(k) } }}
+                style={{
+                  cursor: 'pointer', userSelect: 'none' as const,
+                  color: active ? UXP.lavText : 'inherit',
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                }}
+                title="Click to sort"
+              >
+                {children}
+                {active && <span style={{ fontSize: 9 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+              </span>
+            )
+          }
           const cols: Array<DataTableColumn<RecipeRow>> = [
             { id: 'img', header: '',
               cell: r => {
@@ -310,13 +350,13 @@ export default function InventoryRecipesPage() {
               } },
             { id: 'name',  header: t('colName'),  primary: true,
               cell: r => <span style={{ fontWeight: 500, color: UXP.ink1 }}>{r.name}</span> },
-            { id: 'type',  header: t('colType'),
+            { id: 'type',  header: <SortHdr k="type">{t('colType')}</SortHdr>,
               cell: r => <InlineType recipeId={r.id} value={r.type} onSaved={load} /> },
             { id: 'ing',   header: t('colIngredients'), align: 'right' as const,
               cell: r => <span style={{ color: UXP.ink3 }}>{r.ingredient_count}</span> },
-            { id: 'menu',  header: t('colMenuPrice'),   align: 'right' as const, hideOnMobile: true,
+            { id: 'menu',  header: <SortHdr k="menu_price">{t('colMenuPrice')}</SortHdr>,   align: 'right' as const, hideOnMobile: true,
               cell: r => <InlineMenuPrice recipeId={r.id} value={r.menu_price} onSaved={load} /> },
-            { id: 'food',  header: viewFilter === 'drinks' ? 'Cost' : t('colFoodCost'),    align: 'right' as const, hideOnMobile: true,
+            { id: 'food',  header: <SortHdr k="food_cost">{viewFilter === 'drinks' ? 'Cost' : t('colFoodCost')}</SortHdr>,    align: 'right' as const, hideOnMobile: true,
               cell: r => (
                 <span>
                   {fmtKr(r.food_cost)}
@@ -327,7 +367,7 @@ export default function InventoryRecipesPage() {
                   )}
                 </span>
               ) },
-            { id: 'foodpct', header: viewFilter === 'drinks' ? 'Cost %' : t('colFoodPct'),   align: 'right' as const, hideOnMobile: true,
+            { id: 'foodpct', header: <SortHdr k="food_pct">{viewFilter === 'drinks' ? 'Cost %' : t('colFoodPct')}</SortHdr>,   align: 'right' as const, hideOnMobile: true,
               cell: r => (
                 <span style={{ color: r.food_pct == null ? UXP.ink3 : foodPctColor(r.food_pct) }}>
                   {r.food_pct != null ? `${r.food_pct.toFixed(1)} %` : '—'}
@@ -339,7 +379,7 @@ export default function InventoryRecipesPage() {
                 </span>
               ) },
             // GP renders Incomplete badge on top — chef-readable. Shown on every tier.
-            { id: 'gp',    header: t('colGp'),  align: 'right' as const,
+            { id: 'gp',    header: <SortHdr k="gp_pct">{t('colGp')}</SortHdr>,  align: 'right' as const,
               cell: r => incomplete(r) ? (
                 <span style={{
                   display: 'inline-block', padding: '2px 8px',
