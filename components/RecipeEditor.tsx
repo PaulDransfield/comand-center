@@ -720,17 +720,21 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
 // ── BackLink ──────────────────────────────────────────────────────────
 function BackLink({ router }: { router: ReturnType<typeof useRouter> }) {
   // ?from=<parentRecipeId> means we drilled in from a parent recipe
-  // (sub-recipe link). Route back to that parent instead of the list
-  // so the kitchen doesn't lose its place.
+  // (sub-recipe link). Route back to that parent instead of the list.
+  // ?view=<food|drinks|subrecipes|all> preserves which tab the user
+  // came from on the recipe list, so working through "Drinks" doesn't
+  // dump them back at the Food tab after each edit.
   // router.refresh() invalidates the App Router cache so the list
   // refetches after edits.
   const params = useSearchParams()
   const from   = params?.get('from')
+  const view   = params?.get('view')
+  const backToList = view ? `/inventory/recipes?view=${encodeURIComponent(view)}` : '/inventory/recipes'
   return (
     <button
       onClick={() => {
         if (from) router.push(`/inventory/recipes/${from}`)
-        else      router.push('/inventory/recipes')
+        else      router.push(backToList)
         router.refresh()
       }}
       style={{

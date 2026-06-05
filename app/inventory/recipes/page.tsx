@@ -12,7 +12,7 @@
 export const dynamic = 'force-dynamic'
 
 import { useCallback, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
@@ -114,7 +114,15 @@ export default function InventoryRecipesPage() {
   }, [data])
 
   const allRows = data?.recipes ?? []
-  const [viewFilter, setViewFilter] = useState<'food' | 'drinks' | 'subrecipes' | 'all'>('food')
+  // Restore the user's last tab from the URL — set when they navigate
+  // INTO a recipe (`?view=drinks`) so the back link returns them here
+  // with the same filter active.
+  const searchParams = useSearchParams()
+  const initialView  = (() => {
+    const v = searchParams?.get('view')
+    return v === 'drinks' || v === 'subrecipes' || v === 'all' || v === 'food' ? v : 'food'
+  })()
+  const [viewFilter, setViewFilter] = useState<'food' | 'drinks' | 'subrecipes' | 'all'>(initialView)
   const [typeFilter, setTypeFilter] = useState<string>('')   // empty = all types
   const [search, setSearch] = useState<string>('')
   // Click-to-sort column. null = default (alphabetical by name from API).
@@ -422,7 +430,7 @@ export default function InventoryRecipesPage() {
               columns={cols}
               data={rows}
               getKey={r => r.id}
-              onRowClick={r => router.push(`/inventory/recipes/${r.id}`)}
+              onRowClick={r => router.push(`/inventory/recipes/${r.id}?view=${viewFilter}`)}
               style={{ background: UXP.cardBg, border: `0.5px solid ${UXP.border}`, borderRadius: 8, overflow: 'hidden' }}
             />
           )

@@ -48,14 +48,20 @@ ALTER TABLE supplier_invoice_lines
 
 -- ── 5. Trigram indexes for fast %substring% ilike ────────────────────
 -- pg_trgm is needed for gin_trgm_ops. Supabase has it; the CREATE is
--- idempotent so safe to re-run.
-CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
+-- idempotent so safe to re-run. We don't pin the schema — Supabase
+-- ships pg_trgm in `extensions`, but the operator class `gin_trgm_ops`
+-- needs to be referenced WITHOUT the schema prefix because Postgres
+-- resolves opclass identifiers via the access method's catalogue rather
+-- than the normal search_path. (Forcing `extensions.gin_trgm_ops` errors
+-- with "operator class does not exist for access method gin" because
+-- opclass-name lookups don't qualify the same way function calls do.)
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 CREATE INDEX IF NOT EXISTS products_name_unaccent_trgm_idx
-  ON products USING gin (name_unaccent extensions.gin_trgm_ops);
+  ON products USING gin (name_unaccent gin_trgm_ops);
 
 CREATE INDEX IF NOT EXISTS sil_raw_desc_unaccent_trgm_idx
-  ON supplier_invoice_lines USING gin (raw_description_unaccent extensions.gin_trgm_ops);
+  ON supplier_invoice_lines USING gin (raw_description_unaccent gin_trgm_ops);
 
 -- ── 6. Verify ────────────────────────────────────────────────────────
 -- Smoke test: pick a row with a known accent and confirm the column resolved.
