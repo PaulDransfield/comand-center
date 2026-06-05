@@ -92,10 +92,11 @@ function inferProductAbv(name) {
 //    needs Jaccard + ABV alone for those — the volume gate already
 //    skips when either side is null so the same engine handles both.
 const SOURCES = [
-  { sentinel: 'SPENDRUPS', source: 'spendrups_scrape' },
-  { sentinel: 'CARLSBERG', source: 'carlsberg_scrape' },
-  { sentinel: 'LIVELY',    source: 'lively_scrape'    },
-  { sentinel: 'ENJOY',     source: 'enjoy_scrape'     },
+  { sentinel: 'SPENDRUPS',  source: 'spendrups_scrape'  },
+  { sentinel: 'CARLSBERG',  source: 'carlsberg_scrape'  },
+  { sentinel: 'LIVELY',     source: 'lively_scrape'     },
+  { sentinel: 'ENJOY',      source: 'enjoy_scrape'      },
+  { sentinel: 'WINEAFFAIR', source: 'wineaffair_scrape' },
 ]
 const catalogueIndex = []
 for (const src of SOURCES) {
