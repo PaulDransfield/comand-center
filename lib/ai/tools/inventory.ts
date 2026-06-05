@@ -70,17 +70,26 @@ export const INVENTORY_TOOLS: AnthropicToolDef[] = [
     name: 'generate_report',
     description:
       `Build a downloadable PDF / Word / PowerPoint report for the current business. ` +
-      `Returns a URL the user can click to download. Use AFTER you've already shown ` +
-      `the answer in chat — the report is for the user to save / share / print.\n\n` +
-      `Available report types: 'margin', 'cost', 'supplier', 'top-products'. The ` +
-      `'top-products' type accepts optional supplier_filter, date_from, date_to, ` +
-      `rank_by ('spend'|'quantity'|'invoice_count'), and limit params — exactly the ` +
-      `same filters as top_products_by_supplier. When the user says "make it a PDF" / ` +
-      `"download as Word" / "send me a deck", call this with the matching format.`,
+      `Returns a URL the user can click to download.\n\n` +
+      `Report types — READ CAREFULLY, the names overlap:\n` +
+      `  • 'top-products' — TOP N PURCHASED ITEMS (one row per PRODUCT). Use this ` +
+      `whenever the user asks for "top items / products / purchases from supplier X", ` +
+      `"top 20 most bought from Martin Servera", "biggest purchases", "what did I ` +
+      `buy the most of". Accepts supplier_filter, date_from, date_to, rank_by, limit.\n` +
+      `  • 'supplier' — SUPPLIER-LEVEL SPEND ROLLUP (one row per SUPPLIER, total SEK ` +
+      `per supplier). Use only when the user asks for "spend by supplier", "which ` +
+      `suppliers cost me the most", "supplier breakdown". This is a SUPPLIER summary, ` +
+      `NOT a product list.\n` +
+      `  • 'margin' — recipe/menu margin analysis (food cost vs menu price per dish).\n` +
+      `  • 'cost' — overhead/operating cost breakdown.\n\n` +
+      `If unsure between supplier and top-products: "X items / X products / top N" → ` +
+      `always top-products. "X spend / X breakdown / cost by supplier" → supplier.\n\n` +
+      `Use AFTER you've already shown the answer in chat — the report is for the user ` +
+      `to save / share / print.`,
     input_schema: {
       type: 'object',
       properties: {
-        report_type:     { type: 'string', enum: ['margin','cost','supplier','top-products'], description: 'Which report to build.' },
+        report_type:     { type: 'string', enum: ['margin','cost','supplier','top-products'], description: "Which report. 'top-products' = top N PRODUCTS purchased. 'supplier' = spend rolled up PER SUPPLIER (no product breakdown)." },
         format:          { type: 'string', enum: ['pdf','docx','pptx'], description: 'Output format (default pdf).' },
         supplier_filter: { type: 'string', description: 'top-products only — substring on supplier name.' },
         date_from:       { type: 'string', description: 'top-products only — YYYY-MM-DD.' },
