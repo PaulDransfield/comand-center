@@ -112,6 +112,9 @@ export const AREAS: Area[] = [
     // bookkeeping artefact of supplier invoices.
     pages: [
       { key: 'recipes', label: 'Recipes',    href: '/inventory/recipes' },
+      // Set menus — fixed-price multi-course packages built from existing
+      // recipes. Food and drink menus tracked separately. M133.
+      { key: 'menus',   label: 'Set menus',  href: '/inventory/recipes/menus' },
       // Manual-covers prep list — owner enters expected production, system
       // aggregates shared sub-recipes + raw ingredients. v1; demand-prediction
       // (POS-driven) is the future seam in lib/inventory/prep-list.ts.
