@@ -126,7 +126,9 @@ WORKED EXAMPLES:
 
 (A) San Pellegrino 25cl mineral water, sold KRT of 24 × 25cl bottles, 227 kr/KRT:
   → Chef pulls ONE bottle at a time → countable → base_unit='st', pack_size=24
-  Cost: 227 / 24 = 9.46 kr/bottle. weight_per_piece_g=250 (the water + bottle weight isn't asked, this is just for if a recipe ever needs g equivalent of 1 bottle — usually leave null).
+  Cost: 227 / 24 = 9.46 kr/bottle.
+  weight_per_piece_g=250 — DERIVED FROM THE PRODUCT VOLUME (25 cl = 250 ml ≈ 250 g for water at density 1.0).
+  DO NOT use brutto_weight_g / count for weight_per_piece. Brutto includes glass + cap + cardboard. Recipes that ask "g of water" want the CONTENT weight only, not bottle weight.
 
 (B) Olive oil 5L canister, 285 kr/canister:
   → Chef pours from one canister → bulk → base_unit='ml', pack_size=5000
@@ -134,7 +136,12 @@ WORKED EXAMPLES:
 
 (C) Eggs 12-pack (1 carton = 12 eggs), 28 kr/carton:
   → Chef cracks ONE egg at a time → countable → base_unit='st', pack_size=12
-  Cost: 28 / 12 = 2.33 kr/egg. weight_per_piece_g=60.
+  Cost: 28 / 12 = 2.33 kr/egg. weight_per_piece_g=60 (typical Swedish L-size egg net weight; brutto with shell ~65g).
+
+WEIGHT-PER-PIECE rule (when base_unit='st'):
+  - For BOTTLED LIQUIDS: parse the volume from the product name ("25cl"/"75cl"/"330ml"/"50cl") and convert ml→g using density (water/water-based ≈ 1.0 g/ml; juices ≈ 1.04; wine/spirits ≈ 0.97-1.0; oil ≈ 0.91).
+  - For SOLID PIECES (eggs, fruit, baked goods): use net content weight if the catalogue lists it, otherwise typical values (egg ~60g, lemon ~80g, banana ~120g).
+  - NEVER divide brutto_weight_g by pack count — that includes container + packaging.
 
 (D) Flour 10 kg bag:
   → Chef scoops from one bag → bulk → base_unit='g', pack_size=10000
