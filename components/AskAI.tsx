@@ -21,32 +21,14 @@ interface Message {
   downloads?: Array<{ label: string; url: string }>   // generated-document links
 }
 
-// Detect "make me a [format] report on [topic]" requests. Returns the report
-// type + format(s), or null (falls through to the normal chat answer + the
-// server-side generate_report tool, which catches phrasings this misses).
-// Kept tight so "what's our margin?" doesn't trigger it.
-type ReportType = 'margin' | 'cost' | 'supplier'
-function detectReportRequest(q: string): { type: ReportType; formats: Array<'pdf' | 'docx' | 'pptx'> } | null {
-  const s = q.toLowerCase()
-  const docWord = /(power\s?point|powerpoint|pptx|presentation|deck|slides|\bword\b|docx|\bpdf\b|report|document|write[\s-]?up|one[\s-]?pager|export)/.test(s)
-  const verb    = /(make|create|generate|build|put together|draft|prepare|export|can you|could you|i (?:need|want)|give me|send me)/.test(s)
-  if (!docWord || !verb) return null
-  let type: ReportType | null = null
-  if (/(supplier|vendor|purchas)/.test(s)) type = 'supplier'
-  else if (/(cost breakdown|cost report|expense|overhead|cost split|our costs|where.*(money|spend))/.test(s)) type = 'cost'
-  else if (/(margin|profitab|profit|gross|net|\bp&l\b|p and l|bottom line)/.test(s)) type = 'margin'
-  else if (/(financ|our (?:numbers|performance|results))/.test(s)) type = 'margin'   // generic financial doc → margin
-  if (!type) return null
-  const fmts: Array<'pdf' | 'docx' | 'pptx'> = []
-  if (/(power\s?point|powerpoint|pptx|presentation|deck|slides)/.test(s)) fmts.push('pptx')
-  if (/(\bword\b|docx|\.doc)/.test(s)) fmts.push('docx')
-  if (/\bpdf\b/.test(s)) fmts.push('pdf')
-  return { type, formats: fmts.length ? fmts : ['pdf', 'docx', 'pptx'] }
-}
-
-const REPORT_KIND_LABEL: Record<ReportType, string> = {
-  margin: 'margin report', cost: 'cost breakdown', supplier: 'supplier spend report',
-}
+// Client-side report-request detection was removed 2026-06-05. It conflated
+// "top purchased items from supplier X" (per-product report) with "supplier
+// spend rollup" (per-supplier report) because both questions contain the word
+// "supplier"/"purchas". Now every report request goes through /api/ask and the
+// server-side generate_report tool — the LLM picks the right report_type from
+// the full question context, and the dispatcher coerces any residual 'supplier'
+// choice to 'top-products'. Adds 2-3s latency vs the old fast path, but
+// eliminates the wrong-report-type bug class entirely.
 const DL_LABEL = { pdf: 'Download PDF', docx: 'Download Word', pptx: 'Download PowerPoint' } as const
 
 // Suggestion KEYS — text resolved from askai.suggestions.<page>.{q1,q2,q3} at
@@ -150,24 +132,11 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false, 
     setInput('')
     setLoading(true)
 
-    // Document generation: if the owner asks for a margin report/deck/doc,
-    // hand over download links instead of a chat answer. The /api/reports/
-    // margin endpoint builds it (real numbers + AI recommendations) and the
-    // links auth via the session cookie on click.
-    const reportReq = detectReportRequest(question)
-    if (reportReq) {
-      const bizId = typeof window !== 'undefined' ? localStorage.getItem('cc_selected_biz') : null
-      if (bizId) {
-        const downloads = reportReq.formats.map(f => ({ label: DL_LABEL[f], url: `/api/reports/${reportReq.type}?business_id=${encodeURIComponent(bizId)}&format=${f}` }))
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: `Here is your ${REPORT_KIND_LABEL[reportReq.type]} — real figures plus recommendations. Click to generate and download (takes a few seconds).`,
-          downloads,
-        }])
-        setLoading(false)
-        return
-      }
-    }
+    // Document generation now goes entirely through /api/ask + the
+    // server-side generate_report tool. The /api/ask response carries
+    // a `downloads` array when the LLM called generate_report, and the
+    // tool dispatcher picks the right report_type from the full context
+    // (top-products vs margin vs cost) instead of a brittle client regex.
 
     try {
       // Get the session token so the API route can authenticate the request
