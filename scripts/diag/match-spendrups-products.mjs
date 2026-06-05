@@ -94,6 +94,7 @@ function inferProductAbv(name) {
 const SOURCES = [
   { sentinel: 'SPENDRUPS', source: 'spendrups_scrape' },
   { sentinel: 'CARLSBERG', source: 'carlsberg_scrape' },
+  { sentinel: 'LIVELY',    source: 'lively_scrape'    },
 ]
 const catalogueIndex = []
 for (const src of SOURCES) {
