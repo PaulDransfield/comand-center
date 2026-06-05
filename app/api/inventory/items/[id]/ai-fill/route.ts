@@ -30,7 +30,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const { data: product, error: pErr } = await db
     .from('products')
-    .select('id, business_id, name, category, invoice_unit, pack_size, base_unit, units_per_pack, weight_per_piece_g, density_g_per_ml, default_supplier_name')
+    .select('id, business_id, name, category, invoice_unit, pack_size, base_unit, weight_per_piece_g, density_g_per_ml, default_supplier_name')
     .eq('id', params.id)
     .maybeSingle()
   if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 })
@@ -116,13 +116,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 }
 
 Hard rules:
-1. pack_size is the TOTAL invoice unit in base_unit. KRT of 24x250ml = 6000 ml. NEVER 250.
-2. Bottles, cans, packs of single-serving drinks → base_unit='ml' or 'g' depending on contents.
-3. "Antal/enhet: 6,00 l/Kartong" means 6 liters per KRT (carton). "Antal per hel förpackning: 24" means 24 single items per outer pack — multiply to get the math.
-4. Mass-based items (kg, g) → base_unit='g'; convert kg→g (1 kg = 1000 g).
-5. Discrete pieces (eggs, plates, glass straws) → base_unit='st', units_per_pack=count of pieces per KRT.
-6. Category: alcohol > beverage > food > cleaning/disposables. "Ehrlich Glass" or "Plåster" = disposables. Beer/wine/spirits = alcohol. Soft drinks/water/juice = beverage.
-7. Don't invent. If the catalogue lacks info, leave the field as the CURRENT value.
+1. pack_size is the TOTAL of the invoice unit (KRT/KG/L/STRYCK) expressed in base_unit. The customer pays per ONE invoice unit, so pack_size MUST equal what that one unit physically contains.
+2. WORKED EXAMPLE — the canonical case (San Pellegrino 25cl):
+     supplier says: Enhet=KRT, Antal/enhet="6,00 l/Kartong", Antal per hel förpackning=24
+     product name says: 25cl bottles
+     One KRT contains 24 × 250 ml = 6000 ml of liquid.
+     → pack_size: 6000, base_unit: "ml", units_per_pack: 24
+     Cost math: 227 kr (invoice price per KRT) / 6000 ml = 0.038 kr/ml. ALWAYS check the math passes a sanity sniff test.
+3. If "Antal/enhet" gives liters/grams per carton, USE IT directly (convert l→ml, kg→g).
+4. If only piece count is given (Antal per hel förpackning=24, no per-pack volume): multiply piece volume × piece count.
+5. Mass-based bulk (10 kg flour bag) → base_unit='g', pack_size = kg × 1000.
+6. Discrete pieces (eggs, plates, glass straws) → base_unit='st', pack_size = count of pieces per invoice unit.
+7. Category: alcohol > beverage > food > cleaning/disposables. Beer/wine/spirits = alcohol. Mineral water / soft drinks / juice / coffee beans = beverage.
+8. Don't invent. If the catalogue lacks the data, leave the field as the CURRENT value.
 
 Be conservative on density. Only set when the product clearly tells you (oil, syrup, mineral water).`
 
@@ -133,7 +139,6 @@ ${JSON.stringify({
     invoice_unit:      product.invoice_unit,
     pack_size:         product.pack_size,
     base_unit:         product.base_unit,
-    units_per_pack:    product.units_per_pack,
     weight_per_piece_g: product.weight_per_piece_g,
     density_g_per_ml:  product.density_g_per_ml,
   }, null, 2)}
