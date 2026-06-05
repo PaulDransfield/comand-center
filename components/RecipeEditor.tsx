@@ -64,6 +64,7 @@ interface DetailResponse {
     method?: string | null
     is_subrecipe?: boolean
     image_url?: string | null
+    glass_price?: number | null
   }
   summary: {
     food_cost: number; food_pct: number | null; gp_pct: number | null; gp_kr: number | null
@@ -582,6 +583,13 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
           : 'Not set'}
       >
         <PriceVatEditor recipe={recipe} foodCost={summary.food_cost} onSave={patchRecipe} />
+        {recipe.type === 'wine' && (
+          <GlassPriceEditor
+            recipe={recipe}
+            bottleFoodCost={summary.food_cost}
+            onSave={patchRecipe}
+          />
+        )}
         <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 8, lineHeight: 1.5 }}>
           Ex-VAT is what's stored — margin is computed off it. Inc-VAT updates it via the rate.
           VAT rate and channel are <strong>independent</strong>: takeaway can be 6% OR 12% OR 25% depending on the product.
@@ -1172,7 +1180,72 @@ function YieldEditor({ recipe, suggestedYield, onSave }: {
 }
 
 // ── PriceVatEditor ────────────────────────────────────────────────────
-//
+// ── GlassPriceEditor ──────────────────────────────────────────────────
+// Wine-only. Shows next to the bottle PriceVatEditor when recipe.type='wine'.
+// Bottle price + portions live in the main fields; glass price + glass margin
+// surface here. Glass cost = bottleFoodCost / portions (live).
+function GlassPriceEditor({ recipe, bottleFoodCost, onSave }: {
+  recipe: DetailResponse['recipe']
+  bottleFoodCost: number
+  onSave: (patch: Record<string, any>) => Promise<void>
+}) {
+  const [val, setVal] = useState<string>(recipe.glass_price != null ? String(recipe.glass_price) : '')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { setVal(recipe.glass_price != null ? String(recipe.glass_price) : '') }, [recipe.glass_price])
+  const num = val.trim() === '' ? null : Number(val)
+  const dirty = (num ?? null) !== (recipe.glass_price ?? null)
+  const portions = Math.max(1, Number(recipe.portions) || 1)
+  const glassCost = bottleFoodCost / portions
+  const glassRate = Number(recipe.vat_rate ?? 25)
+  const glassExVat = num != null && glassRate >= 0 ? num / (1 + glassRate / 100) : null
+  const glassGpKr  = glassExVat != null ? Math.max(0, glassExVat - glassCost) : null
+  const glassGpPct = glassExVat != null && glassExVat > 0 ? (glassGpKr! / glassExVat) * 100 : null
+
+  async function save() {
+    if (!dirty) return
+    if (num != null && (!Number.isFinite(num) || num < 0)) return
+    setBusy(true)
+    try { await onSave({ glass_price: num }) } finally { setBusy(false) }
+  }
+
+  return (
+    <div style={{
+      marginTop: 12, padding: '10px 12px', border: `0.5px solid ${UXP.border}`,
+      borderRadius: 6, background: UXP.subtleBg,
+    }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' as const }}>
+        <div>
+          <div style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 4 }}>
+            Glass price (inc-VAT)
+          </div>
+          <input
+            type="number" min="0" step="1"
+            value={val}
+            disabled={busy}
+            onChange={e => setVal(e.target.value)}
+            onBlur={save}
+            placeholder="e.g. 125"
+            style={{ ...inputStyle, width: 110, textAlign: 'right' as const }}
+          />
+        </div>
+        <div style={{ fontSize: 10, color: UXP.ink4 }}>
+          {portions} glass{portions === 1 ? '' : 'es'} per bottle ({Math.round(750 / portions)} ml pour). Edit portions above to change pour size.
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center', fontSize: 11, fontVariantNumeric: 'tabular-nums' as const }}>
+          <span style={{ color: UXP.ink4 }}>Glass food cost <strong style={{ color: UXP.ink1 }}>{fmtKr(glassCost)}</strong></span>
+          {glassGpPct != null && (
+            <span style={{ color: UXP.ink4 }}>
+              GP <strong style={{ color: glassGpPct < 65 ? UXP.coral : UXP.greenDeep }}>{glassGpPct.toFixed(1)}%</strong>
+              {' '}<strong style={{ color: UXP.ink1 }}>({fmtKr(glassGpKr!)})</strong>
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── PriceVatEditor ────────────────────────────────────────────────────
 // Two-way editable: type ex-VAT OR inc-VAT (whichever matches the
 // menu), the other side back-computes via the rate. Live GP% + GP kr
 // preview render as the owner types so they can land on a target

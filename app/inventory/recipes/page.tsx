@@ -270,7 +270,7 @@ export default function InventoryRecipesPage() {
             { id: 'name',  header: t('colName'),  primary: true,
               cell: r => <span style={{ fontWeight: 500, color: UXP.ink1 }}>{r.name}</span> },
             { id: 'type',  header: t('colType'),
-              cell: r => <span style={{ color: UXP.ink3 }}>{r.type ?? '—'}</span> },
+              cell: r => <InlineType recipeId={r.id} value={r.type} onSaved={load} /> },
             { id: 'ing',   header: t('colIngredients'), align: 'right' as const,
               cell: r => <span style={{ color: UXP.ink3 }}>{r.ingredient_count}</span> },
             { id: 'menu',  header: t('colMenuPrice'),   align: 'right' as const, hideOnMobile: true,
@@ -391,6 +391,62 @@ function ImageLightbox({ url, name, onClose }: { url: string; name: string; onCl
 // while focused so the user can type a number without being routed to
 // the editor. PATCHes menu_price (legacy passthrough — the resolver
 // stores it as-is; owner refines VAT in the editor if needed).
+// Click-to-edit type dropdown on the recipe-list row. PATCHes recipes.type.
+function InlineType({ recipeId, value, onSaved }: { recipeId: string; value: string | null; onSaved: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const ALL_TYPES = [
+    { v: '',             l: '—' },
+    { v: 'starter',      l: 'Starter' },
+    { v: 'pasta',        l: 'Pasta' },
+    { v: 'pizza',        l: 'Pizza' },
+    { v: 'main',         l: 'Main' },
+    { v: 'side',         l: 'Side' },
+    { v: 'dessert',      l: 'Dessert' },
+    { v: 'sauce',        l: 'Sauce (sub-recipe)' },
+    { v: 'cocktail',     l: 'Cocktail' },
+    { v: 'wine',         l: 'Wine' },
+    { v: 'beer',         l: 'Beer' },
+    { v: 'spirit',       l: 'Spirit' },
+    { v: 'cider',        l: 'Cider' },
+    { v: 'softdrink',    l: 'Soft drink' },
+    { v: 'alcohol_free', l: 'Alcohol-free' },
+    { v: 'drink',        l: 'Other drink' },
+    { v: 'other',        l: 'Other' },
+  ]
+  async function change(next: string) {
+    if ((next || null) === (value || null)) return
+    setBusy(true)
+    try {
+      const r = await fetch(`/api/inventory/recipes/${recipeId}`, {
+        method: 'PATCH', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: next || null }),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}))
+        alert(j.error ?? `HTTP ${r.status}`)
+      } else { onSaved() }
+    } finally { setBusy(false) }
+  }
+  return (
+    <select
+      value={value ?? ''}
+      onClick={e => e.stopPropagation()}
+      onChange={e => { e.stopPropagation(); void change(e.target.value) }}
+      disabled={busy}
+      style={{
+        background: 'transparent', border: '0.5px solid transparent', borderRadius: 4,
+        padding: '1px 4px', fontSize: 12, fontFamily: 'inherit', color: UXP.ink3,
+        cursor: 'pointer',
+      }}
+      onMouseEnter={e => (e.currentTarget.style.border = `0.5px solid ${UXP.border}`)}
+      onMouseLeave={e => (e.currentTarget.style.border = '0.5px solid transparent')}
+    >
+      {ALL_TYPES.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
+    </select>
+  )
+}
+
 function InlineMenuPrice({ recipeId, value, onSaved }: { recipeId: string; value: number | null; onSaved: () => void }) {
   const [editing, setEditing] = useState(false)
   const [val, setVal]         = useState(value != null ? String(value) : '')
