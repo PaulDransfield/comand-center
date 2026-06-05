@@ -14,6 +14,7 @@
 // extraction of 762 invoices."
 
 import type { AnthropicToolDef, ToolContext } from './index'
+import { unaccent } from '@/lib/inventory/unaccent'
 
 export const INVENTORY_TOOLS: AnthropicToolDef[] = [
   {
@@ -516,19 +517,22 @@ export async function runInventoryTool(
     if (!query) return { error: 'invalid_args', detail: 'query required' }
     const limit = Math.min(50, Math.max(1, parseInt(String(args.limit ?? 20), 10) || 20))
 
-    // Match against products.name OR product_aliases.alias_text
+    // Match against products.name OR product_aliases.alias_text — both
+    // diacritic-insensitive (M131 unaccent column on products.name; alias_text
+    // is already lowercased + collapsed by the matcher pipeline).
+    const queryUn = unaccent(query)
     const { data: byName } = await ctx.db
       .from('products')
       .select('id, name, category, default_supplier_name, last_seen_price, last_seen_currency, last_seen_date')
       .eq('business_id', ctx.businessId)
-      .ilike('name', `%${query}%`)
+      .ilike('name_unaccent', `%${queryUn}%`)
       .limit(limit)
 
     const { data: byAlias } = await ctx.db
       .from('product_aliases')
       .select('product_id, alias_text, supplier_name')
       .eq('business_id', ctx.businessId)
-      .ilike('alias_text', `%${query}%`)
+      .ilike('alias_text', `%${queryUn}%`)
       .limit(limit)
 
     if ((byName?.length ?? 0) === 0 && (byAlias?.length ?? 0) === 0) {

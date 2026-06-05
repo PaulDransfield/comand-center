@@ -15,6 +15,7 @@ import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
 import { normaliseProductName, jaccardSimilarity } from '@/lib/inventory/normalise'
+import { unaccent } from '@/lib/inventory/unaccent'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -181,7 +182,7 @@ export async function POST(req: NextRequest) {
         .gte('invoice_date', cutoff)
         .not('product_alias_id', 'is', null)
         .not('raw_description', 'is', null)
-        .ilike('raw_description', `%${firstToken}%`)
+        .ilike('raw_description_unaccent', `%${unaccent(firstToken)}%`)   // M131 diacritic-insensitive
         .limit(500)
       // Aggregate by alias_id; pick lines with name similarity ≥ 0.5.
       const aliasHits = new Map<string, { lineCount: number; bestSim: number; sampleDesc: string }>()

@@ -20,6 +20,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
+import { unaccent } from '@/lib/inventory/unaccent'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -55,7 +56,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .neq('match_status', 'not_inventory')   // exclude deliberate-noise bucket
     .order('invoice_date', { ascending: false })
     .limit(MAX_RESULTS)
-  if (q) query = query.ilike('raw_description', `%${q}%`)
+  // Diacritic-insensitive: search the generated `raw_description_unaccent`
+  // column (lower + accent-stripped, see M131) with a matching JS-side
+  // normalisation of the query, so "creme" / "Crème" / "CRÈME" all match.
+  if (q) query = query.ilike('raw_description_unaccent', `%${unaccent(q)}%`)
   const { data: lines, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

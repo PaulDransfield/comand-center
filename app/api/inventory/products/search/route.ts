@@ -12,6 +12,7 @@ import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
 import { getProductLatestPrices, inferPackFromInvoiceUnit } from '@/lib/inventory/recipe-cost'
 import { loadFxIndex } from '@/lib/inventory/fx'
+import { unaccent } from '@/lib/inventory/unaccent'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -37,7 +38,8 @@ export async function GET(req: NextRequest) {
     .is('archived_at', null)
     .order('name')
     .limit(20)
-  if (query)    qB = qB.ilike('name', `%${query}%`)
+  // Diacritic-insensitive via M131 `name_unaccent` generated column.
+  if (query)    qB = qB.ilike('name_unaccent', `%${unaccent(query)}%`)
   if (supplier) qB = qB.eq('default_supplier_name', supplier)
 
   const { data: products, error } = await qB
