@@ -8,7 +8,7 @@ import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
 import { checkAdminSecret, checkCronSecret } from '@/lib/admin/check-secret'
 import { checkAndIncrementAiLimit } from '@/lib/ai/usage'
-import { buildReportSpec, type ReportType } from '@/lib/reports/builders'
+import { buildReportSpec, type ReportType, type ReportParams } from '@/lib/reports/builders'
 import { renderReportPdf } from '@/components/reports/MarginReportPdf'
 import { renderReportDocx } from '@/lib/reports/margin-docx'
 import { renderReportPptx } from '@/lib/reports/margin-pptx'
@@ -43,9 +43,19 @@ export async function serveReport(req: NextRequest, type: ReportType): Promise<N
   const usage = await checkAndIncrementAiLimit(db, orgId)   // one AI call per document
   if (!usage.ok) return NextResponse.json(usage.body, { status: usage.status })
 
+  // Optional report-type-specific filter params (top-products consumes
+  // supplier / date range / ranking). Other report types ignore.
+  const params: ReportParams = {
+    supplier_filter: url.searchParams.get('supplier_filter') ?? null,
+    date_from:       url.searchParams.get('date_from') ?? null,
+    date_to:         url.searchParams.get('date_to') ?? null,
+    rank_by:         (['spend','quantity','invoice_count'] as const).includes(url.searchParams.get('rank_by') as any) ? url.searchParams.get('rank_by') as any : undefined,
+    limit:           url.searchParams.get('limit') ? Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit')!, 10) || 20)) : undefined,
+  }
+
   let bytes: Buffer
   try {
-    const spec = await buildReportSpec(db, type, businessId, biz.name ?? 'Your restaurant')
+    const spec = await buildReportSpec(db, type, businessId, biz.name ?? 'Your restaurant', params)
     bytes = format === 'docx' ? await renderReportDocx(spec)
           : format === 'pptx' ? await renderReportPptx(spec)
           :                      await renderReportPdf(spec)

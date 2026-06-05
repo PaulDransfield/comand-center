@@ -67,6 +67,31 @@ export const INVENTORY_TOOLS: AnthropicToolDef[] = [
     },
   },
   {
+    name: 'generate_report',
+    description:
+      `Build a downloadable PDF / Word / PowerPoint report for the current business. ` +
+      `Returns a URL the user can click to download. Use AFTER you've already shown ` +
+      `the answer in chat — the report is for the user to save / share / print.\n\n` +
+      `Available report types: 'margin', 'cost', 'supplier', 'top-products'. The ` +
+      `'top-products' type accepts optional supplier_filter, date_from, date_to, ` +
+      `rank_by ('spend'|'quantity'|'invoice_count'), and limit params — exactly the ` +
+      `same filters as top_products_by_supplier. When the user says "make it a PDF" / ` +
+      `"download as Word" / "send me a deck", call this with the matching format.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        report_type:     { type: 'string', enum: ['margin','cost','supplier','top-products'], description: 'Which report to build.' },
+        format:          { type: 'string', enum: ['pdf','docx','pptx'], description: 'Output format (default pdf).' },
+        supplier_filter: { type: 'string', description: 'top-products only — substring on supplier name.' },
+        date_from:       { type: 'string', description: 'top-products only — YYYY-MM-DD.' },
+        date_to:         { type: 'string', description: 'top-products only — YYYY-MM-DD.' },
+        rank_by:         { type: 'string', enum: ['spend','quantity','invoice_count'], description: 'top-products only — ranking metric.' },
+        limit:           { type: 'integer', description: 'top-products only — top N.' },
+      },
+      required: ['report_type'],
+    },
+  },
+  {
     name: 'top_products_by_supplier',
     description:
       `Rank products by total quantity OR total spend across every supplier invoice ` +
@@ -109,9 +134,33 @@ export const INVENTORY_TOOLS: AnthropicToolDef[] = [
 
 export async function runInventoryTool(
   ctx:  ToolContext,
-  name: 'search_inventory_products' | 'get_invoice_lines' | 'get_inventory_summary' | 'get_product_price_history' | 'top_products_by_supplier',
+  name: 'search_inventory_products' | 'get_invoice_lines' | 'get_inventory_summary' | 'get_product_price_history' | 'top_products_by_supplier' | 'generate_report',
   args: any,
 ): Promise<any> {
+  if (name === 'generate_report') {
+    const reportType = String(args.report_type ?? '').trim()
+    if (!['margin','cost','supplier','top-products'].includes(reportType)) {
+      return { error: 'invalid_args', detail: 'report_type must be margin | cost | supplier | top-products' }
+    }
+    const format = ['pdf','docx','pptx'].includes(args.format) ? args.format : 'pdf'
+    const qs = new URLSearchParams({ business_id: ctx.businessId, format })
+    if (reportType === 'top-products') {
+      if (args.supplier_filter) qs.set('supplier_filter', String(args.supplier_filter))
+      if (args.date_from)       qs.set('date_from',       String(args.date_from))
+      if (args.date_to)         qs.set('date_to',         String(args.date_to))
+      if (args.rank_by)         qs.set('rank_by',         String(args.rank_by))
+      if (args.limit)           qs.set('limit',           String(args.limit))
+    }
+    const path = `/api/reports/${reportType}?${qs.toString()}`
+    return {
+      report_type: reportType,
+      format,
+      download_url: path,
+      message: `Report ready. Click to download: ${path}`,
+      ui_hint: 'Render the URL as a clickable link. The user needs to click to start the download — the file is streamed on demand, not pre-generated.',
+    }
+  }
+
   if (name === 'top_products_by_supplier') {
     const supplierFilter = args.supplier_filter ? String(args.supplier_filter).trim().toLowerCase() : null
     const dateFrom       = args.date_from ? String(args.date_from).trim() : null
