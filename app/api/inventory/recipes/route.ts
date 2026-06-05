@@ -107,6 +107,11 @@ export async function GET(req: NextRequest) {
       subrecipe_count:      ings.filter(i => i.subrecipe_id != null).length,
       is_subrecipe:         r.is_subrecipe === true,
       image_url:            r.image_url ?? null,
+      // Single-product-ingredient recipes (every wine bottle, single-bottle
+      // spirits, mineral water etc.) get a free header thumbnail from the
+      // ingredient's supplier_article when no image_url is uploaded. We
+      // surface the product_id here; the list page batch-fetches the URL.
+      fallback_product_id:  (!r.image_url && ings.length === 1 && !ings[0].subrecipe_id && ings[0].product_id) ? ings[0].product_id : null,
     }
   })
 

@@ -37,6 +37,7 @@ interface RecipeRow {
   unit_mismatches:  number
   updated_at:       string
   image_url:        string | null
+  fallback_product_id: string | null
 }
 
 interface ListResponse {
@@ -53,6 +54,10 @@ export default function InventoryRecipesPage() {
   const [error,   setError]   = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null)
+  // Single-ingredient recipes (wines, beer, spirits) — batch-fetch supplier_article
+  // thumbs and use them as a fallback when recipe.image_url is null. Same pattern
+  // as the recipe editor's RecipeImageEditor auto-fallback.
+  const [fallbackThumb, setFallbackThumb] = useState<Record<string, string | null>>({})
 
   useEffect(() => {
     const s = localStorage.getItem('cc_selected_biz')
@@ -78,6 +83,30 @@ export default function InventoryRecipesPage() {
     if (bizId) load()
     else setLoading(false)
   }, [bizId, load])
+
+  // After recipes load: collect the fallback_product_ids and batch-fetch thumbs.
+  useEffect(() => {
+    const ids = (data?.recipes ?? [])
+      .filter(r => !r.image_url && r.fallback_product_id)
+      .map(r => r.fallback_product_id!) as string[]
+    if (ids.length === 0) { setFallbackThumb({}); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch('/api/inventory/supplier-article/batch', {
+          method: 'POST', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ product_ids: ids }),
+        })
+        const j = await r.json().catch(() => ({}))
+        if (cancelled) return
+        const map: Record<string, string | null> = {}
+        for (const pid of ids) map[pid] = j.by_product?.[pid]?.image_url ?? null
+        setFallbackThumb(map)
+      } catch { setFallbackThumb({}) }
+    })()
+    return () => { cancelled = true }
+  }, [data])
 
   const allRows = data?.recipes ?? []
   const [viewFilter, setViewFilter] = useState<'food' | 'drinks' | 'subrecipes' | 'all'>('food')
@@ -251,22 +280,29 @@ export default function InventoryRecipesPage() {
           const incomplete = (r: RecipeRow) => r.missing_prices > 0 || r.unit_mismatches > 0
           const cols: Array<DataTableColumn<RecipeRow>> = [
             { id: 'img', header: '',
-              cell: r => r.image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={r.image_url} alt="" loading="lazy"
-                  onClick={e => { e.stopPropagation(); setLightbox({ url: r.image_url!, name: r.name }) }}
-                  title="Click to enlarge"
-                  style={{
-                    width: 36, height: 36, borderRadius: 5, objectFit: 'cover',
-                    border: `0.5px solid ${UXP.border}`, background: '#fff', display: 'block',
-                    cursor: 'zoom-in',
+              cell: r => {
+                const fallback = r.fallback_product_id ? fallbackThumb[r.fallback_product_id] ?? null : null
+                const url = r.image_url ?? fallback
+                if (!url) return (
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 5,
+                    background: UXP.subtleBg, border: `0.5px dashed ${UXP.border}`,
                   }} />
-              ) : (
-                <div style={{
-                  width: 36, height: 36, borderRadius: 5,
-                  background: UXP.subtleBg, border: `0.5px dashed ${UXP.border}`,
-                }} />
-              ) },
+                )
+                return (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={url} alt="" loading="lazy"
+                    onClick={e => { e.stopPropagation(); setLightbox({ url, name: r.name }) }}
+                    title="Click to enlarge"
+                    style={{
+                      width: 36, height: 36, borderRadius: 5,
+                      objectFit: r.image_url ? 'cover' : 'contain',
+                      padding: r.image_url ? 0 : 2,
+                      border: `0.5px solid ${UXP.border}`, background: '#fff', display: 'block',
+                      cursor: 'zoom-in',
+                    }} />
+                )
+              } },
             { id: 'name',  header: t('colName'),  primary: true,
               cell: r => <span style={{ fontWeight: 500, color: UXP.ink1 }}>{r.name}</span> },
             { id: 'type',  header: t('colType'),
