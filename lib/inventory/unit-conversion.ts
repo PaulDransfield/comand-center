@@ -38,6 +38,13 @@ export function canonicalUnit(raw: string | null | undefined): string | null {
   if (['st', 'styck', 'stk', 'pcs', 'piece', 'pieces', 'each', 'ea'].includes(u)) return 'st'
   // Pack-like (we treat these as count for parsing — pack_size deals with the rest)
   if (['frp', 'fp', 'pack', 'paket'].includes(u)) return 'st'
+  // Container words — same idea: 1 of these = 1 of the pack. Lets wine
+  // recipes say "1 flaska" against a 750ml bottle product and the engine
+  // costs it at unit_price directly. Swedish bot (flaska) + burk (can/jar)
+  // + dunk + hink (pail) are common supplier-side units.
+  if (['flaska', 'flasa', 'bottle', 'bot', 'btl', 'btlf'].includes(u)) return 'st'
+  if (['burk', 'jar', 'can', 'tin'].includes(u))                       return 'st'
+  if (['dunk', 'hink', 'sack', 'säck', 'ask', 'kart', 'krt'].includes(u)) return 'st'
   return u
 }
 

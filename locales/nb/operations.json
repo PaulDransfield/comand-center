@@ -309,10 +309,16 @@
         "pizza":    "Pizza",
         "dessert":  "Dessert",
         "drink":    "Drikke",
-        "cocktail": "Cocktail",
-        "side":     "Tilbehør",
-        "sauce":    "Saus",
-        "other":    "Annet"
+        "cocktail":     "Cocktail",
+        "wine":         "Vin",
+        "beer":         "Øl",
+        "spirit":       "Brennevin",
+        "cider":        "Sider",
+        "softdrink":    "Brus",
+        "alcohol_free": "Alkoholfritt",
+        "side":         "Tilbehør",
+        "sauce":        "Saus",
+        "other":        "Annet"
       },
       "detail": {
         "menuPrice":         "Menypris",

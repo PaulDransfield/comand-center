@@ -309,10 +309,16 @@
         "pizza":    "Pizza",
         "dessert":  "Dessert",
         "drink":    "Dryck",
-        "cocktail": "Cocktail",
-        "side":     "Tillbehör",
-        "sauce":    "Sås",
-        "other":    "Övrigt"
+        "cocktail":     "Cocktail",
+        "wine":         "Vin",
+        "beer":         "Öl",
+        "spirit":       "Sprit",
+        "cider":        "Cider",
+        "softdrink":    "Läsk",
+        "alcohol_free": "Alkoholfritt",
+        "side":         "Tillbehör",
+        "sauce":        "Sås",
+        "other":        "Övrigt"
       },
       "detail": {
         "menuPrice":         "Menypris",
