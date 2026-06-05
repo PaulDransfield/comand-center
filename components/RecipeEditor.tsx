@@ -49,6 +49,7 @@ interface DetailIngredient {
   is_subrecipe: boolean; cycle: boolean
   pack_size: number | null; base_unit: string | null
   cost_per_base_unit: number | null; pack_auto_detected: boolean
+  price_change_pct: number | null
 }
 interface DetailResponse {
   recipe: {
@@ -1474,6 +1475,26 @@ function IngredientRow({ ing, imageUrl, highlighted, onRemove, onChange, onProdu
                 {t('detail.unitMismatchLabel', { recipe: ing.unit ?? '?', product: ing.base_unit ?? ing.invoice_unit ?? '?' })}
               </span>
             )}
+            {!ing.is_subrecipe && ing.price_change_pct != null && Math.abs(ing.price_change_pct) >= 0.05 && (() => {
+              const pct = ing.price_change_pct * 100
+              const up = pct > 0
+              const tone = up ? UXP.coral : UXP.greenDeep
+              const arrow = up ? '↑' : '↓'
+              return (
+                <span
+                  title={`Latest invoice price vs 90-day prior median, in SEK. Source: ${ing.product_name ?? 'this product'}'s recent supplier invoice history.`}
+                  style={{
+                    marginLeft: 6, padding: '1px 6px',
+                    background: up ? '#fef3e0' : UXP.greenFill,
+                    color: tone,
+                    border: `0.5px solid ${tone}`,
+                    borderRadius: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.02em',
+                  }}
+                >
+                  {arrow} {Math.abs(pct).toFixed(0)}%
+                </span>
+              )
+            })()}
             {!ing.is_subrecipe && ing.pack_auto_detected && !ing.unit_mismatch && (
               <span style={{ marginLeft: 6, color: UXP.lavText, fontWeight: 500 }}
                     title="Pack size parsed from product name. Save it on the catalogue page to make it persistent.">

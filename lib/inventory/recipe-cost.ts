@@ -66,6 +66,12 @@ export interface ProductLatestPrice {
   density_source:   string | null   // M120 — manual | ai_inferred | convention_default | null
   weight_per_piece_g:       number | null  // M122 — for mass↔count conversion in the cost engine
   weight_per_piece_source:  string | null  // M122 — manual | supplier_article | name_parsed | null
+  // Price-trend signal: median price (in native unit, SEK-converted)
+  // across all PRIOR invoice lines in the 90 days before latest_date.
+  // change_pct compares latest_price_sek against prior_median_price_sek.
+  // null when fewer than 2 prior observations exist.
+  prior_median_price_sek: number | null
+  change_pct:             number | null
 }
 
 export interface CostedIngredient extends IngredientForCosting {
@@ -77,6 +83,10 @@ export interface CostedIngredient extends IngredientForCosting {
   latest_line_id:  string | null     // products only; null for sub-recipes
   latest_currency: string | null     // products only; null for sub-recipes
   is_subrecipe:    boolean           // true if this ingredient is a sub-recipe reference
+  // Price-trend signal (products only; null for sub-recipes).
+  // change_pct: (latest - prior_median_90d) / prior_median_90d, in SEK.
+  // null when fewer than 2 prior observations or no SEK conversion.
+  price_change_pct: number | null
   cycle:           boolean           // true if cost couldn't be computed because of a recipe cycle
   // M087 — pack-aware conversion fields
   pack_size:           number | null  // base units per invoice unit (e.g. 1000 for a 1kg bag)
@@ -137,6 +147,7 @@ export function computeRecipeCost(
           density_source:      null,
           weight_per_piece_used:    null,
           weight_per_piece_source:  null,
+          price_change_pct:    null,
         }
       }
       const subEntry = index?.get(ing.subrecipe_id)
@@ -160,6 +171,7 @@ export function computeRecipeCost(
           density_source:      null,
           weight_per_piece_used:    null,
           weight_per_piece_source:  null,
+          price_change_pct:    null,
         }
       }
       // Recurse — pass a copy of ancestors so siblings can re-enter the
@@ -257,6 +269,7 @@ export function computeRecipeCost(
         density_source:      null,
         weight_per_piece_used:    null,
         weight_per_piece_source:  null,
+        price_change_pct:    null,
       }
     }
 
@@ -425,6 +438,7 @@ export function computeRecipeCost(
       density_source:      densityUsed != null ? (p?.density_source ?? null) : null,
       weight_per_piece_used:    weightPerPieceUsed,
       weight_per_piece_source:  weightPerPieceUsed != null ? (p?.weight_per_piece_source ?? null) : null,
+      price_change_pct:    p?.change_pct ?? null,
     }
   })
 
@@ -645,6 +659,8 @@ async function getProductLatestPricesLeaf(
         density_source:   (p as any).density_source ?? null,
         weight_per_piece_g:      (p as any).weight_per_piece_g != null ? Number((p as any).weight_per_piece_g) : null,
         weight_per_piece_source: (p as any).weight_per_piece_source ?? null,
+        prior_median_price_sek: null,
+        change_pct:             null,
       })
     }
   }
@@ -683,53 +699,76 @@ async function getProductLatestPricesLeaf(
     }
   }
 
+  // First pass: bucket every line per product, compute SEK price, keep
+  // the full per-product timeline so we can derive prior-90d median.
+  function nativeUnitPrice(l: any): number | null {
+    const qty   = Number(l.quantity ?? 0)
+    const total = Number(l.total_excl_vat ?? 0)
+    if (Number.isFinite(qty) && qty > 0 && Number.isFinite(total) && total !== 0) return total / qty
+    if (l.price_per_unit != null) return Number(l.price_per_unit)
+    return null
+  }
+  function toSek(price: number, currency: string, date: string): { sek: number | null; rate: number | null } {
+    if (currency === 'SEK') return { sek: price, rate: 1 }
+    if (!fxIndex) return { sek: null, rate: null }
+    const r = getFxRate(currency, date, fxIndex)
+    return r != null ? { sek: price * r, rate: r } : { sek: null, rate: null }
+  }
+  type LineRecord = { date: string; native: number; sek: number | null; line: any; currency: string; rate: number | null }
+  const linesByProduct = new Map<string, LineRecord[]>()
   for (const l of allLines) {
     const productId = aliasToProduct.get(l.product_alias_id)
     if (!productId) continue
+    const native = nativeUnitPrice(l)
+    if (native == null) continue
+    const currency = l.currency ?? 'SEK'
+    const { sek, rate } = toSek(native, currency, l.invoice_date)
+    const arr = linesByProduct.get(productId) ?? []
+    arr.push({ date: l.invoice_date, native, sek, line: l, currency, rate })
+    linesByProduct.set(productId, arr)
+  }
+
+  const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000
+  function median(xs: number[]): number {
+    const s = xs.slice().sort((a, b) => a - b)
+    const m = Math.floor(s.length / 2)
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
+  }
+
+  for (const [productId, recs] of linesByProduct) {
+    // Already-sorted desc from the query but re-sort defensively.
+    recs.sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
+    const latest = recs[0]
     const existing = out.get(productId)
-    if (existing && existing.latest_date) continue
-    // Derive per-unit price. PDF-extracted price_per_unit is unreliable —
-    // the model sometimes picks up the per-kg figure, a discounted unit
-    // price, or a per-something-else number when the line shows multiple
-    // numeric columns (per-unit + line total + discount + tax). The
-    // ground-truth paid-per-unit IS total_excl_vat / quantity: the line
-    // total is validated against the invoice header during extraction, so
-    // it's much harder for the model to get wrong. Mutti Pizza sauce
-    // 4,1kg jar example: PDF gave qty=3, price_per_unit=14.22, total=466.83;
-    // 14.22/jar is implausible at ~155 SEK retail, but 466.83/3 = 155.61
-    // is correct. Fall back to raw price_per_unit when qty + total aren't
-    // both present (Fortnox-row source rows often only have one).
-    const qty   = Number(l.quantity ?? 0)
-    const total = Number(l.total_excl_vat ?? 0)
-    let nativePrice: number
-    if (Number.isFinite(qty) && qty > 0 && Number.isFinite(total) && total !== 0) {
-      nativePrice = total / qty
-    } else if (l.price_per_unit != null) {
-      nativePrice = Number(l.price_per_unit)
-    } else {
-      continue
-    }
-    const currency    = l.currency ?? 'SEK'
-    let priceSek: number | null = nativePrice
-    let fxRateUsed: number | null = 1
-    if (currency !== 'SEK') {
-      if (fxIndex) {
-        const rate = getFxRate(currency, l.invoice_date, fxIndex)
-        if (rate != null) { priceSek = nativePrice * rate; fxRateUsed = rate }
-        else { priceSek = null; fxRateUsed = null }
-      } else { priceSek = null; fxRateUsed = null }
-    }
+
+    // Prior median over the 90 days before latest, SEK only (so changes
+    // are meaningful even when currencies mix across the timeline).
+    const latestTs = new Date(latest.date).getTime()
+    const cutoffTs = latestTs - NINETY_DAYS_MS
+    const priorSek = recs.slice(1)
+      .filter(r => {
+        const t = new Date(r.date).getTime()
+        return t >= cutoffTs && t < latestTs && r.sek != null
+      })
+      .map(r => r.sek as number)
+    const priorMedianSek = priorSek.length >= 2 ? median(priorSek) : null
+    const changePct = (priorMedianSek != null && priorMedianSek > 0 && latest.sek != null)
+      ? (latest.sek - priorMedianSek) / priorMedianSek
+      : null
+
     out.set(productId, {
       product_id: productId, product_name: existing?.product_name ?? null,
-      latest_price: nativePrice,
-      invoice_unit: existing?.invoice_unit ?? l.unit ?? null,
-      latest_date: l.invoice_date, latest_line_id: l.id, latest_currency: currency,
+      latest_price: latest.native,
+      invoice_unit: existing?.invoice_unit ?? latest.line.unit ?? null,
+      latest_date: latest.date, latest_line_id: latest.line.id, latest_currency: latest.currency,
       pack_size: existing?.pack_size ?? null, base_unit: existing?.base_unit ?? null,
-      latest_price_sek: priceSek, fx_rate_used: fxRateUsed,
+      latest_price_sek: latest.sek, fx_rate_used: latest.rate,
       density_g_per_ml: existing?.density_g_per_ml ?? null,
       density_source:   existing?.density_source ?? null,
       weight_per_piece_g:      existing?.weight_per_piece_g ?? null,
       weight_per_piece_source: existing?.weight_per_piece_source ?? null,
+      prior_median_price_sek: priorMedianSek,
+      change_pct:             changePct,
     })
   }
   return out
@@ -810,6 +849,8 @@ export async function getProductLatestPrices(
         density_source:    (p as any).density_source ?? null,
         weight_per_piece_g:      (p as any).weight_per_piece_g != null ? Number((p as any).weight_per_piece_g) : null,
         weight_per_piece_source: (p as any).weight_per_piece_source ?? null,
+        prior_median_price_sek: null,
+        change_pct:             null,
       })
       if (p.price_override != null) {
         overrideProducts.push({
