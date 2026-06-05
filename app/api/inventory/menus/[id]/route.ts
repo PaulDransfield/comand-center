@@ -21,7 +21,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const db = createAdminClient()
   const { data: menu, error } = await db.from('menus')
-    .select('id, business_id, name, type, selling_price_ex_vat, menu_price, vat_rate, channel, notes, created_at, updated_at')
+    .select('id, business_id, name, type, selling_price_ex_vat, menu_price, vat_rate, channel, notes, image_url, created_at, updated_at')
     .eq('id', params.id).maybeSingle()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!menu)  return NextResponse.json({ error: 'menu not found' }, { status: 404 })
@@ -85,7 +85,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   })
 
   const totalFoodCost = enrichedItems.reduce((s, it) => s + Number(it.line_food_cost ?? 0), 0)
-  const ex = menu.selling_price_ex_vat != null ? Number(menu.selling_price_ex_vat) : null
+  // Margin denominator priority: explicit ex-VAT → derive from menu_price ÷ (1 + vat_rate/100).
+  const explicitEx = menu.selling_price_ex_vat != null ? Number(menu.selling_price_ex_vat) : null
+  const vatRate    = menu.vat_rate != null ? Number(menu.vat_rate) : null
+  const derivedEx  = explicitEx == null && menu.menu_price != null && vatRate != null && vatRate >= 0
+    ? Math.round((Number(menu.menu_price) / (1 + vatRate / 100)) * 100) / 100
+    : null
+  const ex = explicitEx ?? derivedEx
   const summary = {
     item_count:      enrichedItems.length,
     food_cost:       Math.round(totalFoodCost * 100) / 100,
@@ -151,6 +157,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (body.channel !== 'dine_in' && body.channel !== 'takeaway') return NextResponse.json({ error: "channel must be 'dine_in' or 'takeaway'" }, { status: 400 })
     patch.channel = body.channel
   }
+  if (body.image_url !== undefined) {
+    if (body.image_url === null || body.image_url === '') patch.image_url = null
+    else {
+      const u = String(body.image_url).trim()
+      if (u.length > 2000) return NextResponse.json({ error: 'image_url too long' }, { status: 400 })
+      patch.image_url = u
+    }
+  }
   if (body.notes !== undefined) {
     if (body.notes === null || body.notes === '') patch.notes = null
     else {
@@ -160,6 +174,36 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
   if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'no fields to patch' }, { status: 400 })
+
+  // Keep menu_price (inc-VAT) and selling_price_ex_vat in sync via vat_rate.
+  // When the owner edits one, derive the other so Cost % / GP % never go
+  // blank just because they only entered the "menu price" they read off
+  // the printed menu.
+  const { data: current } = await db.from('menus')
+    .select('menu_price, selling_price_ex_vat, vat_rate')
+    .eq('id', params.id).maybeSingle()
+  if (current) {
+    const effectiveVat = patch.vat_rate ?? current.vat_rate
+    if (effectiveVat != null && effectiveVat >= 0) {
+      const r = 1 + Number(effectiveVat) / 100
+      if (patch.menu_price !== undefined && patch.selling_price_ex_vat === undefined) {
+        patch.selling_price_ex_vat = patch.menu_price != null
+          ? Math.round((Number(patch.menu_price) / r) * 100) / 100
+          : null
+      } else if (patch.selling_price_ex_vat !== undefined && patch.menu_price === undefined) {
+        patch.menu_price = patch.selling_price_ex_vat != null
+          ? Math.round(Number(patch.selling_price_ex_vat) * r * 100) / 100
+          : null
+      } else if (patch.vat_rate !== undefined) {
+        // VAT rate changed alone — re-derive menu_price from existing ex-VAT
+        // (ex-VAT is the canonical stored value; inc-VAT follows the rate).
+        const exForDerive = patch.selling_price_ex_vat ?? current.selling_price_ex_vat
+        if (exForDerive != null) {
+          patch.menu_price = Math.round(Number(exForDerive) * r * 100) / 100
+        }
+      }
+    }
+  }
 
   const { data, error } = await db.from('menus').update(patch).eq('id', params.id).select('id').single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

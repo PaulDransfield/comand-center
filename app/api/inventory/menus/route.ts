@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
 
   const db = createAdminClient()
   let q = db.from('menus')
-    .select('id, name, type, selling_price_ex_vat, menu_price, vat_rate, channel, notes, created_at, updated_at')
+    .select('id, name, type, selling_price_ex_vat, menu_price, vat_rate, channel, notes, image_url, created_at, updated_at')
     .eq('business_id', businessId).is('archived_at', null).order('updated_at', { ascending: false })
   if (typeParam === 'food' || typeParam === 'drink') q = q.eq('type', typeParam)
   const { data: menus, error } = await q
@@ -86,7 +86,14 @@ export async function GET(req: NextRequest) {
       unitMismatches += Number(cost.unit_mismatches ?? 0)
       if ((cost.missing_prices ?? 0) > 0 || (cost.unit_mismatches ?? 0) > 0) incomplete = true
     }
-    const ex = m.selling_price_ex_vat != null ? Number(m.selling_price_ex_vat) : null
+    // Margin denominator priority: explicit ex-VAT → derive from menu_price (inc-VAT) ÷ (1 + vat_rate/100).
+    // Owner often only enters the inc-VAT menu price; we don't want Cost % / GP % to go blank for that.
+    const explicitEx = m.selling_price_ex_vat != null ? Number(m.selling_price_ex_vat) : null
+    const vatRate    = m.vat_rate != null ? Number(m.vat_rate) : null
+    const derivedEx  = explicitEx == null && m.menu_price != null && vatRate != null && vatRate >= 0
+      ? Math.round((Number(m.menu_price) / (1 + vatRate / 100)) * 100) / 100
+      : null
+    const ex = explicitEx ?? derivedEx
     const gpKr  = ex != null ? Math.round((ex - foodCost) * 100) / 100 : null
     const gpPct = ex != null && ex > 0 ? Math.round(((ex - foodCost) / ex) * 1000) / 10 : null
     const costPct = ex != null && ex > 0 ? Math.round((foodCost / ex) * 1000) / 10 : null

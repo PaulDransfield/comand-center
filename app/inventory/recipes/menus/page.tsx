@@ -1,12 +1,9 @@
 'use client'
 // app/inventory/recipes/menus/page.tsx
 //
-// Set menus — fixed-price multi-course packages. Two buckets:
-//   • Food: starter + pasta + main + dessert kind of thing
-//   • Drink: wine pairing, cocktail flight, beer flight
-//
-// Cost engine: each menu's food cost = Σ (recipe.computed_food_cost × qty)
-// across menu_items. GP / cost % computed against selling_price_ex_vat.
+// Set menus list — fixed-price multi-course packages, presented as a card
+// grid that mirrors the recipes list so chef/owner can scan visually.
+// Toggle Food / Drink. Click a menu → editor.
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +12,7 @@ import { useRouter } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
 import { PageContainer } from '@/components/ui/Layout'
+import { DataTable, type DataTableColumn } from '@/components/ui/DataTable'
 import { fmtKr } from '@/lib/format'
 
 interface MenuRow {
@@ -25,6 +23,7 @@ interface MenuRow {
   menu_price:           number | null
   vat_rate:             number | null
   channel:              string | null
+  image_url:            string | null
   item_count:           number
   food_cost:            number | null
   gp_kr:                number | null
@@ -83,6 +82,55 @@ export default function MenusListPage() {
     } finally { setBusy(false) }
   }
 
+  const cols: Array<DataTableColumn<MenuRow>> = [
+    { id: 'img', header: '',
+      cell: r => r.image_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={r.image_url} alt="" loading="lazy"
+          style={{ width: 36, height: 36, borderRadius: 5, objectFit: 'cover' as const,
+                   border: `0.5px solid ${UXP.border}`, background: '#fff', display: 'block' }} />
+      ) : (
+        <div style={{ width: 36, height: 36, borderRadius: 5, background: UXP.subtleBg, border: `0.5px dashed ${UXP.border}` }} />
+      ),
+    },
+    { id: 'name', header: 'Menu', primary: true,
+      cell: r => (
+        <div>
+          <span style={{ fontWeight: 500, color: UXP.ink1 }}>{r.name}</span>
+          {r.incomplete && (
+            <div style={{ fontSize: 10, color: UXP.coral, marginTop: 2 }}>Incomplete cost</div>
+          )}
+        </div>
+      ),
+    },
+    { id: 'courses', header: view === 'food' ? 'Courses' : 'Pours', align: 'right' as const,
+      cell: r => <span style={{ color: UXP.ink3 }}>{r.item_count}</span> },
+    { id: 'price', header: 'Menu price', align: 'right' as const, hideOnMobile: true,
+      cell: r => <span>{r.menu_price != null ? fmtKr(r.menu_price) : (r.selling_price_ex_vat != null ? fmtKr(r.selling_price_ex_vat) : '—')}</span> },
+    { id: 'cost', header: 'Food cost', align: 'right' as const, hideOnMobile: true,
+      cell: r => <span>{r.food_cost != null ? fmtKr(r.food_cost) : '—'}</span> },
+    { id: 'costpct', header: 'Cost %', align: 'right' as const, hideOnMobile: true,
+      cell: r => <span style={{ color: r.cost_pct == null ? UXP.ink3 : (r.cost_pct >= 35 ? UXP.coral : UXP.ink2) }}>
+        {r.incomplete ? '—' : (r.cost_pct != null ? `${r.cost_pct.toFixed(1)} %` : '—')}
+      </span> },
+    { id: 'gp', header: 'GP %', align: 'right' as const,
+      cell: r => r.incomplete ? (
+        <span style={{ display: 'inline-block', padding: '2px 8px',
+                       background: '#fef3e0', color: UXP.coral,
+                       fontSize: 10, fontWeight: 600, borderRadius: 6 }}>Incomplete</span>
+      ) : r.gp_pct != null ? (
+        <span style={{ color: r.gp_pct < 65 ? UXP.coral : UXP.greenDeep, fontWeight: 500 }}>
+          {r.gp_pct.toFixed(1)} %
+          {r.gp_kr != null && (
+            <span style={{ display: 'block', fontSize: 10, color: UXP.ink4, fontWeight: 400, marginTop: 1 }}>
+              {fmtKr(r.gp_kr)}
+            </span>
+          )}
+        </span>
+      ) : <span style={{ color: UXP.ink3 }}>—</span>,
+    },
+  ]
+
   return (
     <AppShell>
       <PageContainer>
@@ -131,41 +179,13 @@ export default function MenusListPage() {
         )}
 
         {filtered.length > 0 && (
-          <div style={{ background: UXP.cardBg, border: `0.5px solid ${UXP.border}`, borderRadius: 8, overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: UXP.subtleBg }}>
-                  <Th label="Menu" />
-                  <Th label="Courses" align="right" />
-                  <Th label="Menu price" align="right" />
-                  <Th label="Cost" align="right" />
-                  <Th label="Cost %" align="right" />
-                  <Th label="GP %" align="right" />
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(m => (
-                  <tr key={m.id}
-                      onClick={() => router.push(`/inventory/recipes/menus/${m.id}`)}
-                      style={{ borderTop: `0.5px solid ${UXP.border}`, cursor: 'pointer' }}>
-                    <td style={td}>
-                      <div style={{ color: UXP.ink1, fontWeight: 500 }}>{m.name}</div>
-                      {m.incomplete && (
-                        <div style={{ fontSize: 10, color: UXP.coral, marginTop: 2 }}>Incomplete cost</div>
-                      )}
-                    </td>
-                    <td style={numTd}>{m.item_count}</td>
-                    <td style={numTd}>{m.menu_price != null ? fmtKr(m.menu_price) : (m.selling_price_ex_vat != null ? fmtKr(m.selling_price_ex_vat) : '—')}</td>
-                    <td style={numTd}>{m.food_cost != null ? fmtKr(m.food_cost) : '—'}</td>
-                    <td style={numTd}>{m.incomplete ? '—' : (m.cost_pct != null ? `${m.cost_pct.toFixed(1)} %` : '—')}</td>
-                    <td style={{ ...numTd, color: m.gp_pct != null ? (m.gp_pct < 65 ? UXP.coral : UXP.greenDeep) : UXP.ink2 }}>
-                      {m.incomplete ? '—' : (m.gp_pct != null ? `${m.gp_pct.toFixed(1)} %` : '—')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable<MenuRow>
+            data={filtered}
+            columns={cols}
+            getKey={r => r.id}
+            onRowClick={r => router.push(`/inventory/recipes/menus/${r.id}`)}
+            style={{ background: UXP.cardBg, border: `0.5px solid ${UXP.border}`, borderRadius: 8, overflow: 'hidden' }}
+          />
         )}
       </PageContainer>
     </AppShell>
@@ -187,16 +207,7 @@ function ViewPill({ active, onClick, label, count }: { active: boolean; onClick:
   )
 }
 
-function Th({ label, align = 'left' }: { label: string; align?: 'left' | 'right' }) {
-  return (
-    <th style={{ padding: '8px 12px', fontSize: 10, fontWeight: 600, color: UXP.ink4,
-                 letterSpacing: '0.04em', textTransform: 'uppercase' as const, textAlign: align }}>{label}</th>
-  )
-}
-
 const emptyCard: React.CSSProperties = {
   padding: 24, background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
   borderRadius: 8, color: UXP.ink3, fontSize: 13, textAlign: 'center' as const,
 }
-const td: React.CSSProperties = { padding: '10px 12px', fontSize: 12, color: UXP.ink2 }
-const numTd: React.CSSProperties = { ...td, textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: UXP.ink1 }
