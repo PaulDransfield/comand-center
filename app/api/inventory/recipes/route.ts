@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
   // every business. If the column is missing, retry without it.
   let { data: recipes, error: rErr } = await db
     .from('recipes')
-    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, is_subrecipe, image_url, updated_at')
+    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, is_subrecipe, image_url, glass_price, updated_at')
     .eq('business_id', businessId)
     .is('archived_at', null)
     .order('name')
@@ -142,6 +142,8 @@ export async function POST(req: NextRequest) {
   const notes      = body.notes      ? String(body.notes).trim() : null
   const method     = body.method     ? String(body.method).trim().slice(0, 20000) : null
   const is_subrecipe = body.is_subrecipe === true
+  const glass_price  = body.glass_price != null && Number.isFinite(Number(body.glass_price)) && Number(body.glass_price) >= 0
+                       ? Number(body.glass_price) : null
 
   // Price-truth invariant: selling_price_ex_vat is the canonical stored value.
   // vat_rate and channel are independent owner-set fields (no inference
@@ -176,11 +178,12 @@ export async function POST(req: NextRequest) {
     portions,
     notes,
     method,
+    glass_price,
   }
   let { data, error } = await db
     .from('recipes')
     .insert({ ...baseRow, is_subrecipe })
-    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, is_subrecipe, image_url, updated_at')
+    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, is_subrecipe, image_url, glass_price, updated_at')
     .single()
   // Defensive: M124 may not be applied yet (or PostgREST schema cache stale).
   if (error && /is_subrecipe/.test(error.message)) {

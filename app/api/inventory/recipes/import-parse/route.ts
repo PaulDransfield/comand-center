@@ -55,6 +55,7 @@ export async function POST(req: NextRequest) {
   //                   visible header delimiters
   let businessId = ''
   let menuText   = ''
+  let category: 'food' | 'drinks' = 'food'
   // Mixed PDF + Word + image upload becomes a list of content blocks
   // appended to the user message. Word docs collapse to text and
   // append to menuText with a header so the model can tell files apart.
@@ -71,6 +72,8 @@ export async function POST(req: NextRequest) {
     const form = await req.formData().catch(() => null)
     if (!form) return NextResponse.json({ error: 'invalid form data' }, { status: 400 })
     businessId = String(form.get('business_id') ?? '').trim()
+    const cat  = String(form.get('category') ?? 'food').trim().toLowerCase()
+    category   = cat === 'drinks' ? 'drinks' : 'food'
     // Accept any number of files under the 'file' field. Owners can
     // also drop in a single file (back-compat with previous v1 path).
     const rawFiles = form.getAll('file').filter((f): f is File => f instanceof File)
@@ -115,6 +118,8 @@ export async function POST(req: NextRequest) {
     try { body = await req.json() } catch { body = {} }
     businessId = String(body?.business_id ?? '').trim()
     menuText   = String(body?.menu_text   ?? '').trim()
+    const cat  = String(body?.category    ?? 'food').trim().toLowerCase()
+    category   = cat === 'drinks' ? 'drinks' : 'food'
   }
 
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
@@ -169,7 +174,107 @@ export async function POST(req: NextRequest) {
   // difference: input is free-form text (menu paste), not pre-parsed
   // menu items. Tell Sonnet to first identify dishes from the text, then
   // draft ingredients per dish.
-  const SYSTEM_PROMPT = `You are an expert head chef costing a Swedish restaurant's menu. The owner has pasted their menu as free-form text. Your job:
+  //
+  // Two flavours: food (default) and drinks. Drinks knows about the
+  // wine/cocktail/beer menu format (glass/bottle dual pricing, vintage
+  // year prefix, cocktail ingredient lists without quantities).
+  const SYSTEM_PROMPT_DRINKS = `You are an expert sommelier and bartender drafting a Swedish restaurant's DRINKS menu into a structured catalogue. The owner has pasted their drinks list. Your job:
+
+1. Identify each distinct DRINK in the input. Skip section headers (BIANCO / ROSSO / ROSATO / BOLLICINE / FAT 40CL / FLASKA 33CL / COCKTAILS etc) — focus on item names.
+2. For each item, draft a recipe entry pointing at the matching supplier product where applicable.
+
+── DRINK TYPES — set the "type" field on EVERY drink ──
+
+- wine        — bottled wine (red, white, rosé, bubbles): always has a producer name and usually a vintage year. May have dual pricing "glass/bottle:-" (e.g. 135/610:-).
+- beer        — bottled or draft beer (lager, IPA, stout, etc.).
+- spirit      — bottled distillates (gin, vodka, whisky, rum, etc.), sold by the glass.
+- softdrink   — sodas, juices, mixers (Coca-Cola, San Pellegrino, Festis, tonic, etc.)
+- cocktail    — multi-ingredient mixed drinks; will have an ingredient list in the menu.
+- cider       — apple/pear cider products.
+- alcohol_free — alcohol-free wines, beers, spritzes, mocktails — anything explicitly marketed as 0.0%.
+- drink       — fallback when none of the above fits.
+
+── WINE FORMAT ──
+
+Italian/French/etc. wine lines typically look like:
+  "2024 Erste + Neue - Riesling - Trentino Alto Adige   165/745:-"
+  "2024 Albino Rocca Langhe da Bertü - Chardonnay   800:-"
+  "NV Il Fattorino Bianco - Vermentino, Viogner, Malvasia - Marche   110/495:-"
+
+Parse:
+  - vintage_or_NV (year, "NV" = non-vintage)
+  - producer + wine name
+  - grape variety
+  - region (optional)
+  - glass_price / bottle_price OR just bottle_price
+
+Build the recipe's "name" as: "[vintage] Producer + Wine Name" (e.g. "2022 Cecchi Chianti Classico"). Keep grape and region in the "note" field. Set portions=6 (standard EU 125 ml pour from a 750 ml bottle — owner can edit per-wine). When dual price is given, set selling_price_inc_vat to the BOTTLE price and glass_price_inc_vat to the glass price. When only one price is given, set selling_price_inc_vat only.
+
+── BEER / SPIRIT / SOFTDRINK / CIDER FORMAT ──
+
+Single-line items with one price:
+  "Poretti lager   90:-"
+  "Coca-Cola Co. 33cl   40:-"
+  "Mikkeller 33cl   75:-"
+
+Build name as the brand + descriptor. selling_price_inc_vat = the listed price. portions=1. No glass_price.
+
+── COCKTAIL FORMAT ──
+
+Cocktails typically have a name + ingredient list + one price:
+  "Negroni   160:-
+   Tanqueray Gin, Campari, Carpano Classico"
+
+Build name = cocktail name. selling_price_inc_vat = price. portions=1. Ingredient list goes into the ingredients array with qty/unit BLANK (set qty=0, unit="ml") — the bartender fills the recipe pour-spec later. Reference each spirit/mixer by the closest catalogue product prefix \`p\`.
+
+── INGREDIENT MATCHING ──
+
+For ALL drink types, link each spirit/wine/mixer/garnish to the closest catalogue product prefix \`p\` when one plausibly exists.
+
+- Wine: look for a product whose name contains both the producer and vintage. If catalogue has "Chianti Classico Cecchi 2022 75cl", that's the match.
+- Beer: look for the brand name in product names ("Poretti", "Peroni", "Carlsberg alkoholfri").
+- Spirit: look for brand + size ("Tanqueray Gin 70cl", "Campari 100cl").
+- Softdrink: brand + size match ("Coca-Cola 33cl Engångsglas", "San Pellegrino 25cl").
+
+If the wine/spirit isn't in the catalogue yet, omit the ingredient (set ingredients=[]) and add a note "Catalogue product missing for [name]" — owner will create the product later, then link the recipe ingredient.
+
+Quantities for cocktail ingredients: leave qty=0 for chef to fill, unit="ml". For wine bottle / beer can / spirit pour: qty=1, unit="st" or "flaska" or "bottle". (Cost engine handles either.)
+
+Up to ${MAX_DISHES} drinks per import.
+
+Return JSON ONLY:
+[
+  {
+    "name":     "2022 Cecchi Chianti Classico",
+    "type":     "wine",
+    "portions": 6,
+    "selling_price_inc_vat": 610,
+    "glass_price_inc_vat":   135,
+    "note":     "Sangiovese — Toscana.",
+    "ingredients": [{ "p": "abcd1234", "qty": 1, "unit": "flaska" }]
+  },
+  {
+    "name":     "Poretti lager",
+    "type":     "beer",
+    "portions": 1,
+    "selling_price_inc_vat": 90,
+    "ingredients": [{ "p": "wxyz5678", "qty": 1, "unit": "st" }]
+  },
+  {
+    "name":     "Negroni",
+    "type":     "cocktail",
+    "portions": 1,
+    "selling_price_inc_vat": 160,
+    "note":     "Tanqueray Gin, Campari, Carpano Classico — owner sets pour-spec.",
+    "ingredients": [
+      { "p": "aaaa1111", "qty": 0, "unit": "ml" },
+      { "p": "bbbb2222", "qty": 0, "unit": "ml" },
+      { "p": "cccc3333", "qty": 0, "unit": "ml" }
+    ]
+  }
+]`
+
+  const SYSTEM_PROMPT_FOOD = `You are an expert head chef costing a Swedish restaurant's menu. The owner has pasted their menu as free-form text. Your job:
 
 1. Identify each distinct DISH in the input. Skip section headers, intros, footers — focus on dish names.
 2. For each dish, draft a per-portion ingredient list drawn ONLY from the supplier product catalogue (reference each by its [8-char prefix]).
@@ -250,6 +355,8 @@ Return JSON ONLY, an array with one object per recipe (sub-recipes can appear BE
     ]
   }
 ]`
+
+  const SYSTEM_PROMPT = category === 'drinks' ? SYSTEM_PROMPT_DRINKS : SYSTEM_PROMPT_FOOD
 
   // Build the user message. Multiple inputs can co-exist in a single
   // Sonnet call (preserves cross-file sub-recipe refs + sends the
@@ -354,20 +461,27 @@ Return JSON ONLY, an array with one object per recipe (sub-recipes can appear BE
       // canonical set; passing an unknown value just renders as "—".
       // Sub-recipes never get a type (they're not dishes).
       const rawType  = d?.type ? String(d.type).trim().toLowerCase() : null
-      const TYPES    = ['starter', 'main', 'pasta', 'pizza', 'dessert', 'drink', 'cocktail', 'side', 'sauce', 'other']
+      const TYPES    = [
+        'starter','main','pasta','pizza','dessert','side','sauce','other',
+        'cocktail','drink','wine','beer','spirit','softdrink','cider','alcohol_free',
+      ]
       const dishType = rawType && TYPES.includes(rawType) ? rawType : null
+      // M127 — wines carry a separate glass_price alongside menu_price
+      // (bottle). Sonnet emits glass_price_inc_vat on wine drafts when
+      // the menu shows dual pricing.
+      const glassPriceRaw = d?.glass_price_inc_vat
+      const glassPrice    = glassPriceRaw != null && Number.isFinite(Number(glassPriceRaw)) && Number(glassPriceRaw) > 0
+        ? Number(glassPriceRaw) : null
       return {
         name,
         type:                    !d?.is_subrecipe ? dishType : null,
         is_subrecipe:            !!d?.is_subrecipe,
         portions:                Math.max(1, Math.floor(Number(d?.portions) || 1)),
         selling_price_inc_vat:   d?.selling_price_inc_vat != null ? Number(d.selling_price_inc_vat) : null,
+        glass_price_inc_vat:     glassPrice,
         yield_amount:            Number.isFinite(yieldAmt) && yieldAmt > 0 ? yieldAmt : null,
         yield_unit:              yieldUnit,
         note:                    d?.note ? String(d.note).slice(0, 200) : null,
-        // M114 — method/instructions extracted from Word documents or
-        // any input that carries preparation steps. Capped at 20k
-        // chars; matches the recipes.method PATCH limit.
         method:                  d?.method ? String(d.method).slice(0, 20000).trim() : null,
         ingredients,
       }

@@ -474,6 +474,7 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
     is_subrecipe:           boolean
     portions:               number
     selling_price_inc_vat:  number | null
+    glass_price_inc_vat?:   number | null
     yield_amount:           number | null
     yield_unit:             string | null
     note:                   string | null
@@ -496,6 +497,9 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
   const [busy,    setBusy]    = useState(false)
   const [err,     setErr]     = useState<string | null>(null)
   const [saveResults, setSaveResults] = useState<{ created: number; failed: { name: string; error: string }[] } | null>(null)
+  // M127 — food vs drinks parsing modes. Drinks knows about the
+  // wine/cocktail/beer menu format including glass/bottle dual pricing.
+  const [category, setCategory] = useState<'food' | 'drinks'>('food')
 
   async function parse() {
     if (!text.trim() && files.length === 0) { setErr('Paste some menu text or attach a file first.'); return }
@@ -505,6 +509,7 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
       if (files.length > 0) {
         const fd = new FormData()
         fd.append('business_id', bizId)
+        fd.append('category',    category)
         for (const f of files) fd.append('file', f)
         r = await fetch('/api/inventory/recipes/import-parse', {
           method: 'POST', cache: 'no-store', body: fd,
@@ -513,7 +518,7 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
         r = await fetch('/api/inventory/recipes/import-parse', {
           method:  'POST', cache: 'no-store',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ business_id: bizId, menu_text: text }),
+          body:    JSON.stringify({ business_id: bizId, menu_text: text, category }),
         })
       }
       const j = await r.json()
@@ -575,7 +580,11 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
             name:                  d.name,
             type:                  d.type,
             menu_price_inc_vat:    d.selling_price_inc_vat ?? null,
-            vat_rate:              12,
+            glass_price:           d.glass_price_inc_vat ?? null,
+            // Wines + spirits are 25% VAT, soft drinks + alcohol-free are 12%,
+            // food is 12%, takeaway-shifted items 6%. The Sonnet draft only
+            // gives us the type — apply Sweden's standard rate per category.
+            vat_rate:              d.type === 'wine' || d.type === 'beer' || d.type === 'spirit' || d.type === 'cocktail' || d.type === 'cider' ? 25 : 12,
             channel:               'dine_in',
             portions:              d.portions,
             notes:                 d.note ? `AI DRAFT — ${d.note}` : 'AI DRAFT — review quantities before trusting cost.',
@@ -813,6 +822,30 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
       <div>
         {stage === 'paste' && (
           <>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: UXP.ink3, marginRight: 4 }}>Mode:</span>
+              {(['food','drinks'] as const).map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setCategory(c)}
+                  style={{
+                    padding: '4px 12px', fontSize: 11, fontFamily: 'inherit', fontWeight: 500,
+                    background: category === c ? UXP.lavFill : 'transparent',
+                    color: category === c ? UXP.lavText : UXP.ink2,
+                    border: `0.5px solid ${category === c ? UXP.lav : UXP.border}`,
+                    borderRadius: 999, cursor: 'pointer',
+                  }}
+                >
+                  {c === 'food' ? 'Food' : 'Drinks (wine / beer / cocktail)'}
+                </button>
+              ))}
+              <span style={{ fontSize: 10, color: UXP.ink4, marginLeft: 8 }}>
+                {category === 'drinks'
+                  ? 'Drinks mode understands wine vintages, glass/bottle prices, and cocktail ingredient lists.'
+                  : 'Food mode handles dishes, sub-recipes, and ingredient quantities.'}
+              </span>
+            </div>
             <div style={{
               border: `1px dashed ${UXP.border}`, borderRadius: 6,
               padding: '12px 14px', marginBottom: 10,

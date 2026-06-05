@@ -24,7 +24,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // Defensive: M124 may not be applied yet.
   let { data: r, error: rErr } = await db
     .from('recipes')
-    .select('id, business_id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, is_subrecipe, image_url, updated_at')
+    .select('id, business_id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, is_subrecipe, image_url, glass_price, updated_at')
     .eq('id', params.id)
     .maybeSingle()
   if (rErr && /is_subrecipe|image_url/.test(rErr.message)) {
@@ -102,6 +102,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.notes !== undefined)      patch.notes      = body.notes ? String(body.notes).trim() : null
   if (body.method !== undefined)     patch.method     = body.method ? String(body.method).trim().slice(0, 20000) : null
   if (body.is_subrecipe !== undefined) patch.is_subrecipe = body.is_subrecipe === true
+  if (body.glass_price !== undefined) {
+    if (body.glass_price === null || body.glass_price === '') {
+      patch.glass_price = null
+    } else {
+      const gp = Number(body.glass_price)
+      if (!Number.isFinite(gp) || gp < 0) {
+        return NextResponse.json({ error: 'glass_price must be >= 0 or null' }, { status: 400 })
+      }
+      patch.glass_price = gp
+    }
+  }
   if (body.portions !== undefined) {
     const pt = Math.max(1, Math.floor(Number(body.portions)))
     if (!Number.isFinite(pt)) return NextResponse.json({ error: 'portions must be a positive integer' }, { status: 400 })
@@ -187,7 +198,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .from('recipes')
     .update(patch)
     .eq('id', params.id)
-    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, updated_at')
+    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, glass_price, updated_at')
     .single()
   // Defensive: M124 (is_subrecipe) may not be applied yet. Drop the
   // field from the patch and retry once.
@@ -197,7 +208,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       .from('recipes')
       .update(patchWithout)
       .eq('id', params.id)
-      .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, updated_at')
+      .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, glass_price, updated_at')
       .single()
     data = retry.data; error = retry.error
   }
