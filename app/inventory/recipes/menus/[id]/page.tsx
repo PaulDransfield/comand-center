@@ -60,6 +60,7 @@ export default function MenuEditorPage() {
   const [picker, setPicker] = useState(false)
   const [pickerQuery, setPickerQuery] = useState('')
   const [recipeOptions, setRecipeOptions] = useState<RecipeOption[]>([])
+  const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -249,6 +250,7 @@ export default function MenuEditorPage() {
                   <thead>
                     <tr style={{ background: UXP.subtleBg }}>
                       <Th label="#" />
+                      <Th label="" />
                       <Th label="Recipe" />
                       <Th label="Qty" align="right" />
                       <Th label="Cost / portion" align="right" />
@@ -260,6 +262,22 @@ export default function MenuEditorPage() {
                     {items.map((it, idx) => (
                       <tr key={it.id} style={{ borderTop: `0.5px solid ${UXP.border}` }}>
                         <td style={td}>{idx + 1}</td>
+                        <td style={{ ...td, width: 56 }}>
+                          {it.recipe_image ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={it.recipe_image} alt=""
+                              onClick={() => setLightbox({ url: it.recipe_image!, name: it.recipe_name })}
+                              title="Click to enlarge"
+                              loading="lazy"
+                              style={{
+                                width: 40, height: 40, borderRadius: 5, objectFit: 'cover' as const,
+                                border: `0.5px solid ${UXP.border}`, background: '#fff', display: 'block', cursor: 'zoom-in',
+                              }}
+                            />
+                          ) : (
+                            <div style={{ width: 40, height: 40, borderRadius: 5, background: UXP.subtleBg, border: `0.5px dashed ${UXP.border}` }} />
+                          )}
+                        </td>
                         <td style={td}>
                           <div style={{ color: UXP.ink1, fontWeight: 500 }}>{it.recipe_name}</div>
                           {it.recipe_type && <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 1 }}>{it.recipe_type}</div>}
@@ -319,7 +337,38 @@ export default function MenuEditorPage() {
           </div>
         )}
       </PageContainer>
+
+      {/* Click-to-enlarge dish photo. Backdrop click or Esc closes. */}
+      {lightbox && <CourseLightbox url={lightbox.url} name={lightbox.name} onClose={() => setLightbox(null)} />}
     </AppShell>
+  )
+}
+
+function CourseLightbox({ url, name, onClose }: { url: string; name: string; onClose: () => void }) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div onClick={onClose} role="dialog" aria-label={`Image: ${name}`}
+      style={{
+        position: 'fixed' as const, inset: 0, zIndex: 500,
+        background: 'rgba(0,0,0,0.85)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24, cursor: 'zoom-out',
+      }}>
+      <div style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 12, maxWidth: '100%', maxHeight: '100%' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt={name} onClick={e => e.stopPropagation()}
+          style={{ maxWidth: '100%', maxHeight: 'calc(100vh - 100px)', objectFit: 'contain' as const, borderRadius: 6, background: '#fff', cursor: 'default' }} />
+        <div style={{ color: '#fff', fontSize: 14, fontWeight: 500, textAlign: 'center' as const }}>{name}</div>
+      </div>
+      <button type="button" onClick={onClose} aria-label="Close"
+        style={{ position: 'absolute' as const, top: 16, right: 16, background: 'rgba(255,255,255,0.15)', color: '#fff', border: '0.5px solid rgba(255,255,255,0.3)', borderRadius: 999, width: 32, height: 32, fontSize: 18, cursor: 'pointer', fontFamily: 'inherit' }}>
+        ×
+      </button>
+    </div>
   )
 }
 
