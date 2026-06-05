@@ -110,13 +110,14 @@ export default function InventoryItemsPage() {
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!bizId) return
-    setLoading(true)
+    // Silent refresh skips the loading spinner so post-save reloads
+    // don't flash the empty catalogue + scroll-jump. The page stays
+    // usable while the new data swaps in.
+    if (!silent) setLoading(true)
     setError(null)
     try {
-      // Map the 'sellable' virtual filter back to 'all' for the server —
-      // the server has no concept of the bundle; we post-filter below.
       const serverCategory = filter === 'sellable' ? 'all' : filter
       const r = await fetch(`/api/inventory/items?business_id=${encodeURIComponent(bizId)}&category=${encodeURIComponent(serverCategory)}`,
                             { cache: 'no-store' })
@@ -621,7 +622,7 @@ export default function InventoryItemsPage() {
         <EditItemModal
           productId={editingProductId}
           onClose={() => setEditingProductId(null)}
-          onSaved={() => { setEditingProductId(null); load() }}
+          onSaved={() => { setEditingProductId(null); load({ silent: true }) }}
         />
       )}
     </AppShell>
