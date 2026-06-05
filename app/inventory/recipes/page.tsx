@@ -677,6 +677,35 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
       return next
     })
   }
+  function replaceIngredient(di: number, ii: number, product: { product_id: string; name: string; invoice_unit?: string | null }) {
+    setDrafts(prev => {
+      const next = prev.slice()
+      const draft = { ...next[di] }
+      draft.ingredients = draft.ingredients.slice()
+      const existing = draft.ingredients[ii]
+      draft.ingredients[ii] = {
+        kind:         'product',
+        product_id:   product.product_id,
+        product_name: product.name,
+        quantity:     existing.quantity,
+        unit:         existing.unit || product.invoice_unit || 'g',
+      }
+      next[di] = draft
+      return next
+    })
+  }
+
+  // Picker state for the ingredient-replace flow.
+  const [picker, setPicker] = useState<{ di: number; ii: number; q: string; results: Array<{ product_id: string; name: string; invoice_unit?: string | null }> } | null>(null)
+  useEffect(() => {
+    if (!picker) return
+    const timer = setTimeout(async () => {
+      const r = await fetch(`/api/inventory/products/search?business_id=${encodeURIComponent(bizId)}&q=${encodeURIComponent(picker.q)}`, { cache: 'no-store' })
+      const j = await r.json().catch(() => ({}))
+      setPicker(p => p ? { ...p, results: j.products ?? [] } : p)
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [picker?.q, picker?.di, picker?.ii, bizId])
   function removeDraft(di: number) {
     setDrafts(prev => prev.filter((_, i) => i !== di))
   }
@@ -878,7 +907,7 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
                       </div>
                     )}
                     {d.ingredients.map((g, ii) => (
-                      <div key={ii} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 50px 24px', gap: 6, alignItems: 'center' }}>
+                      <div key={ii} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 50px 24px 24px', gap: 6, alignItems: 'center' }}>
                         <div style={{ fontSize: 11, color: UXP.ink2, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const, display: 'flex', alignItems: 'center', gap: 5 }}
                              title={g.kind === 'product' ? g.product_name : `sub-recipe: ${g.sub_name}`}>
                           {g.kind === 'sub' && (
@@ -900,6 +929,14 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
                           onChange={e => editIngredient(di, ii, { unit: e.target.value })}
                           style={{ padding: '3px 6px', fontSize: 11, border: `1px solid ${UXP.border}`, borderRadius: 4, fontFamily: 'inherit' }}
                         />
+                        {g.kind === 'product' ? (
+                          <button
+                            onClick={() => setPicker({ di, ii, q: '', results: [] })}
+                            aria-label="Swap product"
+                            title="Replace with a different catalogue product"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: UXP.lavText, fontSize: 12 }}
+                          >⇄</button>
+                        ) : <span />}
                         <button onClick={() => removeIngredient(di, ii)} aria-label="Remove ingredient" style={{ background: 'none', border: 'none', cursor: 'pointer', color: UXP.ink4, fontSize: 14 }}>×</button>
                       </div>
                     ))}
@@ -917,6 +954,59 @@ function BulkImportModal({ bizId, existingRecipes, onClose, onSaved }: { bizId: 
                 </button>
               </div>
             </div>
+
+            {/* ── Product-swap picker overlay ─────────────────────────── */}
+            {picker && (
+              <div
+                onClick={() => setPicker(null)}
+                style={{
+                  position: 'fixed', inset: 0, zIndex: 1000,
+                  background: 'rgba(58, 53, 80, 0.45)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  padding: 20,
+                }}
+              >
+                <div
+                  onClick={e => e.stopPropagation()}
+                  style={{
+                    width: 'min(560px, 100%)', background: UXP.cardBg,
+                    border: `0.5px solid ${UXP.border}`, borderRadius: 8,
+                    padding: 16, boxShadow: '0 10px 32px rgba(0,0,0,0.2)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Replace with catalogue product</h3>
+                    <button onClick={() => setPicker(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: UXP.ink3, fontSize: 18 }}>×</button>
+                  </div>
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="Search products…"
+                    value={picker.q}
+                    onChange={e => setPicker(p => p ? { ...p, q: e.target.value } : p)}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', fontSize: 13, border: `1px solid ${UXP.border}`, borderRadius: 6, fontFamily: 'inherit', marginBottom: 8 }}
+                  />
+                  <div style={{ maxHeight: 320, overflowY: 'auto' as const, border: `0.5px solid ${UXP.border}`, borderRadius: 6 }}>
+                    {picker.results.length === 0 ? (
+                      <div style={{ padding: 14, textAlign: 'center' as const, fontSize: 12, color: UXP.ink4 }}>
+                        {picker.q.trim() ? 'No matches.' : 'Start typing to search the catalogue.'}
+                      </div>
+                    ) : picker.results.map(p => (
+                      <div
+                        key={p.product_id}
+                        onClick={() => { replaceIngredient(picker.di, picker.ii, p); setPicker(null) }}
+                        style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: `0.5px solid ${UXP.borderSoft}`, fontSize: 12, color: UXP.ink1 }}
+                        onMouseEnter={e => (e.currentTarget.style.background = UXP.lavFill)}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <div style={{ fontWeight: 500 }}>{p.name}</div>
+                        {p.invoice_unit && <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2 }}>{p.invoice_unit}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
 
