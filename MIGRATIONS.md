@@ -1209,6 +1209,44 @@ Documents every table the code reads/writes that never had a formal migration. E
 
 ---
 
+## M131 — Diacritic-insensitive search (2026-06-05)
+
+**Status**: APPLIED ✓
+**File**: `sql/M131-UNACCENT-SEARCH-COLUMNS.sql`
+
+Enables `unaccent` + `pg_trgm` extensions. Adds immutable `public.f_unaccent(text)` wrapper (required for STORED generated columns since stock `unaccent()` is STABLE). Adds two STORED generated columns:
+- `products.name_unaccent` — `lower(f_unaccent(name))`
+- `supplier_invoice_lines.raw_description_unaccent` — `lower(f_unaccent(raw_description))`
+
+Plus trigram GIN indexes on each for fast `%substring%` ilike.
+
+Used by: link-article picker, items orphan-line discovery, products name search, Ask CC `search_inventory_products`. JS helper `lib/inventory/unaccent.ts` mirrors the SQL so query side normalises in JS, data side in Postgres, both produce the same form.
+
+Owner-facing effect: typing "creme" matches "Crème" and vice versa; same for café/cafe, smörgås/smorgas, etc.
+
+---
+
+## M132 — Global product enrichment schema (2026-06-05)
+
+**Status**: PENDING — file written, awaiting owner SQL editor apply
+**File**: `sql/M132-GLOBAL-PRODUCT-ENRICHMENT.sql`
+**Plan**: `docs/GLOBAL-PRODUCT-ENRICHMENT-PLAN.md`
+
+Phase 1 of the cross-customer enrichment work. Schema only — no app code yet (Phase 2 ships the write hook).
+
+Changes:
+1. Adds 7 columns to `supplier_articles`: `refined_pack_size`, `refined_base_unit`, `refined_weight_per_piece_g`, `refined_density_g_per_ml`, `refined_category`, `refined_confidence smallint NOT NULL DEFAULT 0`, `refined_last_updated_at`. Plus CHECK constraints for confidence (0-2) and category (whitelisted values).
+2. Creates `supplier_article_refinement_log` table — audit trail of every customer save against (supplier, article). FK to `supplier_articles` (composite PK) + FK to `businesses` with cascade. Whitelisted `field` CHECK so only the share-safe attributes can be logged. Indexes on (supplier_fortnox_number, article_number), business_id, field.
+3. Adds `businesses.share_refinements_with_platform boolean NOT NULL DEFAULT true` — opt-out flag for privacy / GDPR.
+
+Idempotent throughout (IF NOT EXISTS on columns/tables/indexes, DO $$ pg_constraint guards on CHECK constraints).
+
+No data backfill — refined values stay NULL until Phase 2 ships and customers start saving.
+
+Verification queries included at the bottom of the SQL file (commented out — uncomment to spot-check after apply).
+
+---
+
 ## Next Steps
 
 1. **Run M007 SQL** — required for Enhanced API Discovery to work
