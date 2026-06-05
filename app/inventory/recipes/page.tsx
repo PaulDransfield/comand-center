@@ -275,9 +275,9 @@ export default function InventoryRecipesPage() {
               cell: r => <span style={{ color: UXP.ink3 }}>{r.ingredient_count}</span> },
             { id: 'menu',  header: t('colMenuPrice'),   align: 'right' as const, hideOnMobile: true,
               cell: r => <InlineMenuPrice recipeId={r.id} value={r.menu_price} onSaved={load} /> },
-            { id: 'food',  header: t('colFoodCost'),    align: 'right' as const, hideOnMobile: true,
+            { id: 'food',  header: viewFilter === 'drinks' ? 'Cost' : t('colFoodCost'),    align: 'right' as const, hideOnMobile: true,
               cell: r => fmtKr(r.food_cost) },
-            { id: 'foodpct', header: t('colFoodPct'),   align: 'right' as const, hideOnMobile: true,
+            { id: 'foodpct', header: viewFilter === 'drinks' ? 'Cost %' : t('colFoodPct'),   align: 'right' as const, hideOnMobile: true,
               cell: r => (
                 <span style={{ color: r.food_pct == null ? UXP.ink3 : foodPctColor(r.food_pct) }}>
                   {r.food_pct != null ? `${r.food_pct.toFixed(1)} %` : '—'}
