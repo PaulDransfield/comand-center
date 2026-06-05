@@ -52,29 +52,19 @@ export type ToolName =
   | 'get_invoice_lines'
   | 'get_inventory_summary'
   | 'get_product_price_history'
+  | 'top_products_by_supplier'
   | 'generate_report'
 
-// Document generation. The tool itself only ACKs (no heavy work) — /api/ask
-// detects the call in tools_called and returns download links to the user.
-const REPORT_TOOLS: AnthropicToolDef[] = [{
-  name: 'generate_report',
-  description: 'Use ONLY when the user asks for a downloadable REPORT / DOCUMENT / PRESENTATION / DECK (PDF, Word, or PowerPoint) about the restaurant\'s finances — e.g. "make me a PowerPoint on our margins", "send me a Word doc on supplier spend". Choose report_type: "margin" (margins / profitability / P&L), "cost" (cost breakdown / expenses / overheads), or "supplier" (supplier or vendor spend). Choose formats from pdf/docx/pptx (default all three if unspecified). After calling, write ONE short confirmation sentence — the download buttons are shown to the user automatically. Do NOT call this for a normal question that just wants an answer in chat.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      report_type: { type: 'string', enum: ['margin', 'cost', 'supplier'], description: 'Which report to generate.' },
-      formats:     { type: 'array', items: { type: 'string', enum: ['pdf', 'docx', 'pptx'] }, description: 'File formats to offer.' },
-    },
-    required: ['report_type'],
-  },
-}]
+// Document generation. The 'generate_report' tool now lives in
+// INVENTORY_TOOLS (lib/ai/tools/inventory.ts) which carries the full
+// 4-type catalogue including 'top-products' + filter params. A duplicate
+// definition here would silently override it.
 
 /** Full catalogue exposed to the LLM via the Anthropic API `tools` field. */
 export const TOOL_CATALOGUE: AnthropicToolDef[] = [
   ...REVISOR_TOOLS,
   ...VOUCHER_TOOLS,
   ...INVENTORY_TOOLS,
-  ...REPORT_TOOLS,
 ]
 
 /**
@@ -103,18 +93,9 @@ export async function runTool(
       case 'get_invoice_lines':
       case 'get_inventory_summary':
       case 'get_product_price_history':
-        result = await runInventoryTool(ctx, name as any, args ?? {})
-        break
+      case 'top_products_by_supplier':
       case 'generate_report':
-        // No data fetch — just ack so the model writes a confirmation. The
-        // /api/ask route reads this call from tools_called and returns the
-        // actual download links to the user.
-        result = {
-          ok:          true,
-          report_type: ['margin', 'cost', 'supplier'].includes(args?.report_type) ? args.report_type : 'margin',
-          formats:     Array.isArray(args?.formats) && args.formats.length ? args.formats : ['pdf', 'docx', 'pptx'],
-          note:        'Acknowledged — download links are shown to the user automatically.',
-        }
+        result = await runInventoryTool(ctx, name as any, args ?? {})
         break
       default:
         return JSON.stringify({ error: 'unknown_tool', name })

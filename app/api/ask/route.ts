@@ -242,10 +242,23 @@ export async function POST(req: NextRequest) {
   let downloads: Array<{ label: string; url: string }> | undefined
   const reportCall = toolsCalled.find(t => t.name === 'generate_report')
   if (reportCall && businessId) {
-    const rtype = ['margin', 'cost', 'supplier'].includes(reportCall.args?.report_type) ? reportCall.args.report_type : 'margin'
+    const rtype = ['margin', 'cost', 'supplier', 'top-products'].includes(reportCall.args?.report_type) ? reportCall.args.report_type : 'margin'
     const fmts: string[] = Array.isArray(reportCall.args?.formats) && reportCall.args.formats.length ? reportCall.args.formats : ['pdf', 'docx', 'pptx']
+    // Pass-through filter params for top-products. Margin/cost/supplier ignore them.
+    const filterQs = new URLSearchParams()
+    if (rtype === 'top-products') {
+      if (reportCall.args?.supplier_filter) filterQs.set('supplier_filter', String(reportCall.args.supplier_filter))
+      if (reportCall.args?.date_from)       filterQs.set('date_from',       String(reportCall.args.date_from))
+      if (reportCall.args?.date_to)         filterQs.set('date_to',         String(reportCall.args.date_to))
+      if (reportCall.args?.rank_by)         filterQs.set('rank_by',         String(reportCall.args.rank_by))
+      if (reportCall.args?.limit)           filterQs.set('limit',           String(reportCall.args.limit))
+    }
     const LABEL: Record<string, string> = { pdf: 'Download PDF', docx: 'Download Word', pptx: 'Download PowerPoint' }
-    downloads = fmts.filter(f => LABEL[f]).map(f => ({ label: LABEL[f], url: `/api/reports/${rtype}?business_id=${encodeURIComponent(businessId)}&format=${f}` }))
+    downloads = fmts.filter(f => LABEL[f]).map(f => {
+      const qs = new URLSearchParams({ business_id: businessId, format: f })
+      for (const [k, v] of filterQs) qs.set(k, v)
+      return { label: LABEL[f], url: `/api/reports/${rtype}?${qs.toString()}` }
+    })
   }
 
   // Return the answer plus the approaching-limit warning if the gate set one.
