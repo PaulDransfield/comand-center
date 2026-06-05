@@ -80,6 +80,7 @@
       "label": "Recipes",
       "pages": {
         "recipes": "Recipes",
+        "menus":   "Set menus",
         "prep":    "Prep list",
         "orders":  "Order list"
       }

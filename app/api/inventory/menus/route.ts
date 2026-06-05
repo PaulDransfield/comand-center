@@ -27,11 +27,23 @@ export async function GET(req: NextRequest) {
   if (forbidden) return forbidden
 
   const db = createAdminClient()
-  let q = db.from('menus')
-    .select('id, name, type, selling_price_ex_vat, menu_price, vat_rate, channel, notes, image_url, created_at, updated_at')
-    .eq('business_id', businessId).is('archived_at', null).order('updated_at', { ascending: false })
-  if (typeParam === 'food' || typeParam === 'drink') q = q.eq('type', typeParam)
-  const { data: menus, error } = await q
+  // Defensive SELECT: image_url is M134 which may not be applied yet.
+  // First attempt includes it; on 42703 (column does not exist) we fall
+  // back to the pre-M134 column set so the page still loads.
+  const COLS_WITH_IMG = 'id, name, type, selling_price_ex_vat, menu_price, vat_rate, channel, notes, image_url, created_at, updated_at'
+  const COLS_LEGACY   = 'id, name, type, selling_price_ex_vat, menu_price, vat_rate, channel, notes, created_at, updated_at'
+  async function fetchMenus(cols: string) {
+    let q = db.from('menus').select(cols)
+      .eq('business_id', businessId).is('archived_at', null).order('updated_at', { ascending: false })
+    if (typeParam === 'food' || typeParam === 'drink') q = q.eq('type', typeParam)
+    return q
+  }
+  let { data: menus, error } = await fetchMenus(COLS_WITH_IMG)
+  if (error && /image_url.*does not exist/i.test(error.message)) {
+    const retry = await fetchMenus(COLS_LEGACY)
+    menus = retry.data?.map((m: any) => ({ ...m, image_url: null })) ?? null
+    error = retry.error
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!menus || menus.length === 0) {
     return NextResponse.json({ menus: [] }, { headers: { 'Cache-Control': 'no-store' } })

@@ -20,9 +20,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
   const db = createAdminClient()
-  const { data: menu, error } = await db.from('menus')
-    .select('id, business_id, name, type, selling_price_ex_vat, menu_price, vat_rate, channel, notes, image_url, created_at, updated_at')
-    .eq('id', params.id).maybeSingle()
+  // Defensive SELECT — M134 image_url may not be applied yet. Fall back
+  // gracefully so the editor still loads against pre-M134 schemas.
+  const COLS_WITH_IMG = 'id, business_id, name, type, selling_price_ex_vat, menu_price, vat_rate, channel, notes, image_url, created_at, updated_at'
+  const COLS_LEGACY   = 'id, business_id, name, type, selling_price_ex_vat, menu_price, vat_rate, channel, notes, created_at, updated_at'
+  let { data: menu, error } = await db.from('menus').select(COLS_WITH_IMG).eq('id', params.id).maybeSingle()
+  if (error && /image_url.*does not exist/i.test(error.message)) {
+    const retry = await db.from('menus').select(COLS_LEGACY).eq('id', params.id).maybeSingle()
+    menu = retry.data ? { ...retry.data, image_url: null } : null
+    error = retry.error
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!menu)  return NextResponse.json({ error: 'menu not found' }, { status: 404 })
   const forbidden = requireBusinessAccess(auth, menu.business_id)
@@ -205,9 +212,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
-  const { data, error } = await db.from('menus').update(patch).eq('id', params.id).select('id').single()
+  let { data, error } = await db.from('menus').update(patch).eq('id', params.id).select('id').single()
+  if (error && /image_url.*does not exist/i.test(error.message) && 'image_url' in patch) {
+    // M134 not applied — drop image_url and retry.
+    const { image_url, ...patchNoImg } = patch
+    const retry = await db.from('menus').update(patchNoImg).eq('id', params.id).select('id').single()
+    data = retry.data; error = retry.error
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ ok: true, id: data.id }, { headers: { 'Cache-Control': 'no-store' } })
+  return NextResponse.json({ ok: true, id: data?.id }, { headers: { 'Cache-Control': 'no-store' } })
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {

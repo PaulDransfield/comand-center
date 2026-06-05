@@ -80,6 +80,7 @@
       "label": "Oppskrifter",
       "pages": {
         "recipes": "Oppskrifter",
+        "menus":   "Fastmenyer",
         "prep":    "Prepliste",
         "orders":  "Bestillingsliste"
       }

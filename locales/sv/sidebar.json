@@ -80,6 +80,7 @@
       "label": "Recept",
       "pages": {
         "recipes": "Recept",
+        "menus":   "Avsmakningsmeny",
         "prep":    "Preplista",
         "orders":  "Beställningslista"
       }
