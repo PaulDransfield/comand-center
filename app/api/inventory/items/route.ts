@@ -66,6 +66,12 @@ export async function POST(req: NextRequest) {
   // force_create:true, the suggestion threshold may be too loose.
   const forceCreate = body.force_create === true
 
+  // Caller can tag the create provenance — used by the AI recipe bulk
+  // importer to mark drafts as 'recipe_import_draft' so they get the
+  // recipe-sourced treatment in the items API (no Needs-attention flags
+  // until an invoice matches). Default 'owner_review' = manual catalogue add.
+  const createdViaArg = body.created_via === 'recipe_import_draft' ? 'recipe_import_draft' : 'owner_review'
+
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
   if (!name)       return NextResponse.json({ error: 'name required' }, { status: 400 })
   if (name.length > 200) return NextResponse.json({ error: 'name too long (max 200)' }, { status: 400 })
@@ -237,7 +243,7 @@ export async function POST(req: NextRequest) {
       invoice_unit: unit,
       base_unit:    baseUnit,
       pack_size:    packSize,
-      created_via:  'owner_review',   // known-good enum value (same as matcher-created products)
+      created_via:  createdViaArg,   // M130 — 'owner_review' (default) or 'recipe_import_draft' from the AI recipe importer
     })
     .select('id')
     .single()
@@ -278,7 +284,7 @@ export async function GET(req: NextRequest) {
   //    every category other than the active one.
   const { data: allProducts, error: pErr } = await db
     .from('products')
-    .select('id, name, category, default_supplier_fortnox_number, default_supplier_name, source_recipe_id, price_override')
+    .select('id, name, category, default_supplier_fortnox_number, default_supplier_name, source_recipe_id, price_override, created_via')
     .eq('business_id', businessId)
     .is('archived_at', null)
     .order('name')
@@ -425,7 +431,11 @@ export async function GET(req: NextRequest) {
       // Recipe-promoted products are made in-house — they have no
       // supplier and no supplier_articles row by design. Don't flag
       // those reasons for them.
-      const isRecipeSourced = !!p.source_recipe_id
+      // Recipe-import drafts (M130) are placeholders the chef typed via the
+      // bulk importer or ingredient picker; they have no invoice link YET and
+      // the matcher will pair them when an invoice arrives. Don't surface the
+      // same flags — there's nothing actionable until then.
+      const isRecipeSourced = !!p.source_recipe_id || p.created_via === 'recipe_import_draft'
       if (!isRecipeSourced && (aliasCountByProduct.get(p.id) ?? 0) === 0) reasons.push('no_article')
       if (!isRecipeSourced && p.price_override == null) reasons.push('no_price')
       if (!isRecipeSourced && !p.default_supplier_name) reasons.push('no_supplier')
@@ -475,7 +485,7 @@ export async function GET(req: NextRequest) {
       || latest.price_per_unit != null
       || (latest.total_excl_vat != null && latest.quantity != null && Number(latest.quantity) > 0)
     const reasons: Array<'no_article' | 'no_price' | 'unreliable' | 'no_supplier'> = []
-    const isRecipeSourced = !!p.source_recipe_id
+    const isRecipeSourced = !!p.source_recipe_id || p.created_via === 'recipe_import_draft'
     if (!isRecipeSourced && (aliasCountByProduct.get(p.id) ?? 0) === 0) reasons.push('no_article')
     if (!isRecipeSourced && !hasUsablePrice) reasons.push('no_price')
     if (latest.fortnox_invoice_number && flaggedInvoiceNumbers.has(String(latest.fortnox_invoice_number))) {

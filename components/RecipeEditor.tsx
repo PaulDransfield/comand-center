@@ -1898,6 +1898,10 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
           base_unit:    newBaseUnit || null,
           pack_size:    newPackSize ? Number(newPackSize) : null,
           force_create: opts.force === true ? true : undefined,
+          // Tag as a recipe-import draft (M130) so the items API doesn't
+          // flag no_article / no_price / no_supplier until an invoice
+          // arrives that the matcher pairs to this product.
+          created_via:  'recipe_import_draft',
         }),
       })
       const j = await r.json().catch(() => ({}))
