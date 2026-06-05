@@ -103,34 +103,49 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     properties:        a.properties ?? null,
   }))
 
-  const SYSTEM = `You are filling restaurant inventory metadata for a Swedish chef. Read the supplier catalogue data and decide the CORRECT pack_size, base_unit, units_per_pack, and category. Return ONLY strict JSON with these keys:
+  const SYSTEM = `You are filling restaurant inventory metadata for a Swedish chef. Read the supplier catalogue data and decide the CORRECT pack_size, base_unit, weight_per_piece_g, density_g_per_ml, and category. Return ONLY strict JSON with these keys:
 
 {
   "category": "food" | "beverage" | "alcohol" | "cleaning" | "disposables" | "other",
-  "pack_size": <number>,             // TOTAL of the invoice unit, in base_unit. e.g. 24 bottles of 250ml in one KRT = pack_size 6000, base_unit 'ml'.
+  "pack_size": <number>,
   "base_unit": "g" | "ml" | "st",
-  "units_per_pack": <integer or null>,  // for st/count items: how many pieces per pack. null for mass/volume.
-  "weight_per_piece_g": <number or null>,  // only for base_unit='st' when relevant (eggs, fruit). null otherwise.
-  "density_g_per_ml": <number or null>,    // for liquids when known (olive oil ~0.91, water/water-based ~1.0, syrup ~1.35). null = unknown.
+  "weight_per_piece_g": <number or null>,
+  "density_g_per_ml": <number or null>,
   "reasoning": "<one short sentence>"
 }
 
-Hard rules:
-1. pack_size is the TOTAL of the invoice unit (KRT/KG/L/STRYCK) expressed in base_unit. The customer pays per ONE invoice unit, so pack_size MUST equal what that one unit physically contains.
-2. WORKED EXAMPLE — the canonical case (San Pellegrino 25cl):
-     supplier says: Enhet=KRT, Antal/enhet="6,00 l/Kartong", Antal per hel förpackning=24
-     product name says: 25cl bottles
-     One KRT contains 24 × 250 ml = 6000 ml of liquid.
-     → pack_size: 6000, base_unit: "ml", units_per_pack: 24
-     Cost math: 227 kr (invoice price per KRT) / 6000 ml = 0.038 kr/ml. ALWAYS check the math passes a sanity sniff test.
-3. If "Antal/enhet" gives liters/grams per carton, USE IT directly (convert l→ml, kg→g).
-4. If only piece count is given (Antal per hel förpackning=24, no per-pack volume): multiply piece volume × piece count.
-5. Mass-based bulk (10 kg flour bag) → base_unit='g', pack_size = kg × 1000.
-6. Discrete pieces (eggs, plates, glass straws) → base_unit='st', pack_size = count of pieces per invoice unit.
-7. Category: alcohol > beverage > food > cleaning/disposables. Beer/wine/spirits = alcohol. Mineral water / soft drinks / juice / coffee beans = beverage.
-8. Don't invent. If the catalogue lacks the data, leave the field as the CURRENT value.
+THE KEY DISTINCTION — countable pieces vs bulk:
 
-Be conservative on density. Only set when the product clearly tells you (oil, syrup, mineral water).`
+A chef's recipe references either "N bottles/cans/pieces of X" OR "N grams/ml of X". The supplier catalogue + product name tells you which model applies.
+
+Rule of thumb: if the product comes from the supplier as DISCRETE INDIVIDUAL UNITS that a chef pulls one at a time (bottles of mineral water, cans of beer, eggs, glasses, plates) — base_unit='st', pack_size=count of pieces per invoice unit. Recipes will say "1 st" or "1 flaska".
+
+If the product is BULK CONTENT poured/scooped from a single container (5 L olive oil canister, 10 kg flour sack, 1 kg vanilla pod jar) — base_unit='g' or 'ml', pack_size=total mass/volume in base_unit. Recipes will say "30 g" or "50 ml".
+
+WORKED EXAMPLES:
+
+(A) San Pellegrino 25cl mineral water, sold KRT of 24 × 25cl bottles, 227 kr/KRT:
+  → Chef pulls ONE bottle at a time → countable → base_unit='st', pack_size=24
+  Cost: 227 / 24 = 9.46 kr/bottle. weight_per_piece_g=250 (the water + bottle weight isn't asked, this is just for if a recipe ever needs g equivalent of 1 bottle — usually leave null).
+
+(B) Olive oil 5L canister, 285 kr/canister:
+  → Chef pours from one canister → bulk → base_unit='ml', pack_size=5000
+  Cost: 285 / 5000 = 0.057 kr/ml. density_g_per_ml=0.91.
+
+(C) Eggs 12-pack (1 carton = 12 eggs), 28 kr/carton:
+  → Chef cracks ONE egg at a time → countable → base_unit='st', pack_size=12
+  Cost: 28 / 12 = 2.33 kr/egg. weight_per_piece_g=60.
+
+(D) Flour 10 kg bag:
+  → Chef scoops from one bag → bulk → base_unit='g', pack_size=10000
+
+Default to base_unit='st' for bottled drinks (water, beer, wine, spirits, soft drinks), cans, single-serve packs, eggs, fruit, baked goods sold by piece.
+Default to base_unit='ml' for canister/jug-packed liquids (oil, vinegar, syrup, juice concentrate in large containers).
+Default to base_unit='g' for bag/sack/bucket-packed solids (flour, sugar, salt, cocoa).
+
+Category: alcohol > beverage > food > cleaning/disposables. Beer/wine/spirits = alcohol. Mineral water / soft drinks / juice = beverage.
+
+Don't invent. If the catalogue lacks data, leave the CURRENT value.`
 
   const USER = `CURRENT product fields:
 ${JSON.stringify({
