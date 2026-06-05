@@ -95,16 +95,19 @@ export const INVENTORY_TOOLS: AnthropicToolDef[] = [
     name: 'top_products_by_supplier',
     description:
       `Rank products by total quantity OR total spend across every supplier invoice ` +
-      `line at this business. Filter by supplier name (substring match) and/or date ` +
+      `line at this business. Filter by supplier name, product name, and/or date ` +
       `range. Returns the top N products with their aggregated stats.\n\n` +
       `Use for "top 20 most-bought items from Martin Servera", "biggest spend ` +
-      `with Spendrups this year", "what's our highest-volume product?". Without a ` +
-      `supplier_filter the ranking spans every supplier. Without date filters it ` +
-      `spans every line in history.`,
+      `with Spendrups this year", "how much butter did I buy last month" (set ` +
+      `product_filter="smör" + date_from/date_to), "all my olive oil purchases ` +
+      `in May" (product_filter="olivolja"). Without filters the ranking spans ` +
+      `every supplier / product / line in history. Search is in Swedish since ` +
+      `that's the language of the supplier invoices.`,
     input_schema: {
       type: 'object',
       properties: {
         supplier_filter: { type: 'string', description: 'Substring match on supplier name (e.g. "martin servera"). Omit for all suppliers.' },
+        product_filter:  { type: 'string', description: 'Substring match on product name OR raw invoice description (e.g. "smör" for butter, "olivolja" for olive oil, "tomat"). Searches both the catalogue name and the original invoice text. Omit for all products.' },
         date_from:       { type: 'string', description: 'ISO date YYYY-MM-DD (inclusive). Omit for no lower bound.' },
         date_to:         { type: 'string', description: 'ISO date YYYY-MM-DD (inclusive). Omit for no upper bound.' },
         rank_by:         { type: 'string', enum: ['spend', 'quantity', 'invoice_count'], description: 'spend = sum(total_excl_vat) [default], quantity = sum(quantity), invoice_count = distinct invoice count' },
@@ -185,6 +188,7 @@ export async function runInventoryTool(
 
   if (name === 'top_products_by_supplier') {
     const supplierFilter = args.supplier_filter ? String(args.supplier_filter).trim().toLowerCase() : null
+    const productFilter  = args.product_filter  ? String(args.product_filter).trim().toLowerCase()  : null
     const dateFrom       = args.date_from ? String(args.date_from).trim() : null
     const dateTo         = args.date_to   ? String(args.date_to).trim()   : null
     const rankBy         = (['spend','quantity','invoice_count'] as const).includes(args.rank_by) ? args.rank_by : 'spend'
@@ -224,20 +228,28 @@ export async function runInventoryTool(
       for (const p of pRows ?? []) productById.set((p as any).id, p)
     }
 
-    // Aggregate.
-    type Agg = { product_id: string; name: string; category: string | null; supplier: string | null; total_spend: number; total_quantity: number; line_count: number; invoice_numbers: Set<string>; last_date: string | null }
+    // Aggregate. When product_filter is set we accept lines where EITHER the
+    // catalogue name OR the raw invoice description contains the query
+    // substring. Owner asks in their own language ("smör", "olivolja"); the
+    // raw description usually carries that token and the catalogue name
+    // catches anything that's been renamed.
+    type Agg = { product_id: string; name: string; category: string | null; supplier: string | null; total_spend: number; total_quantity: number; line_count: number; invoice_numbers: Set<string>; last_date: string | null; matched: boolean }
     const agg = new Map<string, Agg>()
     for (const l of lines as any[]) {
       const pid = aliasToProduct.get(l.product_alias_id)
       if (!pid) continue
       const prod = productById.get(pid)
       if (!prod) continue
+      const lineMatchesFilter = !productFilter
+        || (prod.name && String(prod.name).toLowerCase().includes(productFilter))
+        || (l.raw_description && String(l.raw_description).toLowerCase().includes(productFilter))
       let row = agg.get(pid)
       if (!row) {
         row = { product_id: pid, name: prod.name, category: prod.category, supplier: prod.default_supplier_name ?? l.supplier_name_snapshot ?? null,
-                total_spend: 0, total_quantity: 0, line_count: 0, invoice_numbers: new Set(), last_date: null }
+                total_spend: 0, total_quantity: 0, line_count: 0, invoice_numbers: new Set(), last_date: null, matched: false }
         agg.set(pid, row)
       }
+      if (lineMatchesFilter) row.matched = true
       const spend = l.total_excl_vat != null ? Number(l.total_excl_vat)
                   : (l.price_per_unit != null && l.quantity != null) ? Number(l.price_per_unit) * Number(l.quantity)
                   : 0
@@ -248,16 +260,18 @@ export async function runInventoryTool(
       if (l.invoice_date && (!row.last_date || l.invoice_date > row.last_date)) row.last_date = l.invoice_date
     }
 
-    const ranked = Array.from(agg.values()).sort((a, b) => {
+    const filtered = productFilter ? Array.from(agg.values()).filter(r => r.matched) : Array.from(agg.values())
+    const ranked = filtered.sort((a, b) => {
       if (rankBy === 'quantity')      return b.total_quantity - a.total_quantity
       if (rankBy === 'invoice_count') return b.invoice_numbers.size - a.invoice_numbers.size
       return b.total_spend - a.total_spend
     }).slice(0, limit)
 
     return {
-      filters: { supplierFilter, dateFrom, dateTo, rankBy, limit },
+      filters: { supplierFilter, productFilter, dateFrom, dateTo, rankBy, limit },
       total_lines_aggregated: lines.length,
       total_products_aggregated: agg.size,
+      total_products_matched: filtered.length,
       top: ranked.map((r, i) => ({
         rank:           i + 1,
         product_id:     r.product_id,
