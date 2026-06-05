@@ -41,6 +41,7 @@ const BUCKET       = 'supplier-article-images'
 const ORIGIN       = 'https://www.enjoywine.se'
 
 const PER_PAGE = 10
+const CONCURRENCY = 3   // detail-page fetches only — listing is now serial
 const FIELDS   = '_fields=id,title,slug,link,featured_media,date'
 const LISTING_TIMEOUT_MS = 90_000
 
