@@ -40,8 +40,10 @@ const LLM_RUNNERUP_MAX  = 0.85
 const MODEL             = 'claude-haiku-4-5-20251001'
 
 const SUPPLIER_DOMAINS = [
-  { pattern: /spendrups/i, sentinel: 'SPENDRUPS' },
-  { pattern: /carlsberg/i, sentinel: 'CARLSBERG' },
+  { pattern: /spendrups/i,            sentinel: 'SPENDRUPS' },
+  { pattern: /carlsberg/i,            sentinel: 'CARLSBERG' },
+  { pattern: /enjoy\s*wine/i,         sentinel: 'ENJOY'     },
+  { pattern: /lively/i,               sentinel: 'LIVELY'    },
 ]
 
 const BUSINESSES = [

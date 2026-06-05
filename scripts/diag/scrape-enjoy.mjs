@@ -40,9 +40,9 @@ const SENTINEL_FNX = 'ENJOY'
 const BUCKET       = 'supplier-article-images'
 const ORIGIN       = 'https://www.enjoywine.se'
 
-const PER_PAGE   = 20
-const CONCURRENCY = 3
-const FIELDS     = '_fields=id,title,slug,link,featured_media,date'
+const PER_PAGE = 10
+const FIELDS   = '_fields=id,title,slug,link,featured_media,date'
+const LISTING_TIMEOUT_MS = 90_000
 
 async function fetchListing() {
   // Get total count first
@@ -52,25 +52,29 @@ async function fetchListing() {
   })
   const total = Number(head.headers.get('x-wp-total') ?? 0)
   const pages = Math.ceil(total / PER_PAGE)
-  console.log(`Listing: ${total} wines across ${pages} pages of ${PER_PAGE}`)
+  console.log(`Listing: ${total} wines across ${pages} pages of ${PER_PAGE} (serial — wp-json is slow)`)
   const all = []
-  for (let i = 0; i < pages; i += CONCURRENCY) {
-    const batch = []
-    for (let j = 0; j < CONCURRENCY && (i + j) < pages; j++) {
-      const page = i + j + 1
-      batch.push(
-        fetch(`${ORIGIN}/wp-json/wp/v2/oa_wine?per_page=${PER_PAGE}&page=${page}&${FIELDS}`, {
-          headers: { 'User-Agent': 'Mozilla/5.0' },
-        })
-          .then(r => r.ok ? r.json() : [])
-          .catch(() => [])
-      )
+  for (let page = 1; page <= pages; page++) {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), LISTING_TIMEOUT_MS)
+    try {
+      const r = await fetch(`${ORIGIN}/wp-json/wp/v2/oa_wine?per_page=${PER_PAGE}&page=${page}&${FIELDS}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: ctrl.signal,
+      })
+      clearTimeout(timer)
+      if (r.ok) {
+        const arr = await r.json()
+        all.push(...arr)
+      } else {
+        console.error(`  page ${page}: HTTP ${r.status}`)
+      }
+    } catch (e) {
+      clearTimeout(timer)
+      console.error(`  page ${page}: ${e?.message ?? e}`)
     }
-    const results = await Promise.all(batch)
-    for (const arr of results) all.push(...arr)
-    process.stdout.write(`  fetched ${all.length}/${total}\r`)
+    process.stdout.write(`  page ${page}/${pages} cumulative ${all.length}/${total}\n`)
   }
-  process.stdout.write('\n')
   return all
 }
 
