@@ -8,7 +8,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
@@ -35,6 +35,7 @@ interface Menu {
   vat_rate: number | null
   channel: 'dine_in' | 'takeaway' | null
   notes: string | null
+  image_url: string | null
 }
 interface Summary {
   item_count: number
@@ -167,14 +168,17 @@ export default function MenuEditorPage() {
         {menu && !loading && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
-              <div style={{ flex: 1, minWidth: 240 }}>
-                <input
-                  defaultValue={menu.name}
-                  onBlur={e => { if (e.target.value.trim() !== menu.name) patchMenu({ name: e.target.value.trim() }) }}
-                  style={{ ...inputStyle, fontSize: 22, fontWeight: 600, color: UXP.ink1, width: '100%', border: 'none', padding: 0, background: 'transparent' }}
-                />
-                <div style={{ fontSize: 12, color: UXP.ink3, marginTop: 4 }}>
-                  {menu.type === 'food' ? 'Food menu' : 'Drink menu'} · {items.length} course{items.length === 1 ? '' : 's'}
+              <div style={{ display: 'flex', gap: 12, flex: 1, minWidth: 240, alignItems: 'flex-start' }}>
+                <MenuImageEditor menuId={menu.id} imageUrl={menu.image_url} onChange={load} />
+                <div style={{ flex: 1 }}>
+                  <input
+                    defaultValue={menu.name}
+                    onBlur={e => { if (e.target.value.trim() !== menu.name) patchMenu({ name: e.target.value.trim() }) }}
+                    style={{ ...inputStyle, fontSize: 22, fontWeight: 600, color: UXP.ink1, width: '100%', border: 'none', padding: 0, background: 'transparent' }}
+                  />
+                  <div style={{ fontSize: 12, color: UXP.ink3, marginTop: 4 }}>
+                    {menu.type === 'food' ? 'Food menu' : 'Drink menu'} · {items.length} course{items.length === 1 ? '' : 's'}
+                  </div>
                 </div>
               </div>
               <button onClick={deleteMenu}
@@ -300,6 +304,12 @@ export default function MenuEditorPage() {
                 </table>
               )}
             </div>
+            {/* Connected sales articles — parallel to recipes' section.
+                POS link is parked per CLAUDE.md M097 / POS-RECIPE-MAPPING-PLAN.md;
+                this is the placeholder so the surface exists and matches the
+                recipe-editor pattern. When the menu_id ↔ pos_menu_items wire
+                ships, this section will list connected POS articles. */}
+            <ConnectedSalesArticlesCard menu={menu} />
           </>
         )}
 
@@ -341,6 +351,125 @@ export default function MenuEditorPage() {
       {/* Click-to-enlarge dish photo. Backdrop click or Esc closes. */}
       {lightbox && <CourseLightbox url={lightbox.url} name={lightbox.name} onClose={() => setLightbox(null)} />}
     </AppShell>
+  )
+}
+
+// ── MenuImageEditor ───────────────────────────────────────────────────
+// Mirrors RecipeImageEditor from components/RecipeEditor.tsx — same UX
+// (square tile, click to upload, × to remove). POST/DELETE land at
+// /api/inventory/menus/[id]/image which writes menus.image_url.
+function MenuImageEditor({ menuId, imageUrl, onChange }: {
+  menuId: string
+  imageUrl: string | null
+  onChange: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  async function upload(file: File) {
+    setBusy(true)
+    const fd = new FormData()
+    fd.append('file', file)
+    const r = await fetch(`/api/inventory/menus/${menuId}/image`, { method: 'POST', cache: 'no-store', body: fd })
+    const j = await r.json().catch(() => ({}))
+    setBusy(false)
+    if (!r.ok) { alert(j.error ?? `HTTP ${r.status}`); return }
+    onChange()
+  }
+
+  async function remove() {
+    if (!confirm('Remove this image?')) return
+    setBusy(true)
+    const r = await fetch(`/api/inventory/menus/${menuId}/image`, { method: 'DELETE', cache: 'no-store' })
+    setBusy(false)
+    if (!r.ok) { alert('Failed to remove'); return }
+    onChange()
+  }
+
+  return (
+    <div style={{ position: 'relative' as const, flexShrink: 0 }}>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; if (f) upload(f); e.currentTarget.value = '' }}
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={busy}
+        title={imageUrl ? 'Click to replace' : 'Click to upload a photo'}
+        style={{
+          width: 90, height: 90, borderRadius: 8,
+          background: imageUrl ? '#fff' : UXP.subtleBg,
+          border: `0.5px solid ${UXP.border}`,
+          cursor: busy ? 'wait' : 'pointer', padding: 0, overflow: 'hidden',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: 'inherit',
+        }}
+      >
+        {imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' as const }} />
+        ) : (
+          <span style={{ fontSize: 10, color: UXP.ink4, textAlign: 'center' as const, lineHeight: 1.3, padding: 4 }}>
+            {busy ? 'Uploading…' : '+ Add photo'}
+          </span>
+        )}
+      </button>
+      {imageUrl && !busy && (
+        <button
+          type="button" onClick={remove} aria-label="Remove image"
+          style={{
+            position: 'absolute' as const, top: -6, right: -6,
+            width: 20, height: 20, borderRadius: '50%' as const,
+            background: '#fff', border: `0.5px solid ${UXP.border}`,
+            cursor: 'pointer', fontSize: 12, lineHeight: 1, color: UXP.ink3,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontFamily: 'inherit',
+          }}>×</button>
+      )}
+    </div>
+  )
+}
+
+// ── ConnectedSalesArticlesCard ────────────────────────────────────────
+// Placeholder section mirroring the recipes' "Connected sales articles"
+// card. POS link (M097 / pos_menu_items.menu_id) is parked; this is the
+// surface that'll fill in once the wire ships. Owners can open the
+// section but can't promote yet — the action is gated to "Coming soon"
+// so the menu editor feels parallel to the recipe editor today.
+function ConnectedSalesArticlesCard({ menu }: { menu: { id: string; type: 'food' | 'drink' } }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div style={{ background: UXP.cardBg, border: `0.5px solid ${UXP.border}`, borderRadius: 8, marginTop: 16, overflow: 'hidden' }}>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', textAlign: 'left' as const, padding: '12px 14px',
+                 background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: UXP.ink1 }}>Connected sales articles</div>
+          <div style={{ fontSize: 11, color: UXP.ink3, marginTop: 2 }}>
+            Not promoted — POS link coming so this menu is sellable as a single article from your till.
+          </div>
+        </div>
+        <span style={{ color: UXP.ink3, fontSize: 14 }}>{open ? '▾' : '▸'} {open ? 'Close' : 'Open'}</span>
+      </button>
+      {open && (
+        <div style={{ padding: '0 14px 14px', borderTop: `0.5px solid ${UXP.border}` }}>
+          <div style={{ padding: '10px 12px', background: UXP.subtleBg, borderRadius: 6, marginTop: 10, fontSize: 11, color: UXP.ink3, lineHeight: 1.5 }}>
+            When your POS connector (Personalkollen, Onslip, Ancon, etc.) lands a sales article
+            that matches this menu, it'll appear here and you can confirm the mapping. Once
+            confirmed, every sale of "{menu.type === 'food' ? 'this food menu' : 'this drink menu'}"
+            on the POS flows through to demand prediction and food-cost reporting.
+            <div style={{ marginTop: 8, fontSize: 10, color: UXP.ink4 }}>
+              POS-to-menu wiring is parked. Trigger: customer asks or first POS sync after the
+              parallel POS-to-recipe link is in production use.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
