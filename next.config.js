@@ -20,6 +20,15 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 const nextConfig = {
   reactStrictMode: true,
 
+  // Expose the Vercel git SHA to client bundles so <VersionWatcher /> can
+  // compare the baked-in build version against the live one returned by
+  // /api/version and prompt users to refresh after a deploy. Without
+  // this, an open tab keeps running the old JS bundle forever and the
+  // owner would have to know to hard-refresh — which they won't.
+  env: {
+    NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA ?? 'dev',
+  },
+
   // Tell Next.js NOT to bundle pdfjs-dist into our serverless functions —
   // use the installed package directly at runtime. pdfjs-dist has a worker
   // file (pdf.worker.mjs) that webpack tends to drop during bundling, which

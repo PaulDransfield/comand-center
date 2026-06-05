@@ -207,6 +207,7 @@ export default function InventoryRecipesPage() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
+            <BulkAiFillButton bizId={bizId} onDone={() => router.refresh()} />
             <button onClick={() => setImporting(true)} disabled={!bizId}
               title={!bizId ? 'Select a business in the sidebar first' : 'Bulk-import recipes from your menu text — Sonnet drafts ingredients from your catalogue'}
               style={{ ...secondaryBtn, opacity: bizId ? 1 : 0.5, cursor: bizId ? 'pointer' : 'not-allowed' }}>
@@ -1409,4 +1410,74 @@ function gpColor(p: number): string {
   if (p < 65) return UXP.coral
   if (p >= 75) return UXP.greenDeep
   return UXP.ink2
+}
+
+// ── BulkAiFillButton ──────────────────────────────────────────────────
+// One-shot AI-fill across every product referenced by a recipe at this
+// business. Calls /api/inventory/items/ai-fill-bulk in 25-product passes
+// until remaining hits 0, surfacing the running tally so the chef can
+// watch progress. Auto-applies suggestions where confidence >= 0.85;
+// lower-confidence ones come back in the review list so the owner can
+// open the per-item modal and decide.
+function BulkAiFillButton({ bizId, onDone }: { bizId: string | null; onDone: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState<{ processed: number; applied: number; remaining: number; review: number; no_source: number } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function run() {
+    if (!bizId) return
+    setBusy(true); setError(null)
+    let processed = 0, applied = 0, review = 0, noSource = 0
+    try {
+      // Drain loop — each call processes up to 25 products. Stop when
+      // remaining hits 0 OR the server reports 0 processed (defensive,
+      // catches empty-state).
+      for (let pass = 0; pass < 40; pass++) {       // safety cap: 40 × 25 = 1000 products max
+        const r = await fetch('/api/inventory/items/ai-fill-bulk', {
+          method: 'POST', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ business_id: bizId, scope: 'recipes_only', max: 25, confidence_threshold: 0.85 }),
+        })
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok) { setError(j.error ?? `HTTP ${r.status}`); break }
+        processed += j.processed ?? 0
+        applied   += j.applied   ?? 0
+        review    += (j.queued_for_review?.length ?? 0)
+        noSource  += (j.no_source?.length ?? 0)
+        const remaining = j.remaining ?? 0
+        setProgress({ processed, applied, remaining, review, no_source: noSource })
+        if ((j.processed ?? 0) === 0 || remaining === 0) break
+      }
+      onDone()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+      <button
+        onClick={run}
+        disabled={!bizId || busy}
+        title={!bizId ? 'Select a business in the sidebar first' : 'Auto-fill pack size / base unit / weight / category for every recipe ingredient using supplier catalogue data. Auto-applies high-confidence suggestions; low-confidence ones go to a review list.'}
+        style={{
+          padding: '6px 12px', fontSize: 12, fontWeight: 500,
+          background: 'transparent', color: UXP.ink3, border: `0.5px solid ${UXP.border}`, borderRadius: 5,
+          cursor: bizId && !busy ? 'pointer' : 'not-allowed', fontFamily: 'inherit',
+          opacity: bizId ? 1 : 0.5,
+        }}
+      >
+        {busy ? 'Filling…' : 'AI-fill articles'}
+      </button>
+      {progress && (
+        <div style={{ fontSize: 10, color: UXP.ink4, lineHeight: 1.4, textAlign: 'right' as const }}>
+          {progress.processed} processed · {progress.applied} applied
+          {progress.review > 0 ? ` · ${progress.review} review` : ''}
+          {progress.no_source > 0 ? ` · ${progress.no_source} no source` : ''}
+          {progress.remaining > 0 ? ` · ${progress.remaining} remaining` : ''}
+        </div>
+      )}
+      {error && <div style={{ fontSize: 10, color: UXP.coral, lineHeight: 1.4, textAlign: 'right' as const }}>Error: {error}</div>}
+    </div>
+  )
 }

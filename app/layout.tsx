@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import CookieConsent from '@/components/CookieConsent'
 import FragmentAuthRedirector from '@/components/FragmentAuthRedirector'
+import VersionWatcher from '@/components/VersionWatcher'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
 import { Spline_Sans, Fraunces } from 'next/font/google'
@@ -106,6 +107,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <FragmentAuthRedirector />
           {children}
           <CookieConsent />
+          {/*
+            VersionWatcher polls /api/version and compares against the
+            SHA baked into this bundle (NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA).
+            When a deploy lands while a tab is open, shows a "Reload"
+            pill so users don't have to know to hard-refresh to pick up
+            the new UI. Mounted here so every page benefits.
+          */}
+          <VersionWatcher />
         </NextIntlClientProvider>
       </body>
     </html>
