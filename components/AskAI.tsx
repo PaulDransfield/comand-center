@@ -152,13 +152,18 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false, 
       const bizId = orgScope
         ? null
         : (typeof window !== 'undefined' ? localStorage.getItem('cc_selected_biz') : null)
+      // Pass last few turns so the AI can resolve "yes" / "do it" /
+      // "that one" follow-ups. Cap at 6 turns (3 user + 3 assistant) so
+      // we don't balloon the context. Drop the downloads array — only
+      // role+content matter for follow-up resolution.
+      const history = messages.slice(-6).map(m => ({ role: m.role, content: m.content }))
       const res  = await fetch('/api/ask', {
         method:  'POST',
         headers: {
           'Content-Type':  'application/json',
           'Authorization': `Bearer ${session?.access_token ?? ''}`,
         },
-        body:    JSON.stringify({ question, context, page, tier, business_id: bizId }),
+        body:    JSON.stringify({ question, context, page, tier, business_id: bizId, history }),
       })
       const data = await res.json()
 

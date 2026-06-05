@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
 
   // ── 2. Parse body ──────────────────────────────────────────────
   let question: string, context: string, page: string, tier: 'light' | 'full', businessId: string | null
+  let history: Array<{ role: 'user' | 'assistant'; content: string }> = []
   try {
     const body = await req.json()
     question   = (body.question ?? '').trim()
@@ -75,6 +76,16 @@ export async function POST(req: NextRequest) {
     // to ~$0.002 instead of Sonnet's ~$0.012. 'full' is the default for
     // page-level AskAI where context is richer and nuance matters.
     tier       = body.tier === 'light' ? 'light' : 'full'
+    // Optional conversation history — last few turns from the same chat
+    // session. Lets the AI resolve follow-ups like "yes" or "do it"
+    // referencing the prior assistant turn. Capped server-side so a
+    // misbehaving client can't blow up our context window or cost.
+    if (Array.isArray(body.history)) {
+      history = body.history
+        .filter((m: any) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+        .slice(-6)
+        .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 4000) }))
+    }
   } catch {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
@@ -157,7 +168,14 @@ export async function POST(req: NextRequest) {
     // hit even when users query in different languages — without this
     // the cache would bust on every locale switch.
     const { promptFragment: localeFragment } = aiLocaleFromRequest(req)
-    const conversation: any[] = [{ role: 'user', content: userMessage }]
+    // Prior turns first (so the new question is the last user turn the
+    // model sees). The "Current page / Data context / Question" framing
+    // is only applied to the new question — history turns stay raw to
+    // keep token cost down and avoid duplicating context.
+    const conversation: any[] = [
+      ...history.map(m => ({ role: m.role, content: m.content })),
+      { role: 'user', content: userMessage },
+    ]
 
     const requestBuilder = (msgs: any[]) => (claude as any).messages.create({
       model,
