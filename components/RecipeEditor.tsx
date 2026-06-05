@@ -393,6 +393,9 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
   const missingList  = summary.ingredients.filter(i => i.no_price && !i.is_subrecipe)
   const mismatchList = summary.ingredients.filter(i => i.unit_mismatch && !i.is_subrecipe)
   const suggested    = suggestYieldFromIngredients(summary.ingredients, recipe.portions)
+  const isDrink      = recipe.type ? DRINK_TYPES.has(String(recipe.type).toLowerCase()) : false
+  const costLabel    = isDrink ? 'Cost'   : 'Food cost'
+  const pctLabel     = isDrink ? 'Cost %' : 'Food %'
 
 
   return (
@@ -471,8 +474,8 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
             accordion. Incomplete-cost badge replaces the GP numbers
             when warnings fire (honest-incomplete rule). */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginTop: 16, padding: '14px 16px', background: UXP.subtleBg, borderRadius: 8 }}>
-          <HeroStat label="Food cost"  value={fmtKr(summary.food_cost)} />
-          <HeroStat label="Food %"     value={summary.food_pct != null ? `${summary.food_pct.toFixed(1)} %` : '—'}
+          <HeroStat label={costLabel}  value={fmtKr(summary.food_cost)} />
+          <HeroStat label={pctLabel}   value={summary.food_pct != null ? `${summary.food_pct.toFixed(1)} %` : '—'}
                     color={summary.food_pct != null ? foodPctColor(summary.food_pct) : undefined} />
           <HeroStat label="GP %"
                     value={isIncomplete ? '—' : (summary.gp_pct != null ? `${summary.gp_pct.toFixed(1)} %` : '—')}
@@ -635,7 +638,7 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
         open={openBreakdown}
         onToggle={() => setOpenBreakdown(v => !v)}
         title="Recipe cost breakdown"
-        subtitle={`${fmtKr(summary.food_cost)} food cost · ${summary.food_pct != null ? `${summary.food_pct.toFixed(1)}% food` : '—'} · ${isIncomplete ? 'Incomplete' : (summary.gp_pct != null ? `${summary.gp_pct.toFixed(1)}% GP` : '—')}`}
+        subtitle={`${fmtKr(summary.food_cost)} ${isDrink ? 'cost' : 'food cost'} · ${summary.food_pct != null ? `${summary.food_pct.toFixed(1)}% ${isDrink ? 'cost' : 'food'}` : '—'} · ${isIncomplete ? 'Incomplete' : (summary.gp_pct != null ? `${summary.gp_pct.toFixed(1)}% GP` : '—')}`}
       >
         <CostBreakdown summary={summary} recipe={recipe} />
       </Collapsible>
@@ -910,6 +913,9 @@ function CostBreakdown({ summary, recipe }: { summary: DetailResponse['summary']
   // Per-ingredient cost table (read-only — for inspection). Sorted by
   // line cost desc so the owner sees the biggest contributors first.
   const rows = [...summary.ingredients].sort((a, b) => (b.line_cost ?? 0) - (a.line_cost ?? 0))
+  const isDrink = recipe.type ? DRINK_TYPES.has(String(recipe.type).toLowerCase()) : false
+  const costLabel = isDrink ? 'Cost' : 'Food cost'
+  const pctLabel  = isDrink ? 'Cost %' : 'Food %'
   return (
     <div>
       <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 11 }}>
@@ -966,8 +972,8 @@ function CostBreakdown({ summary, recipe }: { summary: DetailResponse['summary']
       </table>
       <div style={{ marginTop: 12, padding: 10, background: UXP.subtleBg, borderRadius: 6, fontSize: 11, color: UXP.ink3, lineHeight: 1.6 }}>
         Selling price ex-VAT: <strong>{recipe.selling_price_ex_vat != null ? fmtKr(recipe.selling_price_ex_vat) : '—'}</strong> ·
-        Food cost: <strong>{fmtKr(summary.food_cost)}</strong> ·
-        Food %: <strong>{summary.food_pct != null ? `${summary.food_pct.toFixed(1)}%` : '—'}</strong> ·
+        {costLabel}: <strong>{fmtKr(summary.food_cost)}</strong> ·
+        {pctLabel}: <strong>{summary.food_pct != null ? `${summary.food_pct.toFixed(1)}%` : '—'}</strong> ·
         GP %: <strong>{summary.gp_pct != null ? `${summary.gp_pct.toFixed(1)}%` : '—'}</strong> ·
         GP kr: <strong>{summary.gp_kr != null ? fmtKr(summary.gp_kr) : '—'}</strong>
       </div>
