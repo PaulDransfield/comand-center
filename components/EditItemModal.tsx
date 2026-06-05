@@ -257,6 +257,16 @@ export function EditItemModal({ productId, onClose, onSaved }: {
                 {/* LEFT — item details */}
                 <div>
                   <SectionLabel>Item details</SectionLabel>
+                  <AiFillButton
+                    productId={productId}
+                    onApply={(s) => setEdits(p => ({
+                      ...p,
+                      ...(s.category != null           ? { category: s.category } : {}),
+                      ...(s.pack_size != null          ? { pack_size: s.pack_size } : {}),
+                      ...(s.base_unit != null          ? { base_unit: s.base_unit } : {}),
+                      ...(s.weight_per_piece_g != null ? { weight_per_piece_g: s.weight_per_piece_g } : {}),
+                    }))}
+                  />
                   <Field label="Category">
                     <select value={current.category ?? 'other'}
                       onChange={e => setEdits(p => ({ ...p, category: e.target.value }))}
@@ -517,6 +527,89 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 function Empty({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 11, color: UXP.ink4, padding: '8px 10px', background: UXP.subtleBg, borderRadius: 6, fontStyle: 'italic' as const }}>{children}</div>
+}
+
+// ── AiFillButton ─────────────────────────────────────────────────────
+// Asks Haiku to read the linked supplier_articles row and derive the
+// correct pack_size / base_unit / category for this product. Most useful
+// on MS/Spendrups-linked items where the catalogue says "24 bottles x
+// 250ml per KRT" but the chef's product carries pack_size=250.
+function AiFillButton({ productId, onApply }: {
+  productId: string
+  onApply: (s: { category?: string; pack_size?: number; base_unit?: string; weight_per_piece_g?: number }) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [suggestion, setSuggestion] = useState<any | null>(null)
+  const [src, setSrc] = useState<string | null>(null)
+
+  async function ask() {
+    setBusy(true); setError(null); setSuggestion(null)
+    try {
+      const r = await fetch(`/api/inventory/items/${productId}/ai-fill`, { method: 'POST', cache: 'no-store' })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) { setError(j.error ?? `HTTP ${r.status}`); return }
+      setSuggestion(j.suggestion ?? null)
+      setSrc(j.source_article?.official_name ?? null)
+    } catch (e: any) {
+      setError(e?.message ?? String(e))
+    } finally { setBusy(false) }
+  }
+
+  if (suggestion) {
+    const fields: Array<[string, any]> = [
+      ['Category',   suggestion.category],
+      ['Pack size',  suggestion.pack_size],
+      ['Base unit',  suggestion.base_unit],
+      ['Weight/piece (g)', suggestion.weight_per_piece_g],
+    ].filter(([, v]) => v != null && v !== '') as any
+    return (
+      <div style={{
+        marginBottom: 14, padding: 10,
+        background: UXP.lavFill, border: `0.5px solid ${UXP.lavMid}`, borderRadius: 8,
+        fontSize: 11, color: UXP.ink1, lineHeight: 1.5,
+      }}>
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>AI suggestion {src && <span style={{ color: UXP.ink4, fontWeight: 400 }}>· from {src}</span>}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 12px', marginBottom: 8 }}>
+          {fields.map(([k, v]) => (
+            <Fragment_ key={k}>
+              <div style={{ color: UXP.ink4 }}>{k}</div>
+              <div style={{ color: UXP.ink1, fontWeight: 500 }}>{String(v)}</div>
+            </Fragment_>
+          ))}
+        </div>
+        {suggestion.reasoning && (
+          <div style={{ fontStyle: 'italic' as const, color: UXP.ink3, marginBottom: 8 }}>{suggestion.reasoning}</div>
+        )}
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button type="button" onClick={() => { onApply(suggestion); setSuggestion(null); setSrc(null) }}
+            style={{ padding: '5px 12px', fontSize: 11, background: UXP.lavMid, color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+            Apply
+          </button>
+          <button type="button" onClick={() => { setSuggestion(null); setSrc(null) }}
+            style={{ padding: '5px 12px', fontSize: 11, background: 'transparent', color: UXP.ink3, border: `0.5px solid ${UXP.border}`, borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Reject
+          </button>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <button
+        type="button" onClick={ask} disabled={busy}
+        style={{
+          padding: '6px 12px', fontSize: 11,
+          background: UXP.subtleBg, color: UXP.ink2,
+          border: `0.5px solid ${UXP.border}`, borderRadius: 4,
+          cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit',
+        }}
+      >
+        {busy ? 'Reading catalogue…' : 'AI fill from catalogue'}
+      </button>
+      {error && <div style={{ marginTop: 6, fontSize: 10, color: UXP.coral }}>{error}</div>}
+    </div>
+  )
 }
 
 const backdrop: React.CSSProperties = {
