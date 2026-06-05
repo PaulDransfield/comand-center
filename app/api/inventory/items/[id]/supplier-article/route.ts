@@ -26,12 +26,23 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const db = createAdminClient()
 
-  // 1. Auth gate via the product's business.
-  const { data: product, error: pErr } = await db
+  // 1. Auth gate via the product's business. Also pull external_catalogue_*
+  // so scraped catalogues (Spendrups, Carlsberg) feed the spec table too,
+  // not just invoice-derived suppliers.
+  let product: any, pErr: any
+  ;({ data: product, error: pErr } = await db
     .from('products')
-    .select('id, business_id, name')
+    .select('id, business_id, name, external_catalogue_source, external_catalogue_article')
     .eq('id', params.id)
-    .maybeSingle()
+    .maybeSingle())
+  if (pErr && /external_catalogue_/.test(pErr.message)) {
+    // Defensive: M128 not applied yet — retry without the columns.
+    ;({ data: product, error: pErr } = await db
+      .from('products')
+      .select('id, business_id, name')
+      .eq('id', params.id)
+      .maybeSingle())
+  }
   if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 })
   if (!product) return NextResponse.json({ error: 'product not found' }, { status: 404 })
   const forbidden = requireBusinessAccess(auth, product.business_id)
@@ -47,12 +58,25 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .eq('product_id', params.id)
     .eq('is_active', true)
   const aliasIds = (aliases ?? []).map(a => a.id)
-  if (aliasIds.length === 0) {
+  const hasExternalCatalogue = !!(product.external_catalogue_source && product.external_catalogue_article)
+  if (aliasIds.length === 0 && !hasExternalCatalogue) {
     return NextResponse.json({ ok: true, supplier_articles: [], cdn_base: null })
   }
 
   // 3. Pull latest article_number + supplier_fortnox_number per alias.
+  // Also seed external_catalogue link (Spendrups, Carlsberg sentinel)
+  // with a recent-ish last_seen so the alias-based combos still bubble
+  // first when both exist (invoice supplier > catalogue sentinel) but
+  // the catalogue surfaces when no invoice data exists.
   const combos = new Map<string, { supplier_fortnox_number: string; article_number: string; last_seen: string }>()
+  if (hasExternalCatalogue) {
+    const k = `${product.external_catalogue_source}|${product.external_catalogue_article}`
+    combos.set(k, {
+      supplier_fortnox_number: product.external_catalogue_source as string,
+      article_number:          product.external_catalogue_article as string,
+      last_seen:               '1970-01-01',   // older than any real invoice date
+    })
+  }
   for (let i = 0; i < aliasIds.length; i += 100) {
     const slice = aliasIds.slice(i, i + 100)
     const { data } = await db
