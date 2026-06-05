@@ -135,10 +135,38 @@ for (const biz of BUSINESSES) {
     const arr = canonicalsBySupplier.get(sup) ?? []; arr.push(c); canonicalsBySupplier.set(sup, arr)
   }
 
-  const buckets = { merged: 0, skipped_low_confidence: 0, skipped_ambiguous: 0, skipped_no_candidate: 0, error: 0 }
+  const buckets = { merged: 0, merged_direct: 0, skipped_low_confidence: 0, skipped_ambiguous: 0, skipped_no_candidate: 0, error: 0 }
   let totalIn = 0, totalOut = 0
-  const samples = { merged: [], skipped_low_confidence: [], skipped_ambiguous: [] }
+  const samples = { merged: [], merged_direct: [], skipped_low_confidence: [], skipped_ambiguous: [] }
+
+  // Direct-match shortcut
+  const norm = s => String(s ?? '').toLowerCase().normalize('NFKD').replace(/\s+/g, ' ').trim()
+  const orphanByNormName = new Map(orphans.map(o => [norm(o.name), o]))
+  const { data: bizAliases } = await db.from('product_aliases').select('id, product_id, raw_description').eq('business_id', biz.id).eq('is_active', true)
+  for (const a of bizAliases ?? []) {
+    const orphan = orphanByNormName.get(norm(a.raw_description))
+    if (!orphan || orphan.id === a.product_id || seen.has(orphan.id)) continue
+    const canonical = canonicals.find(c => c.id === a.product_id)
+    if (!canonical || canonical.default_supplier_fortnox_number !== orphan.default_supplier_fortnox_number) continue
+    if (APPLY) {
+      await db.from('recipe_ingredients').update({ product_id: canonical.id }).eq('product_id', orphan.id)
+      await db.from('products').update({ archived_at: new Date().toISOString() }).eq('id', orphan.id)
+      await db.from('orphan_rescue_log').insert({
+        business_id: biz.id,
+        orphan_product_id: orphan.id, orphan_name: orphan.name,
+        canonical_product_id: canonical.id, canonical_name: canonical.name,
+        candidate_count: 1, verdict: 'same', confidence: 1.0,
+        reasoning: 'Direct alias match: supplier invoice description equals orphan name + alias points at canonical.',
+        action: 'merged', tokens_in: 0, tokens_out: 0,
+      })
+    }
+    buckets.merged_direct++
+    seen.add(orphan.id)
+    if (samples.merged_direct.length < 8) samples.merged_direct.push({ orphan: orphan.name, canonical: canonical.name, conf: 1.0, reasoning: 'direct alias match' })
+  }
+
   for (const o of orphans) {
+    if (seen.has(o.id)) continue
     const r = await processOrphan(biz.id, o, canonicalsBySupplier, seen)
     if (!r) continue
     buckets[r.action] = (buckets[r.action] ?? 0) + 1

@@ -181,7 +181,52 @@ export async function runOrphanRescueForBusiness(
     arr.push(c); canonicalsBySupplier.set(sup, arr)
   }
 
-  // 5. Walk each orphan, find candidates, decide.
+  // 5a. Direct-match shortcut: if an active alias's raw_description
+  //     (normalised) equals the orphan product's name (normalised),
+  //     the supplier invoice has already told us which canonical this
+  //     product is. Merge without LLM — the cost-history is the proof.
+  //     Covers cases the Jaccard pre-filter misses, like:
+  //       orphan "Standardmjölk Lfri 3% 1l" + alias raw "STANDARDMJÖLK LFRI 3% 1L"
+  //       on canonical "Standardmjölk Laktosfri 3% 1L"
+  const norm = (s: string | null | undefined) => String(s ?? '').toLowerCase().normalize('NFKD').replace(/\s+/g, ' ').trim()
+  const orphanNamesByNorm = new Map<string, Product>()
+  for (const o of orphans) orphanNamesByNorm.set(norm(o.name), o)
+  // Pull every active alias at this business in one query
+  const { data: bizAliases } = await db.from('product_aliases')
+    .select('id, product_id, raw_description').eq('business_id', businessId).eq('is_active', true)
+  for (const a of bizAliases ?? []) {
+    const key = norm(a.raw_description)
+    const orphan = orphanNamesByNorm.get(key)
+    if (!orphan) continue
+    if (orphan.id === a.product_id) continue   // already linked to itself somehow
+    if (seenRecently.has(orphan.id)) continue
+
+    // Find the canonical product (the one the alias actually points at)
+    const canonical = canonicals.find(c => c.id === a.product_id)
+    if (!canonical) continue   // canonical archived in the same tick?
+    if (canonical.default_supplier_fortnox_number !== orphan.default_supplier_fortnox_number) continue
+
+    try {
+      await db.from('recipe_ingredients').update({ product_id: canonical.id }).eq('product_id', orphan.id)
+      await db.from('products').update({ archived_at: new Date().toISOString() }).eq('id', orphan.id)
+      await db.from('orphan_rescue_log').insert({
+        business_id: businessId,
+        orphan_product_id: orphan.id, orphan_name: orphan.name,
+        canonical_product_id: canonical.id, canonical_name: canonical.name,
+        candidate_count: 1,
+        verdict: 'same', confidence: 1.0,
+        reasoning: 'Direct alias match: supplier invoice description equals orphan name + alias points at canonical.',
+        action: 'merged', tokens_in: 0, tokens_out: 0,
+      })
+      result.merged++
+      seenRecently.add(orphan.id)
+    } catch (e: any) {
+      await logError(db, orphan, canonical, e?.message ?? String(e))
+      bump('error')
+    }
+  }
+
+  // 5b. Walk each remaining orphan via the Jaccard + LLM path.
   for (const o of orphans) {
     if (seenRecently.has(o.id)) continue
 
