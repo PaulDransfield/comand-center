@@ -47,14 +47,21 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const fxIndex = await loadFxIndex(db, ['EUR', 'USD', 'NOK', 'DKK', 'GBP'])
   const recipeIndex = await loadRecipeIndex(db, menu.business_id)
+  // Collect EVERY leaf product the menu's recipes (and their sub-recipes)
+  // depend on. Top-level-only collection drops sub-recipe leaves and the
+  // engine then reports them as no_price → false "Incomplete cost" flag.
   const productIds = new Set<string>()
-  for (const rid of recipeIds) {
-    const r = recipeIndex.get(rid)
-    if (!r) continue
+  function collectLeaves(rid: string, seen: Set<string>) {
+    if (seen.has(rid)) return
+    seen.add(rid)
+    const r = recipeIndex.get(rid); if (!r) return
     for (const ing of r.ingredients ?? []) {
-      if (ing.product_id) productIds.add(ing.product_id)
+      if (ing.product_id)   productIds.add(ing.product_id)
+      if (ing.subrecipe_id) collectLeaves(ing.subrecipe_id, seen)
     }
   }
+  const seen = new Set<string>()
+  for (const rid of recipeIds) collectLeaves(rid, seen)
   const priceMap = await getProductLatestPrices(db, menu.business_id, Array.from(productIds), fxIndex)
 
   const enrichedItems = (items ?? []).map((it: any) => {

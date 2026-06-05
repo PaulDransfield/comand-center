@@ -53,14 +53,21 @@ export async function GET(req: NextRequest) {
   const fxIndex = await loadFxIndex(db, ['EUR', 'USD', 'NOK', 'DKK', 'GBP'])
   const recipeIndex = await loadRecipeIndex(db, businessId)
   // Pre-fetch product prices for ALL leaf products referenced anywhere in the recipe tree.
+  // RECURSE into sub-recipes — without this, the engine's sub-recipe branch
+  // looks up products that aren't in priceMap and reports them as no_price,
+  // making the menu falsely look "incomplete".
   const productIds = new Set<string>()
-  for (const rid of recipeIds) {
-    const r = recipeIndex.get(rid)
-    if (!r) continue
+  function collectLeaves(rid: string, seen: Set<string>) {
+    if (seen.has(rid)) return
+    seen.add(rid)
+    const r = recipeIndex.get(rid); if (!r) return
     for (const ing of r.ingredients ?? []) {
-      if (ing.product_id) productIds.add(ing.product_id)
+      if (ing.product_id)   productIds.add(ing.product_id)
+      if (ing.subrecipe_id) collectLeaves(ing.subrecipe_id, seen)
     }
   }
+  const seen = new Set<string>()
+  for (const rid of recipeIds) collectLeaves(rid, seen)
   const priceMap = await getProductLatestPrices(db, businessId, Array.from(productIds), fxIndex)
 
   const summaries = menus.map((m: any) => {
