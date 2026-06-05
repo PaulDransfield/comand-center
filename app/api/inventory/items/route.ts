@@ -422,9 +422,13 @@ export async function GET(req: NextRequest) {
       // NOT pre-flag those as no_price here — the linked-recipe
       // pass overwrites latest_price.
       const reasons: Array<'no_article' | 'no_price' | 'unreliable' | 'no_supplier'> = []
-      if ((aliasCountByProduct.get(p.id) ?? 0) === 0) reasons.push('no_article')
-      if (p.price_override == null && !p.source_recipe_id) reasons.push('no_price')
-      if (!p.default_supplier_name) reasons.push('no_supplier')
+      // Recipe-promoted products are made in-house — they have no
+      // supplier and no supplier_articles row by design. Don't flag
+      // those reasons for them.
+      const isRecipeSourced = !!p.source_recipe_id
+      if (!isRecipeSourced && (aliasCountByProduct.get(p.id) ?? 0) === 0) reasons.push('no_article')
+      if (!isRecipeSourced && p.price_override == null) reasons.push('no_price')
+      if (!isRecipeSourced && !p.default_supplier_name) reasons.push('no_supplier')
       // No matched lines → no extraction to flag → 'unreliable' is N/A.
       return {
         product_id:         p.id,
@@ -471,12 +475,13 @@ export async function GET(req: NextRequest) {
       || latest.price_per_unit != null
       || (latest.total_excl_vat != null && latest.quantity != null && Number(latest.quantity) > 0)
     const reasons: Array<'no_article' | 'no_price' | 'unreliable' | 'no_supplier'> = []
-    if ((aliasCountByProduct.get(p.id) ?? 0) === 0) reasons.push('no_article')
-    if (!hasUsablePrice) reasons.push('no_price')
+    const isRecipeSourced = !!p.source_recipe_id
+    if (!isRecipeSourced && (aliasCountByProduct.get(p.id) ?? 0) === 0) reasons.push('no_article')
+    if (!isRecipeSourced && !hasUsablePrice) reasons.push('no_price')
     if (latest.fortnox_invoice_number && flaggedInvoiceNumbers.has(String(latest.fortnox_invoice_number))) {
       reasons.push('unreliable')
     }
-    if (!p.default_supplier_name && !latest.supplier_name_snapshot) reasons.push('no_supplier')
+    if (!isRecipeSourced && !p.default_supplier_name && !latest.supplier_name_snapshot) reasons.push('no_supplier')
 
     return {
       product_id:         p.id,
