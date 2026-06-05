@@ -477,19 +477,19 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
             metrics so the by-the-glass margin is as prominent as the
             by-the-bottle one. */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginTop: 16, padding: '14px 16px', background: UXP.subtleBg, borderRadius: 8 }}>
-          <HeroStat label={isDrink && recipe.type === 'wine' ? 'Bottle cost' : costLabel}  value={fmtKr(summary.food_cost)} />
-          <HeroStat label={isDrink && recipe.type === 'wine' ? 'Bottle cost %' : pctLabel} value={summary.food_pct != null ? `${summary.food_pct.toFixed(1)} %` : '—'}
+          <HeroStat label={isDrink && recipe.glass_price != null && Number(recipe.glass_price) > 0 ? 'Bottle cost' : costLabel}  value={fmtKr(summary.food_cost)} />
+          <HeroStat label={isDrink && recipe.glass_price != null && Number(recipe.glass_price) > 0 ? 'Bottle cost %' : pctLabel} value={summary.food_pct != null ? `${summary.food_pct.toFixed(1)} %` : '—'}
                     color={summary.food_pct != null ? foodPctColor(summary.food_pct) : undefined} />
-          <HeroStat label={isDrink && recipe.type === 'wine' ? 'Bottle GP %' : 'GP %'}
+          <HeroStat label={isDrink && recipe.glass_price != null && Number(recipe.glass_price) > 0 ? 'Bottle GP %' : 'GP %'}
                     value={isIncomplete ? '—' : (summary.gp_pct != null ? `${summary.gp_pct.toFixed(1)} %` : '—')}
                     color={!isIncomplete && summary.gp_pct != null ? gpColor(summary.gp_pct) : undefined} />
-          <HeroStat label={isDrink && recipe.type === 'wine' ? 'Bottle GP kr' : 'GP kr'} value={isIncomplete ? '—' : (summary.gp_kr != null ? fmtKr(summary.gp_kr) : '—')}
+          <HeroStat label={isDrink && recipe.glass_price != null && Number(recipe.glass_price) > 0 ? 'Bottle GP kr' : 'GP kr'} value={isIncomplete ? '—' : (summary.gp_kr != null ? fmtKr(summary.gp_kr) : '—')}
                     color={!isIncomplete && summary.gp_pct != null ? gpColor(summary.gp_pct) : undefined} />
-          <HeroStat label={isDrink && recipe.type === 'wine' ? 'Bottle price' : 'Menu price'} value={recipe.menu_price != null ? fmtKr(recipe.menu_price) : '—'} />
+          <HeroStat label={isDrink && recipe.glass_price != null && Number(recipe.glass_price) > 0 ? 'Bottle price' : 'Menu price'} value={recipe.menu_price != null ? fmtKr(recipe.menu_price) : '—'} />
         </div>
 
-        {/* Per-glass strip — wine only when glass_price set. */}
-        {recipe.type === 'wine' && recipe.glass_price != null && Number(recipe.glass_price) > 0 && recipe.portions > 0 && (() => {
+        {/* Per-glass strip — any drink with glass_price set. */}
+        {isDrink && recipe.glass_price != null && Number(recipe.glass_price) > 0 && recipe.portions > 0 && (() => {
           const glassPriceIncVat = Number(recipe.glass_price)
           const vat              = recipe.vat_rate != null ? Number(recipe.vat_rate) : 25
           const glassPriceExVat  = glassPriceIncVat / (1 + vat / 100)
@@ -628,7 +628,10 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
           : 'Not set'}
       >
         <PriceVatEditor recipe={recipe} foodCost={summary.food_cost} onSave={patchRecipe} />
-        {recipe.type === 'wine' && (
+        {/* Glass pricing — available for any drink type. Owner sets
+            portions = glasses-per-bottle (e.g. 6 for a 75cl bottle) +
+            glass_price; engine derives glass cost = bottle_cost / portions. */}
+        {isDrink && (
           <GlassPriceEditor
             recipe={recipe}
             bottleFoodCost={summary.food_cost}
