@@ -354,42 +354,40 @@ export function computeRecipeCost(
           lineCost = null
           unitMismatch = true
         }
-      } else if (density != null && density > 0) {
-        // Mass↔volume bridge via density. First normalise both sides to
-        // their canonical SI unit (g or ml).
+      } else {
+        // Mass↔volume bridge. Use the product's explicit density_g_per_ml
+        // when present; otherwise fall back to 1.0 (cooking convention —
+        // water-like liquids are ≈ 1 g/ml, most kitchen liquids are within
+        // 10%, and the cost difference is small enough that the chef
+        // shouldn't have to do data entry for it to work at all).
+        // Aceto Balsamico, vinegar, juice, milk, broth, etc. all collapse
+        // into the "≈ 1" bucket. Olive oil and syrup are off by ~10%;
+        // owner can set explicit density to refine.
         const recipeFam = unitFamily(ing.unit)
         const baseFam   = unitFamily(baseUnit)
         if (recipeFam && baseFam && recipeFam !== baseFam &&
             (recipeFam === 'mass' || recipeFam === 'volume') &&
             (baseFam   === 'mass' || baseFam   === 'volume')) {
-          // Convert recipe qty to its family base (g or ml), then apply
-          // density to bridge to the OTHER family's base.
           const recipeBase = recipeFam === 'mass' ? 'g' : 'ml'
-          const baseBase   = baseFam   === 'mass' ? 'g' : 'ml'
           const qtyInRecipeBase = convertQuantity(ing.quantity, ing.unit, recipeBase)
           if (qtyInRecipeBase != null) {
-            // recipeBase=g, baseBase=ml: bridge = qty_g / density_g_per_ml = ml
-            // recipeBase=ml, baseBase=g: bridge = qty_ml × density_g_per_ml = g
+            const effectiveDensity = (density != null && density > 0) ? density : 1.0
             const bridged = recipeFam === 'mass'
-              ? qtyInRecipeBase / density
-              : qtyInRecipeBase * density
-            // bridged is now in baseBase ('g' or 'ml'); base_unit equals
-            // baseBase since they're the same canonical SI unit.
+              ? qtyInRecipeBase / effectiveDensity
+              : qtyInRecipeBase * effectiveDensity
             lineCost = Math.round(bridged * costPerBase * 100) / 100
-            densityUsed = density
+            densityUsed = effectiveDensity
             unitMismatch = false
           } else {
             lineCost = null
             unitMismatch = true
           }
         } else {
+          // Truly different families (mass↔count without weight_per_piece,
+          // count↔volume etc.) — honest-incomplete.
           lineCost = null
           unitMismatch = true
         }
-      } else {
-        // Truly cross-family without density to bridge.
-        lineCost = null
-        unitMismatch = true
       }
     } else if (!noPrice) {
       // No pack data — use a 1:1 calc ONLY when the recipe unit matches the

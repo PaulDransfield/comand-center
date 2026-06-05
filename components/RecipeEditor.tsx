@@ -1471,7 +1471,7 @@ function IngredientRow({ ing, imageUrl, highlighted, onRemove, onChange, onProdu
                     : t('detail.noPrice'))}
             {!ing.is_subrecipe && ing.unit_mismatch && (
               <span style={{ marginLeft: 6, color: UXP.coral, fontWeight: 500 }}>
-                {t('detail.unitMismatchLabel', { recipe: ing.unit ?? '?', product: ing.invoice_unit ?? '?' })}
+                {t('detail.unitMismatchLabel', { recipe: ing.unit ?? '?', product: ing.base_unit ?? ing.invoice_unit ?? '?' })}
               </span>
             )}
             {!ing.is_subrecipe && ing.pack_auto_detected && !ing.unit_mismatch && (
