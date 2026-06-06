@@ -29,6 +29,7 @@ import { fmtKr } from '@/lib/format'
 interface EditContextResponse {
   product: {
     id: string
+    business_id: string
     name: string
     category: string | null
     invoice_unit: string | null
@@ -386,6 +387,21 @@ export function EditItemModal({ productId, onClose, onSaved }: {
                         {a.latest_price != null && (
                           <div style={{ fontSize: 10, color: UXP.ink3, marginTop: 1, fontVariantNumeric: 'tabular-nums' as const }}>
                             {fmtKr(a.latest_price)}/{a.unit ?? '?'} · last {a.latest_date}
+                            {a.latest_invoice && data.product?.business_id && (
+                              <>
+                                {' · '}
+                                <a
+                                  href={`/api/inventory/invoice-pdf?business_id=${encodeURIComponent(data.product.business_id)}&invoice_number=${encodeURIComponent(a.latest_invoice)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title={`View source PDF for invoice ${a.latest_invoice}`}
+                                  style={{ color: UXP.lavText, textDecoration: 'none' as const }}
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  View PDF
+                                </a>
+                              </>
+                            )}
                           </div>
                         )}
                       </div>
