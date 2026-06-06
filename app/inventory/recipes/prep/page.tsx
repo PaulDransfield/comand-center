@@ -17,6 +17,8 @@ import { UXP } from '@/lib/constants/tokens'
 import { ProductThumb } from '@/components/ui/ProductThumb'
 import { PageContainer } from '@/components/ui/Layout'
 import { PageErrorBoundary } from '@/components/ui/PageErrorBoundary'
+import { DRINK_TYPES } from '@/lib/categoryColors'
+import { CategoryPill } from '@/components/ui/CategoryPill'
 
 interface DishRow {
   id:                  string
@@ -146,10 +148,8 @@ function formatPrepQty(qty: number, unit: string): { qty: number; unit: string }
 function round2(n: number) { return Math.round(n * 100) / 100 }
 
 const DISH_TYPES = new Set(['starter','main','pasta','pizza','dessert','drink','cocktail','side'])
-// Mirror /inventory/recipes/page.tsx — same buckets so Food/Drinks here lines
-// up with what the owner picked on the list. Wine, beer, spirits etc. count
-// as drinks even though they sit on the menu like a dish.
-const DRINK_TYPES = new Set(['cocktail','drink','wine','beer','spirit','softdrink','cider','alcohol_free'])
+// DRINK_TYPES imported from lib/categoryColors.ts — single source of truth.
+// (Pre-consolidation this set was redeclared locally and in three other files.)
 const typeLower = (r: any) => String(r?.type ?? '').toLowerCase()
 const isDrink   = (r: any) => DRINK_TYPES.has(typeLower(r))
 const isDish = (r: any) =>
@@ -1253,8 +1253,8 @@ function PrepListPageInner() {
                         <span style={{ overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
                           {d.name}
                         </span>
-                        <span style={{ fontSize: 10, color: UXP.ink4, marginLeft: 8 }}>
-                          {d.type ?? ''}
+                        <span style={{ marginLeft: 8, flexShrink: 0 }}>
+                          <CategoryPill type={d.type} />
                         </span>
                       </button>
                     )

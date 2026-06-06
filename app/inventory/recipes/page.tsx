@@ -20,6 +20,8 @@ import { Modal, overlayBtn } from '@/components/ui/Overlay'
 import { PageContainer } from '@/components/ui/Layout'
 import { DataTable, type DataTableColumn } from '@/components/ui/DataTable'
 import { fmtKr } from '@/lib/format'
+import { FOOD_TYPES, DRINK_TYPES, categoryToken } from '@/lib/categoryColors'
+import { CategoryPill } from '@/components/ui/CategoryPill'
 
 interface RecipeRow {
   id:               string
@@ -132,8 +134,7 @@ export default function InventoryRecipesPage() {
     if (sortKey === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(k); setSortDir('asc') }
   }
-  const FOOD_TYPES  = new Set(['starter', 'main', 'pasta', 'pizza', 'dessert', 'side', 'other'])
-  const DRINK_TYPES = new Set(['cocktail', 'drink', 'wine', 'beer', 'spirit', 'softdrink', 'cider', 'alcohol_free'])
+  // FOOD_TYPES / DRINK_TYPES imported from lib/categoryColors.ts (single source of truth).
   const typeLower = (r: any) => String(r.type ?? '').toLowerCase()
   // Sub-recipe owner-toggle wins. Otherwise a recipe is food/drink based on
   // its type, falling back to "food" when type is null but the row has a
@@ -266,7 +267,7 @@ export default function InventoryRecipesPage() {
                 {['starter','pasta','pizza','main','side','dessert','other'].map(t => {
                   const c = typeCountFor(t)
                   if (c === 0) return null
-                  return <TypePill key={t} active={typeFilter === t} onClick={() => setTypeFilter(t)} label={t[0].toUpperCase() + t.slice(1)} count={c} />
+                  return <TypePill key={t} typeKey={t} active={typeFilter === t} onClick={() => setTypeFilter(t)} label={t[0].toUpperCase() + t.slice(1)} count={c} />
                 })}
               </div>
             )}
@@ -286,7 +287,7 @@ export default function InventoryRecipesPage() {
                 ].map(t => {
                   const c = typeCountFor(t.k)
                   if (c === 0) return null
-                  return <TypePill key={t.k} active={typeFilter === t.k} onClick={() => setTypeFilter(t.k)} label={t.l} count={c} />
+                  return <TypePill key={t.k} typeKey={t.k} active={typeFilter === t.k} onClick={() => setTypeFilter(t.k)} label={t.l} count={c} />
                 })}
               </div>
             )}
@@ -506,6 +507,12 @@ function ImageLightbox({ url, name, onClose }: { url: string; name: string; onCl
 // the editor. PATCHes menu_price (legacy passthrough — the resolver
 // stores it as-is; owner refines VAT in the editor if needed).
 // Click-to-edit type dropdown on the recipe-list row. PATCHes recipes.type.
+//
+// Pill + transparent-select overlay pattern: the visible CategoryPill carries
+// the canonical category colour; an invisible native <select> sits on top
+// (opacity:0, inset:0) so every click target — pointer, keyboard, screen
+// reader — still hits a real <select> element. No custom popover, no a11y
+// regression, native open behaviour preserved across desktop + mobile.
 function InlineType({ recipeId, value, onSaved }: { recipeId: string; value: string | null; onSaved: () => void }) {
   const [busy, setBusy] = useState(false)
   const ALL_TYPES = [
@@ -543,21 +550,33 @@ function InlineType({ recipeId, value, onSaved }: { recipeId: string; value: str
     } finally { setBusy(false) }
   }
   return (
-    <select
-      value={value ?? ''}
-      onClick={e => e.stopPropagation()}
-      onChange={e => { e.stopPropagation(); void change(e.target.value) }}
-      disabled={busy}
+    <span
       style={{
-        background: 'transparent', border: '0.5px solid transparent', borderRadius: 4,
-        padding: '1px 4px', fontSize: 12, fontFamily: 'inherit', color: UXP.ink3,
-        cursor: 'pointer',
+        position:    'relative',
+        display:     'inline-flex',
+        alignItems:  'center',
+        gap:         3,
+        cursor:      'pointer',
+        opacity:     busy ? 0.5 : 1,
       }}
-      onMouseEnter={e => (e.currentTarget.style.border = `0.5px solid ${UXP.border}`)}
-      onMouseLeave={e => (e.currentTarget.style.border = '0.5px solid transparent')}
+      onClick={e => e.stopPropagation()}
     >
-      {ALL_TYPES.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
-    </select>
+      <CategoryPill type={value} showEmpty />
+      <span style={{ color: UXP.ink4, fontSize: 9, lineHeight: 1, paddingTop: 1 }}>▾</span>
+      <select
+        value={value ?? ''}
+        onClick={e => e.stopPropagation()}
+        onChange={e => { e.stopPropagation(); void change(e.target.value) }}
+        disabled={busy}
+        aria-label="Recipe type"
+        style={{
+          position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer',
+          width: '100%', height: '100%', fontFamily: 'inherit',
+        }}
+      >
+        {ALL_TYPES.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
+      </select>
+    </span>
   )
 }
 
@@ -1349,17 +1368,23 @@ function ViewPill({ active, onClick, label, count }: { active: boolean; onClick:
     </button>
   )
 }
-function TypePill({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {
+function TypePill({ typeKey, active, onClick, label, count }: { typeKey?: string; active: boolean; onClick: () => void; label: string; count: number }) {
   // Smaller, denser variant — sits under the main Dishes/Sub-recipes row.
+  //
+  // When ACTIVE and a category key is supplied, the pill takes that
+  // category's colour (per the canonical map in lib/categoryColors.ts).
+  // The "All" pill omits typeKey so it falls back to the generic lavender
+  // active state — preserving its meaning as "no filter applied".
+  const { ink, fill } = typeKey ? categoryToken(typeKey) : { ink: UXP.lavText, fill: UXP.lavFill }
   return (
     <button
       type="button"
       onClick={onClick}
       style={{
         padding:       '2px 9px',
-        background:    active ? UXP.lavFill : 'transparent',
-        color:         active ? UXP.lavText : UXP.ink3,
-        border:        `0.5px solid ${active ? UXP.lav : UXP.border}`,
+        background:    active ? fill          : 'transparent',
+        color:         active ? ink           : UXP.ink3,
+        border:        `0.5px solid ${active ? ink : UXP.border}`,
         borderRadius:  999,
         fontSize:      10,
         fontWeight:    500,
