@@ -175,6 +175,14 @@ function PrepListPageInner() {
   const [loadingDishes, setLoadingDishes] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Post-seed review banner. We don't have a provenance column on
+  // recipes.portions_per_cover, so the banner shows whenever the menu has
+  // mix-share set on enough dishes that the value almost certainly came
+  // from a seed (≥ 3) AND the owner hasn't dismissed it for this business.
+  // Dismissal persists in localStorage per-business so a chef-owner who
+  // reviewed once doesn't see it again.
+  const [seedBannerDismissed, setSeedBannerDismissed] = useState(false)
+
   // selected = recipe_id → qty (covers/portions). 0 / missing = not in the list.
   const [selected, setSelected] = useState<Record<string, number>>({})
   // M117 — expected covers for auto-fill. Empty string when not in use.
@@ -251,6 +259,16 @@ function PrepListPageInner() {
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
   }, [])
+
+  // Refresh banner dismissal state whenever the selected business changes —
+  // each business has its own seeded-or-not state, so the banner should
+  // re-evaluate from scratch when the owner switches tenants.
+  useEffect(() => {
+    if (!bizId) { setSeedBannerDismissed(false); return }
+    setSeedBannerDismissed(
+      localStorage.getItem(`cc_prep_seed_banner_dismissed_${bizId}`) === '1',
+    )
+  }, [bizId])
 
   // Fetch dishes for the dropdown. We pull the full recipe list and
   // filter dish-shape client-side (same isDish() rule as /inventory/recipes
@@ -671,6 +689,55 @@ function PrepListPageInner() {
             </button>
           ) : null}
         </div>
+
+        {/* Post-seed review banner. Visible when the menu has shares set
+            on at least 3 dishes (almost always the result of running the
+            mix-share seed script, since manual entry of 3+ before
+            discovering this feature is unusual) AND the owner hasn't
+            dismissed it for this business. Dismissal persists in
+            localStorage. Lavender so it reads as an informational nudge,
+            not an error. */}
+        {bizId && !loadingDishes && !seedBannerDismissed && dishes.filter(d => d.portions_per_cover != null).length >= 3 && (
+          <div style={{
+            display:      'flex',
+            alignItems:   'flex-start',
+            gap:          12,
+            padding:      '12px 14px',
+            marginBottom: 14,
+            background:   UXP.lavFill,
+            border:       `0.5px solid ${UXP.lavMid}`,
+            borderRadius: UXP.r_md,
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontSize: UXP.fsMicro, color: UXP.lavText, fontWeight: 700,
+                letterSpacing: '0.06em', textTransform: 'uppercase' as const,
+                marginBottom: 3,
+              }}>
+                Mix-share estimates
+              </div>
+              <div style={{ fontSize: 12, color: UXP.ink2, lineHeight: 1.4 }}>
+                We&apos;ve estimated mix-share % for {dishes.filter(d => d.portions_per_cover != null).length} dish{dishes.filter(d => d.portions_per_cover != null).length === 1 ? '' : 'es'} on this menu. Open a dish (or use the inline % column when items are selected) to review and override anything that looks off.
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                if (bizId) localStorage.setItem(`cc_prep_seed_banner_dismissed_${bizId}`, '1')
+                setSeedBannerDismissed(true)
+              }}
+              style={{
+                background: 'none', border: 'none', color: UXP.ink3,
+                cursor: 'pointer', fontSize: 18, padding: '0 4px',
+                minWidth: 28, minHeight: 28,
+                marginTop: -2,
+              }}
+              aria-label="Dismiss"
+              title="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {/* View toggle — separate Food and Drinks workflows for kitchen
             vs bar staff. Filters the dish picker AND the aggregated prep
