@@ -71,25 +71,38 @@ export default function LandingPage() {
         @media (max-width: 880px) {
           .cc-hero        { grid-template-columns: 1fr !important; gap: 32px !important; }
           .cc-grid3       { grid-template-columns: 1fr !important; }
-          .cc-navlinks    { gap: 12px !important; }
+          .cc-navlinks    { gap: 10px !important; }
           .cc-nav-anchor  { display: none !important; }
           .cc-problem-pad { padding: 40px 28px !important; }
+          /* Phone header — tighten container padding + button padding so
+             the wordmark + both CTAs sit cleanly inside the viewport
+             without overlap or right-edge clipping. */
+          .cc-nav         { padding: 16px 14px !important; }
+          .cc-nav-btn     { padding: 8px 12px !important; }
+        }
+        /* Narrowest phones (iPhone SE etc.) — shave a touch more so the
+           full "Book a demo" label stays on one line. Wordmark sized
+           down only at this breakpoint. */
+        @media (max-width: 380px) {
+          .cc-wordmark    { font-size: 16px !important; }
+          .cc-nav-btn     { padding: 7px 10px !important; font-size: 13px !important; }
+          .cc-navlinks    { gap: 8px !important; }
         }
       `}</style>
 
       {/* ── Nav ────────────────────────────────────────────────── */}
-      <nav style={navStyle}>
+      <nav className="cc-nav" style={navStyle}>
         <Link href="/" style={logoStyle}>
           <span style={logoMark}>cc</span>
-          <span style={{ fontFamily: F.display, fontSize: 19, fontWeight: 600 }}>CommandCenter</span>
+          <span className="cc-wordmark" style={{ fontFamily: F.display, fontSize: 19, fontWeight: 600 }}>CommandCenter</span>
         </Link>
         <div className="cc-navlinks" style={{ display: 'flex', gap: 30, alignItems: 'center', fontSize: 14, color: C.ink2 }}>
           <a href="#how"      className="cc-nav-anchor" style={{ color: 'inherit' }}>How it works</a>
           <a href="#platform" className="cc-nav-anchor" style={{ color: 'inherit' }}>Platform</a>
           <a href="#pricing"  className="cc-nav-anchor" style={{ color: 'inherit' }}>Pricing</a>
           <span className="cc-nav-anchor"><LanguageSelector variant="inline" onTone="light" /></span>
-          <Link href="/login" style={inkBtn}>Log in</Link>
-          <Link href="/login?mode=signup&plan=founding" style={lavBtn}>Book a demo</Link>
+          <Link href="/login" className="cc-nav-btn" style={lavOutlineBtn}>Log in</Link>
+          <Link href="/login?mode=signup&plan=founding" className="cc-nav-btn" style={lavBtn}>Book a demo</Link>
         </div>
       </nav>
 
@@ -510,6 +523,25 @@ const inkBtn: React.CSSProperties = {
   border:       'none',
   cursor:       'pointer',
   display:      'inline-block',
+  whiteSpace:   'nowrap',
+}
+
+// Secondary Log-in button — lavender-family to match the rest of the
+// scheme (the dark ink fill clashed with the paper backdrop + the lav
+// "Book a demo" primary CTA). Same shape + padding as lavBtn so the
+// pair reads as a system.
+const lavOutlineBtn: React.CSSProperties = {
+  background:   C.lavFill,
+  color:        C.lavText,
+  padding:      '10px 18px',
+  borderRadius: 9,
+  fontSize:     14,
+  fontWeight:   500,
+  textDecoration: 'none',
+  border:       `0.5px solid ${C.lav}`,
+  cursor:       'pointer',
+  display:      'inline-block',
+  whiteSpace:   'nowrap',
 }
 
 const lavBtn: React.CSSProperties = {
@@ -523,4 +555,5 @@ const lavBtn: React.CSSProperties = {
   border:       'none',
   cursor:       'pointer',
   display:      'inline-block',
+  whiteSpace:   'nowrap',
 }
