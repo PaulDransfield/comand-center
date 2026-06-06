@@ -618,7 +618,7 @@ function OrderRowCard({ row, thumbUrl, onChange, onRemove }: {
     }}>
       {/* Top row: thumbnail slot + name + remove */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <ThumbSlot url={row.is_custom ? null : thumbUrl} alt={row.name} />
+        <ProductThumb url={row.is_custom ? null : thumbUrl} size="md" alt={row.name} fallback="package" />
         <div style={{ flex: 1, minWidth: 0 }}>
           {row.is_custom ? (
             <input
@@ -733,40 +733,6 @@ function OrderRowCard({ row, thumbUrl, onChange, onRemove }: {
           + Add note
         </button>
       )}
-    </div>
-  )
-}
-
-// Always-present 40 px thumbnail slot. Renders the existing supplier-
-// article image when the row has one (same URL source the desktop view
-// uses), otherwise a neutral fallback tile with a muted package glyph.
-// The slot's outer size never changes so rows align cleanly down the
-// supplier card.
-function ThumbSlot({ url, alt }: { url: string | null | undefined; alt: string }) {
-  if (url) {
-    return <ProductThumb url={url} size="md" alt={alt} />
-  }
-  return (
-    <div
-      style={{
-        width: 40, height: 40,
-        background:   UXP.subtleBg,
-        border:       `0.5px solid ${UXP.border}`,
-        borderRadius: 5,
-        flexShrink:   0,
-        display:      'flex',
-        alignItems:   'center',
-        justifyContent: 'center',
-        color:        UXP.ink4,
-      }}
-      aria-hidden="true"
-    >
-      {/* Inline package SVG — neutral, no dependency on emoji rendering. */}
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-        <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-        <line x1="12" y1="22.08" x2="12" y2="12" />
-      </svg>
     </div>
   )
 }

@@ -20,6 +20,7 @@ import { useParams, useRouter } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
+import { ProductThumb } from '@/components/ui/ProductThumb'
 
 interface Row {
   product_id:             string
@@ -76,6 +77,11 @@ export default function CountDetailPage() {
   const [data,    setData]    = useState<DetailResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
+  // Article thumbnails — same supplier-article batch fetch the order /
+  // prep / recipe pages use, keyed by product_id. Silent fallback when
+  // a product has no scraped image yet. Keeps article presentation
+  // uniform across the app.
+  const [imageByProduct, setImageByProduct] = useState<Record<string, string | null>>({})
   const [filter,  setFilter]  = useState<'all' | 'unsaved' | 'saved'>('all')
   const [search,  setSearch]  = useState('')
   const [openCats, setOpenCats] = useState<Record<string, boolean>>({})
@@ -110,6 +116,30 @@ export default function CountDetailPage() {
     } catch (e: any) { setError(e.message) } finally { setLoading(false) }
   }, [params.id])
   useEffect(() => { load() }, [load])
+
+  // Article thumbnails — one batch round-trip per load. Silent fallback
+  // on error (count walk shouldn't block on image data).
+  useEffect(() => {
+    const ids = (data?.rows ?? []).map(r => r.product_id).filter(Boolean) as string[]
+    if (ids.length === 0) return
+    const ctrl = new AbortController()
+    fetch('/api/inventory/supplier-article/batch', {
+      method:  'POST',
+      cache:   'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ product_ids: ids }),
+      signal:  ctrl.signal,
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (!j?.by_product) return
+        const next: Record<string, string | null> = {}
+        for (const pid of ids) next[pid] = j.by_product[pid]?.image_url ?? null
+        setImageByProduct(next)
+      })
+      .catch(() => { /* silent */ })
+    return () => ctrl.abort()
+  }, [data])
 
   async function patchLine(productId: string, patch: { quantity?: number; unit?: string; delete?: boolean }) {
     const r = await fetch(`/api/inventory/counts/${params.id}`, {
@@ -343,7 +373,13 @@ export default function CountDetailPage() {
                 <span style={{ fontSize: 14, color: UXP.ink4 }}>{isOpen ? '▾' : '▸'}</span>
               </button>
               {isOpen && rows.map(r => (
-                <CountRow key={r.product_id} row={r} disabled={completed} onPatch={(p) => patchLine(r.product_id, p)} />
+                <CountRow
+                  key={r.product_id}
+                  row={r}
+                  thumbUrl={imageByProduct[r.product_id]}
+                  disabled={completed}
+                  onPatch={(p) => patchLine(r.product_id, p)}
+                />
               ))}
             </div>
           )
@@ -398,8 +434,9 @@ export default function CountDetailPage() {
 }
 
 // ── Single product row — mobile-first ─────────────────────────────────
-function CountRow({ row, disabled, onPatch }: {
+function CountRow({ row, thumbUrl, disabled, onPatch }: {
   row: Row
+  thumbUrl: string | null | undefined
   disabled: boolean
   onPatch: (p: { quantity?: number; unit?: string; delete?: boolean }) => void
 }) {
@@ -437,6 +474,11 @@ function CountRow({ row, disabled, onPatch }: {
       background: isCounted ? UXP.cardBg : '#fff',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
+        {/* Article thumbnail — canonical 40 px slot used everywhere an
+            article is presented (orders, prep, recipes, items). Renders
+            the supplier_articles image when one is cached, otherwise a
+            neutral fallback tile so rows align cleanly. */}
+        <ProductThumb url={thumbUrl} size="md" alt={row.product_name} fallback="package" />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 500, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const }}>
             {row.product_name}

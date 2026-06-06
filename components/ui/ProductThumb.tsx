@@ -55,11 +55,58 @@ export interface ProductThumbProps {
   /** Optional click handler (e.g. open full-res image in a new tab). */
   onClick?:    () => void
   style?:      CSSProperties
+  /**
+   * What to render when `url` is missing.
+   *   'none'    (default): return null — preserves the historical
+   *                        "silent fallback" used by recipe drawers,
+   *                        EditItemModal, item lists.
+   *   'package': render a neutral 40 px slot with a muted package SVG
+   *              so rows align cleanly even when the article has no
+   *              scraped image yet. Use this everywhere an article
+   *              appears in a column where alignment matters
+   *              (orders, stock count, future article surfaces).
+   */
+  fallback?:   'none' | 'package'
 }
 
-export function ProductThumb({ url, size = 'sm', alt = '', onClick, style }: ProductThumbProps) {
-  if (!url) return null
+export function ProductThumb({
+  url, size = 'sm', alt = '', onClick, style, fallback = 'none',
+}: ProductThumbProps) {
   const px = SIZE_PX[size]
+
+  if (!url) {
+    if (fallback !== 'package') return null
+    return (
+      <div
+        aria-hidden="true"
+        style={{
+          width:          px,
+          height:         px,
+          background:     UXP.subtleBg,
+          border:         `0.5px solid ${UXP.border}`,
+          borderRadius:   RADIUS[size],
+          flexShrink:     0,
+          display:        'flex',
+          alignItems:     'center',
+          justifyContent: 'center',
+          color:          UXP.ink4,
+          ...style,
+        }}
+      >
+        {/* Lucide-style package outline. Inline so the canonical thumbnail
+            slot owns its own visual without dragging in an icon dep. */}
+        <svg
+          width={Math.round(px * 0.5)} height={Math.round(px * 0.5)}
+          viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+        >
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+          <line x1="12" y1="22.08" x2="12" y2="12" />
+        </svg>
+      </div>
+    )
+  }
   return (
     <div
       onClick={onClick}
