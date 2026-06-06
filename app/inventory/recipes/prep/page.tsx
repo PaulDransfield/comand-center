@@ -653,10 +653,16 @@ function PrepListPageInner() {
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
               Prep list
             </h1>
-            <p style={{ margin: '4px 0 0', fontSize: 12, color: UXP.ink3, maxWidth: 720, lineHeight: 1.5 }}>
-              Enter the dishes you're prepping for and the quantity of each cover. We aggregate the shared
-              sub-recipes and raw ingredients so the kitchen sees one prep line per component.
-            </p>
+            {/* On mobile we reclaim the top third — covers hero and the
+                Food / Drinks toggle should sit near the top without
+                scrolling past the description. Tablet/desktop keep the
+                full three-line subtitle for context. */}
+            {!isMobile && (
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: UXP.ink3, maxWidth: 720, lineHeight: 1.5 }}>
+                Enter the dishes you're prepping for and the quantity of each cover. We aggregate the shared
+                sub-recipes and raw ingredients so the kitchen sees one prep line per component.
+              </p>
+            )}
           </div>
           {/* Header right-side actions differ by mode. Prep-mode: complete + discard.
               Create-mode (no active session): "Clear all" when something is picked. */}
@@ -1517,7 +1523,7 @@ function PrepListPageInner() {
                   step={1}
                   inputMode="numeric"
                   pattern="[0-9]*"
-                  placeholder="e.g. 80"
+                  placeholder="eg 80"
                   value={coversInput}
                   onChange={e => {
                     const cleaned = e.target.value.replace(/[^0-9.]/g, '')
@@ -1526,7 +1532,7 @@ function PrepListPageInner() {
                   onKeyDown={e => { if (e.key === 'Enter') applyCovers() }}
                   style={{
                     ...inputStyle, flex: 1, padding: '12px 14px', fontSize: 16,  // 16px prevents iOS zoom
-                    textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const,
+                    textAlign: 'left' as const, fontVariantNumeric: 'tabular-nums' as const,
                     minHeight: 44,
                   }}
                   aria-label="Expected covers"
@@ -1536,11 +1542,13 @@ function PrepListPageInner() {
                   onClick={applyCovers}
                   disabled={!coversInput || Number(coversInput) <= 0}
                   style={{
-                    padding: '12px 20px', fontSize: 13, fontWeight: 600,
+                    padding: '12px 20px', fontSize: 14, fontWeight: 700,
                     background: UXP.lavDeep, color: '#fff', border: 'none',
                     borderRadius: UXP.r_md, cursor: 'pointer', fontFamily: 'inherit',
                     minHeight: 44, whiteSpace: 'nowrap' as const,
-                    opacity: !coversInput || Number(coversInput) <= 0 ? 0.4 : 1,
+                    // Disabled state stays readable — 0.4 dimmed the lavender
+                    // enough that it read as a low-contrast pale shape.
+                    opacity: !coversInput || Number(coversInput) <= 0 ? 0.55 : 1,
                   }}
                 >
                   Apply
@@ -1792,6 +1800,7 @@ function PrepListPageInner() {
               }}>
                 {filteredDishes.map(d => {
                   const inList = (selected[d.id] ?? 0) > 0
+                  const qty    = selected[d.id] ?? 0
                   return (
                     <button
                       key={d.id}
@@ -1806,21 +1815,47 @@ function PrepListPageInner() {
                         }
                       }}
                       style={{
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        padding: '12px 14px',     // Phase 1 spec: ~12px vertical
-                        minHeight: 48,            // ≥44px touch target
+                        display: 'grid',
+                        // Two columns: dish info (full-width, wraps freely)
+                        // and an optional qty badge on the right.
+                        gridTemplateColumns: '1fr auto',
+                        alignItems: 'center', gap: 10,
+                        padding: '12px 14px',
+                        minHeight: 56,            // accommodates two-line stack
                         background: inList ? UXP.lavFill : UXP.subtleBg,
                         border: `0.5px solid ${inList ? UXP.lavMid : UXP.border}`,
                         borderRadius: UXP.r_md, fontSize: 14, color: UXP.ink1,
                         textAlign: 'left' as const, cursor: 'pointer', fontFamily: 'inherit',
                       }}
                     >
-                      <span style={{ overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
-                        {d.name}
-                      </span>
-                      <span style={{ marginLeft: 8, flexShrink: 0 }}>
-                        <CategoryPill type={d.type} />
-                      </span>
+                      {/* Stacked: name on top, pill below. Name wraps
+                          instead of ellipsising so long Italian names
+                          (e.g. "Alla romana bianca con mortadella") show
+                          in full. */}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{
+                          fontSize: 14, color: UXP.ink1, fontWeight: 500, lineHeight: 1.3,
+                          overflowWrap: 'break-word' as const,
+                        }}>
+                          {d.name}
+                        </div>
+                        <div style={{ marginTop: 4 }}>
+                          <CategoryPill type={d.type} />
+                        </div>
+                      </div>
+                      {/* Qty badge — visible only when this dish is in
+                          the list. Tap the row again to increment. */}
+                      {qty > 0 && (
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          minWidth: 28, height: 28, padding: '0 8px',
+                          background: UXP.lavDeep, color: '#fff',
+                          fontSize: 13, fontWeight: 700, borderRadius: 999,
+                          fontVariantNumeric: 'tabular-nums' as const,
+                        }}>
+                          {qty}
+                        </span>
+                      )}
                     </button>
                   )
                 })}
@@ -2011,10 +2046,15 @@ function PrepListPageInner() {
             )}
 
             {/* (f) Bottom spacer — clears the sticky send bar so the last
-                row in the preview isn't hidden underneath it. Height =
-                bar (≈72px) + breathing room. The bar itself adds its own
-                safe-area-inset-bottom padding for the iOS home indicator. */}
-            <div style={{ height: 96 }} aria-hidden="true" />
+                row in the preview isn't hidden underneath it. Sized for
+                bar (~68px visible) + 60px MobileNav + 4px gap + safe-area
+                inset (Android gesture + iOS home indicator) + breathing
+                room. The bar itself uses bottom: calc(60 + safe-area + 4)
+                so this matches. */}
+            <div
+              aria-hidden="true"
+              style={{ height: 'calc(140px + env(safe-area-inset-bottom, 0px))' }}
+            />
           </div>
         )}
       </PageContainer>
@@ -2026,6 +2066,14 @@ function PrepListPageInner() {
           the MobileNav bottom bar (60px tall, fixed at bottom: 0).
           Z.banner (50) sits below modals (200) and tooltips (300) so the
           line-edit modal still overlays cleanly.
+
+          POSITIONING — bottom: calc(60px nav + safe-area + 4px gap).
+          MobileNav's box is `position: fixed; bottom: 0; height: 60`
+          and (per app/mobile.css) has its own `padding-bottom: env(
+          safe-area-inset-bottom)`. So its visible content TOP is at
+          `100vh − 60 − safe-area`. We add 4px of breathing room above
+          that. Without the `+ env(...)` the bar collides with MobileNav
+          content on iOS phones with home-indicator safe-area > 0.
           ────────────────────────────────────────────────────────────── */}
       {bizId && !activeSession && !sessionLoading && !loadingDishes && dishes.length > 0 && isMobile && (
         <div
@@ -2033,36 +2081,37 @@ function PrepListPageInner() {
             position: 'fixed' as const,
             left:     0,
             right:    0,
-            bottom:   60,                        // sit above MobileNav (60px)
+            // 60px nav + safe-area-inset (Android gesture bar + iOS home
+            // indicator) + 4px visible gap above MobileNav.
+            bottom:   'calc(60px + env(safe-area-inset-bottom, 0px) + 4px)',
             zIndex:   Z.banner,
             background: UXP.cardBg,
             borderTop: `0.5px solid ${UXP.border}`,
             boxShadow: '0 -2px 10px rgba(58,53,80,0.06)',
-            // Clear the iOS home indicator. MobileNav owns its own safe-area
-            // padding so we don't double-count here — our bottom sits at
-            // 60px (the nav's top edge) and the nav handles the safe zone.
-            paddingTop:    8,
-            paddingBottom: 8,
+            paddingTop:    10,
+            paddingBottom: 10,
             paddingLeft:   12,
             paddingRight:  12,
             display: 'flex', alignItems: 'center', gap: 10,
           }}
         >
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 11, color: UXP.ink3, fontWeight: 600 }}>
-              {selectedItems.length === 0 ? (
-                'Pick dishes to enable Save'
-              ) : (
-                <>
-                  {selectedItems.length} dish{selectedItems.length === 1 ? '' : 'es'}
-                  {result && ' · '}
-                  {result && `${result.components.length + result.products.length} prep line${(result.components.length + result.products.length) === 1 ? '' : 's'}`}
-                </>
-              )}
-            </div>
-            <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2, lineHeight: 1.3 }}>
-              Lines freeze at save — edits afterwards won&apos;t change them.
-            </div>
+            {selectedItems.length === 0 ? (
+              <div style={{ fontSize: 12, color: UXP.ink3, fontWeight: 500 }}>
+                Pick dishes to enable save
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: UXP.ink2, fontWeight: 600, lineHeight: 1.35 }}>
+                {selectedItems.length} dish{selectedItems.length === 1 ? '' : 'es'}
+                {result && (
+                  <>
+                    {' · '}
+                    {result.components.length + result.products.length} line{(result.components.length + result.products.length) === 1 ? '' : 's'}
+                  </>
+                )}
+                <span style={{ color: UXP.ink4, fontWeight: 400 }}>{' · freezes at save'}</span>
+              </div>
+            )}
           </div>
           <button
             onClick={saveSession}
@@ -2071,7 +2120,7 @@ function PrepListPageInner() {
               ...primaryBtn,
               padding: '12px 18px', fontSize: 14, fontWeight: 600,
               minHeight: 48,
-              opacity: (saving || selectedItems.length === 0) ? 0.5 : 1,
+              opacity: (saving || selectedItems.length === 0) ? 0.55 : 1,
               cursor: (saving || selectedItems.length === 0) ? 'not-allowed' as const : 'pointer' as const,
               whiteSpace: 'nowrap' as const,
             }}
