@@ -8,7 +8,7 @@
 // (GET /api/inventory/recipes/[id]) call computeRecipeCost() so the
 // formula can't drift between surfaces.
 //
-import { canonicalUnit, convertQuantity, parseProductPackSize, unitFamily } from './unit-conversion'
+import { canonicalUnit, convertQuantity, parseProductPackSize, unitFamily, volumePerPieceMlFromName } from './unit-conversion'
 import { getFxRate, type FxIndex } from './fx'
 
 // UNIT MODEL (post-M087):
@@ -99,6 +99,12 @@ export interface CostedIngredient extends IngredientForCosting {
   // M122 — mass↔count conversion provenance
   weight_per_piece_used:    number | null  // the g/piece value the engine actually used for mass↔count conversion
   weight_per_piece_source:  string | null  // 'manual' | 'supplier_article' | 'name_parsed' | null
+  // Volume↔count bridge — for piece-priced liquids ("20cl bottle, recipe asks
+  // 60 ml"). Mirrors the M122 mass↔count fields. Sourced today from the
+  // product name ("20cl" / "33cl" / "75cl") via volumePerPieceMlFromName.
+  // Future M136 column would let the owner set an explicit per-piece volume.
+  volume_per_piece_ml_used:   number | null
+  volume_per_piece_ml_source: string | null  // 'name_parsed' | null
 }
 
 export interface RecipeCostSummary {
@@ -147,6 +153,8 @@ export function computeRecipeCost(
           density_source:      null,
           weight_per_piece_used:    null,
           weight_per_piece_source:  null,
+          volume_per_piece_ml_used:   null,
+          volume_per_piece_ml_source: null,
           price_change_pct:    null,
         }
       }
@@ -171,6 +179,8 @@ export function computeRecipeCost(
           density_source:      null,
           weight_per_piece_used:    null,
           weight_per_piece_source:  null,
+          volume_per_piece_ml_used:   null,
+          volume_per_piece_ml_source: null,
           price_change_pct:    null,
         }
       }
@@ -269,6 +279,8 @@ export function computeRecipeCost(
         density_source:      null,
         weight_per_piece_used:    null,
         weight_per_piece_source:  null,
+        volume_per_piece_ml_used:   null,
+        volume_per_piece_ml_source: null,
         price_change_pct:    null,
       }
     }
@@ -331,6 +343,8 @@ export function computeRecipeCost(
     let unitMismatch = false
     let densityUsed: number | null = null
     let weightPerPieceUsed: number | null = null
+    let volumePerPieceMlUsed:   number | null = null
+    let volumePerPieceMlSource: string | null = null
     const weightPerPiece = p?.weight_per_piece_g ?? null
     // M120 — density-bridge for mass↔volume. If recipe asks "30 g of
     // olive oil" but supplier base is ml, divide by density to get ml,
@@ -362,6 +376,25 @@ export function computeRecipeCost(
           const pieces = qtyInGrams / weightPerPiece
           lineCost = Math.round(pieces * costPerBase * 100) / 100
           weightPerPieceUsed = weightPerPiece
+          unitMismatch = false
+        } else {
+          lineCost = null
+          unitMismatch = true
+        }
+      } else if (baseUnit === 'st' && unitFamily(ing.unit) === 'volume') {
+        // Volume↔count bridge — mirrors the M122 mass↔count path above for
+        // piece-priced liquids. Recipe asks "60 ml of Mystic Mango"; the
+        // product is base_unit='st' but the NAME discloses 20cl (200 ml)
+        // per piece. Use volumePerPieceMlFromName to recover the per-piece
+        // volume from the name, then cost as `pieces × cost_per_base_unit`.
+        // When name discloses nothing we fall through to honest-incomplete.
+        const volPerPieceMl = volumePerPieceMlFromName(p?.product_name)
+        const qtyInMl       = convertQuantity(ing.quantity, ing.unit, 'ml')
+        if (volPerPieceMl != null && volPerPieceMl > 0 && qtyInMl != null) {
+          const pieces = qtyInMl / volPerPieceMl
+          lineCost = Math.round(pieces * costPerBase * 100) / 100
+          volumePerPieceMlUsed   = volPerPieceMl
+          volumePerPieceMlSource = 'name_parsed'
           unitMismatch = false
         } else {
           lineCost = null
@@ -438,6 +471,8 @@ export function computeRecipeCost(
       density_source:      densityUsed != null ? (p?.density_source ?? null) : null,
       weight_per_piece_used:    weightPerPieceUsed,
       weight_per_piece_source:  weightPerPieceUsed != null ? (p?.weight_per_piece_source ?? null) : null,
+      volume_per_piece_ml_used:   volumePerPieceMlUsed,
+      volume_per_piece_ml_source: volumePerPieceMlSource,
       price_change_pct:    p?.change_pct ?? null,
     }
   })

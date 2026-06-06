@@ -199,3 +199,31 @@ export function parseProductPackSize(
   // 3. Honest-incomplete.
   return null
 }
+
+/**
+ * Best-effort: extract the per-piece VOLUME (in ml) disclosed by a
+ * product name. Used by the cost engine's volume↔count bridge for
+ * piece-priced liquids — e.g. "Thomas H Mystic Mango 20cl" → 200,
+ * meaning each piece holds 200 ml. Mirrors the mass-side bridge
+ * (M122 weight_per_piece_g) but for volume.
+ *
+ * Returns null when:
+ *   - the name discloses no volume token, OR
+ *   - the parsed token is a mass / count unit (the caller is asking
+ *     specifically for "ml-per-piece"; mass or count don't qualify).
+ *
+ * Examples:
+ *   "Thomas H Mystic Mango 20cl"   → 200
+ *   "Coca-Cola 33cl"               → 330
+ *   "San Pellegrino 75cl"          → 750
+ *   "Olive oil 500ml"              → 500
+ *   "Olja Rapsolja 10 liter SE"    → 10000
+ *   "Pizza sauce 4,1 kg"           → null   (mass, not volume)
+ *   "Tomato",                      → null   (no token)
+ */
+export function volumePerPieceMlFromName(name: string | null | undefined): number | null {
+  const parsed = parseProductPackSize(name)
+  if (!parsed) return null
+  if (parsed.base_unit !== 'ml') return null
+  return parsed.pack_size > 0 ? parsed.pack_size : null
+}
