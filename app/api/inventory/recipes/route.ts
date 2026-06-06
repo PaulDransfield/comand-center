@@ -112,11 +112,16 @@ export async function GET(req: NextRequest) {
       // ingredient's supplier_article when no image_url is uploaded. We
       // surface the product_id here; the list page batch-fetches the URL.
       fallback_product_id:  (!r.image_url && ings.length === 1 && !ings[0].subrecipe_id && ings[0].product_id) ? ings[0].product_id : null,
-      // Per-glass margin (wines only) — bottle cost / portions, glass
-      // price inc-VAT to ex-VAT via vat_rate.
+      // Per-glass margin — bottle cost / portions, glass price inc-VAT
+      // to ex-VAT via vat_rate. Triggered by `glass_price > 0` regardless
+      // of `type`. M127 originally restricted to type='wine'; that gate
+      // was too narrow — alcohol-free sparkling (e.g. Oddbird Spumante,
+      // type='alcohol_free'), ciders sold both bottle + glass, and any
+      // other dual-pour drink also need this. If the owner set a glass
+      // price, the math applies. Type is metadata, not a precondition.
       glass_price:          r.glass_price != null ? Number(r.glass_price) : null,
       ...((() => {
-        if (r.type !== 'wine' || r.glass_price == null || Number(r.glass_price) <= 0 || !r.portions || r.portions <= 0) {
+        if (r.glass_price == null || Number(r.glass_price) <= 0 || !r.portions || r.portions <= 0) {
           return { glass_cost: null, glass_cost_pct: null, glass_gp_pct: null, glass_gp_kr: null }
         }
         const vat            = r.vat_rate != null ? Number(r.vat_rate) : 25
