@@ -407,11 +407,27 @@ async function main() {
     bucketIndex.get(bucket)!.push(r)
   }
 
-  // Heuristic distribution per bucket
+  // Heuristic distribution per bucket.
+  //
+  // Within a course we honour any owner-set values by SUBTRACTING their
+  // sum from the course target, then distributing the REMAINING uptake
+  // across only the writeable (NULL) rows. This means an owner who set
+  // one pizza to 0% (or, equivalently, who set one pasta to 15%) doesn't
+  // see the rest of that course's share artificially compressed — the
+  // writeable rows still sum to the full intended course uptake minus
+  // what the owner already accounted for.
   const proposed = new Map<string, number>()  // recipe_id → share
   for (const [bucket, rows] of bucketIndex) {
-    const uptake = COURSE_UPTAKE[bucket]
-    const shares = distributeByInversePrice(rows.map(r => ({ recipe_id: r.id, price: priceOf(r) })), uptake)
+    const uptake     = COURSE_UPTAKE[bucket]
+    const writeable  = rows.filter(r => r.portions_per_cover == null)
+    const alreadySet = rows.filter(r => r.portions_per_cover != null)
+    const alreadyUsed = alreadySet.reduce((s, r) => s + Number(r.portions_per_cover ?? 0), 0)
+    const remaining   = Math.max(0, uptake - alreadyUsed)
+    if (writeable.length === 0 || remaining <= 0) continue
+    const shares = distributeByInversePrice(
+      writeable.map(r => ({ recipe_id: r.id, price: priceOf(r) })),
+      remaining,
+    )
     for (const [rid, s] of shares) {
       proposed.set(rid, clamp(round2(s), CLAMP_MIN, CLAMP_MAX))
     }

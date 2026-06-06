@@ -2,8 +2,8 @@
 
 - Business:   `63ada0ac-18af-406a-8ad3-4acfd0379f2c`
 - Types:      food
-- Mode:       DRY-RUN (default)
-- Generated:  2026-06-06T13:58:44.741Z
+- Mode:       COMMIT
+- Generated:  2026-06-06T14:07:47.358Z
 
 ## Counts
 
@@ -19,7 +19,7 @@
 |--------|------:|--------------:|-----------:|
 | starter | 9 | 55.0% | 56.0% |
 | pasta | 9 | 45.0% | 45.0% |
-| pizza | 7 | 45.0% | 39.0% |
+| pizza | 7 | 45.0% | 45.0% |
 | main | 7 | 40.0% | 40.0% |
 | dessert | 3 | 30.0% | 29.0% |
 | side | 0 | 20.0% | 0.0% |
@@ -36,16 +36,19 @@
 | Gamberi (Pan-fried Prawns) | starter | 133 | heuristic | — | 7.0% |
 | Chevre Salad | main | 189 | heuristic | — | 7.0% |
 | Stracciatella with Brown Butter and Fig Jam | starter | 142 | heuristic | — | 7.0% |
+| Capricciosa | pizza | 201 | heuristic | — | 7.0% |
+| Vegetariana Bianca | pizza | 187 | heuristic | — | 7.0% |
+| Spicy vodka pinsa | pizza | 187 | heuristic | — | 7.0% |
 | Pinsa Chevre | main | 219 | heuristic | — | 6.0% |
 | Carpaccio | starter | 169 | heuristic | — | 6.0% |
 | Rå Biff (Beef Tartare) | starter | 169 | heuristic | — | 6.0% |
 | Chicce Arancini | starter | 160 | heuristic | — | 6.0% |
 | Salmon Tartar with Green Oil and Horseradish Cream | starter | 169 | heuristic | — | 6.0% |
 | Burrata with Grilled Nectarines, Strawberries, and Pistachio Pesto | starter | 159 | heuristic | — | 6.0% |
-| Capricciosa | pizza | 201 | heuristic | — | 6.0% |
+| Parma | pizza | 219 | heuristic | — | 6.0% |
+| Smögen | pizza | 231 | heuristic | — | 6.0% |
 | Diavola | pizza | 210 | heuristic | — | 6.0% |
-| Vegetariana Bianca | pizza | 187 | heuristic | — | 6.0% |
-| Spicy vodka pinsa | pizza | 187 | heuristic | — | 6.0% |
+| Salame al tartufo | pizza | 219 | heuristic | — | 6.0% |
 | Pasta Ragu | pasta | 225 | heuristic | — | 5.0% |
 | Chicken Parmigiana | pasta | 210 | heuristic | — | 5.0% |
 | Porcini Pasta | pasta | 248 | heuristic | — | 5.0% |
@@ -59,9 +62,6 @@
 | Spicy Vodka Pasta | pasta | 214 | heuristic | — | 5.0% |
 | Caesar Salad | starter | 189 | heuristic | — | 5.0% |
 | Chevre Pasta | pasta | 221 | heuristic | — | 5.0% |
-| Parma | pizza | 219 | heuristic | — | 5.0% |
-| Smögen | pizza | 231 | heuristic | — | 5.0% |
-| Salame al tartufo | pizza | 219 | heuristic | — | 5.0% |
 | Filletto di Manzo | main | 299 | heuristic | — | 4.0% |
 | 2021 Mauro Veglio Dolcetto d'Alba | wine | 560 | skip | — | skip — drink type (not in this pass) |
 | 2023 Erste + Neue Pinot Nero | wine | 600 | skip | — | skip — drink type (not in this pass) |
