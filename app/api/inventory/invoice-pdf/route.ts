@@ -18,10 +18,11 @@ import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
 import { fortnoxFetch }            from '@/lib/fortnox/api/fetch'
 import { getFreshFortnoxAccessToken } from '@/lib/fortnox/api/auth'
+import { highlightArticleInPdf }   from '@/lib/pdf/highlight-article'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
-export const maxDuration = 30
+export const maxDuration = 60   // PDF text extraction + annotation can be slower than a plain proxy
 
 export async function GET(req: NextRequest) {
   const auth = await getRequestAuth(req)
@@ -30,6 +31,11 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const businessId    = String(url.searchParams.get('business_id') ?? '').trim()
   const invoiceNumber = String(url.searchParams.get('invoice_number') ?? '').trim()
+  // Phase 1 highlight: when ?article=N is passed AND the invoice has an
+  // attached PDF, fetch the bytes server-side, annotate the matching row
+  // with a lavender rectangle, and stream the modified PDF. Empty → plain
+  // PDF (existing behavior).
+  const articleNumber = String(url.searchParams.get('article') ?? '').trim()
   if (!businessId || !invoiceNumber) {
     return NextResponse.json({ error: 'business_id and invoice_number required' }, { status: 400 })
   }
@@ -89,11 +95,64 @@ export async function GET(req: NextRequest) {
       'This invoice has no PDF attached on Fortnox. Many suppliers (Spendrups, Carlsberg etc.) only book the invoice metadata without uploading the PDF — your supplier portal is the fastest place to verify the price.')
   }
 
-  const target = new URL('/api/integrations/fortnox/file', req.nextUrl.origin)
-  target.searchParams.set('business_id', businessId)
-  target.searchParams.set('file_id',     String(fileId))
-  target.searchParams.set('filename',    `${invoiceNumber}.pdf`)
-  return NextResponse.redirect(target, 307)
+  // No article-highlight requested → fast path. Redirect to the existing
+  // PDF proxy which streams the bytes (uses the same Fortnox token + retry
+  // logic). Same behavior as before this Phase 1 work.
+  if (!articleNumber) {
+    const target = new URL('/api/integrations/fortnox/file', req.nextUrl.origin)
+    target.searchParams.set('business_id', businessId)
+    target.searchParams.set('file_id',     String(fileId))
+    target.searchParams.set('filename',    `${invoiceNumber}.pdf`)
+    return NextResponse.redirect(target, 307)
+  }
+
+  // Highlight path — fetch bytes here, annotate, stream.
+  // Reuse the same Fortnox token + inbox/archive fallback as the file proxy.
+  let accessToken: string | null
+  try {
+    accessToken = await getFreshFortnoxAccessToken(db, auth.orgId, businessId)
+  } catch (err: any) {
+    return noPdfResponse(invoiceNumber, supplierName,
+      err?.message === 'FORTNOX_NEEDS_REAUTH'
+        ? 'Your Fortnox connection was disconnected. Reconnect at /integrations.'
+        : (err?.message ?? 'Failed to obtain Fortnox token.'))
+  }
+  if (!accessToken) {
+    return noPdfResponse(invoiceNumber, supplierName, 'No connected Fortnox integration for this business.')
+  }
+  // Try inbox first, fall back to archive (same as /api/integrations/fortnox/file).
+  let bytesRes = await fortnoxFetch(
+    `https://api.fortnox.se/3/inbox/${encodeURIComponent(String(fileId))}`,
+    accessToken, { accept: '*/*' },
+  )
+  if (bytesRes.status === 404) {
+    bytesRes = await fortnoxFetch(
+      `https://api.fortnox.se/3/archive/${encodeURIComponent(String(fileId))}`,
+      accessToken, { accept: '*/*' },
+    )
+  }
+  if (!bytesRes.ok) {
+    return noPdfResponse(invoiceNumber, supplierName, `Fortnox returned error ${bytesRes.status} when fetching PDF bytes.`)
+  }
+  const arrayBuf = await bytesRes.arrayBuffer()
+  const pdfBytes = new Uint8Array(arrayBuf)
+
+  const hl = await highlightArticleInPdf(pdfBytes, articleNumber)
+  const outBytes = hl.ok && hl.bytes ? hl.bytes : pdfBytes
+
+  // BodyInit doesn't accept Uint8Array directly under stricter TS lib defs —
+  // wrap in a Blob.
+  // Cast through ArrayBuffer to satisfy the stricter TS lib BlobPart type.
+  const blobPart: BlobPart = outBytes.buffer.slice(outBytes.byteOffset, outBytes.byteOffset + outBytes.byteLength) as ArrayBuffer
+  return new NextResponse(new Blob([blobPart], { type: 'application/pdf' }), {
+    status: 200,
+    headers: {
+      'Content-Type':        'application/pdf',
+      'Content-Disposition': `inline; filename="${invoiceNumber}-highlighted.pdf"`,
+      'Cache-Control':       'no-store',
+      'X-Highlight-Status':  hl.ok ? 'ok' : (hl.reason ?? 'unknown'),
+    },
+  })
 }
 
 // Friendly HTML response when there's no PDF — the link is opened in a

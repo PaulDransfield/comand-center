@@ -23,6 +23,7 @@
     "micro": "^10.0.1",
     "next": "14.2.0",
     "next-intl": "^4.11.0",
+    "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
     "posthog-js": "^1.364.7",
     "pptxgenjs": "^4.0.1",

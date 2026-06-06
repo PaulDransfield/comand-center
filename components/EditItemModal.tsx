@@ -397,11 +397,20 @@ export function EditItemModal({ productId, onClose, onSaved }: {
                             </div>
                             {a.latest_invoice && data.product?.business_id && (
                               <PdfButton
-                                title={`View source PDF for invoice ${a.latest_invoice}`}
-                                onClick={() => setPdfView({
-                                  url:   `/api/inventory/invoice-pdf?business_id=${encodeURIComponent(data.product.business_id)}&invoice_number=${encodeURIComponent(a.latest_invoice!)}`,
-                                  title: `Invoice ${a.latest_invoice} · ${a.supplier_name_snapshot ?? 'supplier'}`,
-                                })}
+                                title={`View source PDF for invoice ${a.latest_invoice}${a.article_number ? ` · highlight article ${a.article_number}` : ''}`}
+                                onClick={() => {
+                                  const params = new URLSearchParams({
+                                    business_id:    data.product.business_id,
+                                    invoice_number: a.latest_invoice!,
+                                  })
+                                  // Phase 1 highlight: pass article number so the server-side
+                                  // annotator can overlay a lavender rectangle on the matching row.
+                                  if (a.article_number) params.set('article', String(a.article_number))
+                                  setPdfView({
+                                    url:   `/api/inventory/invoice-pdf?${params.toString()}`,
+                                    title: `Invoice ${a.latest_invoice} · ${a.supplier_name_snapshot ?? 'supplier'}`,
+                                  })
+                                }}
                               />
                             )}
                           </div>
