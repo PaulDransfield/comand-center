@@ -1815,47 +1815,66 @@ function PrepListPageInner() {
                         }
                       }}
                       style={{
-                        display: 'grid',
-                        // Two columns: dish info (full-width, wraps freely)
-                        // and an optional qty badge on the right.
-                        gridTemplateColumns: '1fr auto',
-                        alignItems: 'center', gap: 10,
+                        // Simple block button — let the inner flex
+                        // determine the visual layout, and let the row
+                        // grow with content (no fixed/min height that
+                        // could clip a two-line name + pill). Removed
+                        // the prior `display: grid` + `minHeight: 56`
+                        // combination which caused the pill to render
+                        // visibly outside the button box, overlapping
+                        // the next row.
+                        display: 'block', width: '100%', height: 'auto',
+                        flexShrink: 0,           // belt-and-braces vs the column-flex parent
                         padding: '12px 14px',
-                        minHeight: 56,            // accommodates two-line stack
                         background: inList ? UXP.lavFill : UXP.subtleBg,
                         border: `0.5px solid ${inList ? UXP.lavMid : UXP.border}`,
                         borderRadius: UXP.r_md, fontSize: 14, color: UXP.ink1,
                         textAlign: 'left' as const, cursor: 'pointer', fontFamily: 'inherit',
                       }}
                     >
-                      {/* Stacked: name on top, pill below. Name wraps
-                          instead of ellipsising so long Italian names
-                          (e.g. "Alla romana bianca con mortadella") show
-                          in full. */}
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{
-                          fontSize: 14, color: UXP.ink1, fontWeight: 500, lineHeight: 1.3,
-                          overflowWrap: 'break-word' as const,
-                        }}>
-                          {d.name}
+                      <div style={{
+                        display: 'flex',
+                        // align-items: flex-start so the qty badge sits
+                        // alongside the FIRST line of the name when the
+                        // name wraps to two lines.
+                        alignItems: 'flex-start',
+                        gap: 10,
+                      }}>
+                        {/* Stacked: name on top, pill below. Name wraps
+                            instead of ellipsising so long Italian names
+                            ("Bomboloni with Lemon Crème Pâtissière…",
+                            "Burrata with Grilled Nectarines…") show in
+                            full and the row grows to contain them. */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{
+                            fontSize: 14, color: UXP.ink1, fontWeight: 500, lineHeight: 1.3,
+                            overflowWrap: 'break-word' as const,
+                            wordBreak: 'break-word' as const,
+                          }}>
+                            {d.name}
+                          </div>
+                          <div style={{ marginTop: 6 }}>
+                            <CategoryPill type={d.type} />
+                          </div>
                         </div>
-                        <div style={{ marginTop: 4 }}>
-                          <CategoryPill type={d.type} />
-                        </div>
+                        {/* Qty badge — visible only when this dish is in
+                            the list. Tap the row again to increment.
+                            Slight marginTop so its centre aligns with
+                            the name's first line. */}
+                        {qty > 0 && (
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            minWidth: 28, height: 28, padding: '0 8px',
+                            background: UXP.lavDeep, color: '#fff',
+                            fontSize: 13, fontWeight: 700, borderRadius: 999,
+                            fontVariantNumeric: 'tabular-nums' as const,
+                            flexShrink: 0,
+                            marginTop: 2,
+                          }}>
+                            {qty}
+                          </span>
+                        )}
                       </div>
-                      {/* Qty badge — visible only when this dish is in
-                          the list. Tap the row again to increment. */}
-                      {qty > 0 && (
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                          minWidth: 28, height: 28, padding: '0 8px',
-                          background: UXP.lavDeep, color: '#fff',
-                          fontSize: 13, fontWeight: 700, borderRadius: 999,
-                          fontVariantNumeric: 'tabular-nums' as const,
-                        }}>
-                          {qty}
-                        </span>
-                      )}
                     </button>
                   )
                 })}
@@ -2046,14 +2065,13 @@ function PrepListPageInner() {
             )}
 
             {/* (f) Bottom spacer — clears the sticky send bar so the last
-                row in the preview isn't hidden underneath it. Sized for
-                bar (~68px visible) + 60px MobileNav + 4px gap + safe-area
-                inset (Android gesture + iOS home indicator) + breathing
-                room. The bar itself uses bottom: calc(60 + safe-area + 4)
-                so this matches. */}
+                row in the picker / preview scrolls fully clear. Sized for
+                bar (~68px visible) + 60px MobileNav + 14px clearance gap
+                + safe-area inset + breathing room. The bar's bottom is
+                calc(60 + safe-area + 14), so this matches. */}
             <div
               aria-hidden="true"
-              style={{ height: 'calc(140px + env(safe-area-inset-bottom, 0px))' }}
+              style={{ height: 'calc(160px + env(safe-area-inset-bottom, 0px))' }}
             />
           </div>
         )}
@@ -2067,13 +2085,13 @@ function PrepListPageInner() {
           Z.banner (50) sits below modals (200) and tooltips (300) so the
           line-edit modal still overlays cleanly.
 
-          POSITIONING — bottom: calc(60px nav + safe-area + 4px gap).
-          MobileNav's box is `position: fixed; bottom: 0; height: 60`
-          and (per app/mobile.css) has its own `padding-bottom: env(
-          safe-area-inset-bottom)`. So its visible content TOP is at
-          `100vh − 60 − safe-area`. We add 4px of breathing room above
-          that. Without the `+ env(...)` the bar collides with MobileNav
-          content on iOS phones with home-indicator safe-area > 0.
+          POSITIONING — bottom: calc(60px nav + safe-area-inset + 14px gap).
+          MobileNav (components/MobileNav.tsx) is `position: fixed; bottom: 0;
+          height: 60` with no safe-area handling of its own — so on a
+          non-iOS device our bar sits 14px above MobileNav's top edge
+          (clearly visible). On iOS the env() inset adds extra clearance.
+          Phase 1.1 used 4px which read as a hairline on a phone; 14px is
+          the smallest gap that reads as deliberate clearance.
           ────────────────────────────────────────────────────────────── */}
       {bizId && !activeSession && !sessionLoading && !loadingDishes && dishes.length > 0 && isMobile && (
         <div
@@ -2081,9 +2099,9 @@ function PrepListPageInner() {
             position: 'fixed' as const,
             left:     0,
             right:    0,
-            // 60px nav + safe-area-inset (Android gesture bar + iOS home
-            // indicator) + 4px visible gap above MobileNav.
-            bottom:   'calc(60px + env(safe-area-inset-bottom, 0px) + 4px)',
+            // 60px nav + safe-area-inset (Android gesture bar / iOS home
+            // indicator) + 14px visible gap above MobileNav.
+            bottom:   'calc(60px + env(safe-area-inset-bottom, 0px) + 14px)',
             zIndex:   Z.banner,
             background: UXP.cardBg,
             borderTop: `0.5px solid ${UXP.border}`,
