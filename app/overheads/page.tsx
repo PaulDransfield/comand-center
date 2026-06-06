@@ -34,6 +34,7 @@ import { PageContainer } from '@/components/ui/Layout'
 import KpiCardUX from '@/components/ux/KpiCard'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
 import Sparkline from '@/components/ui/Sparkline'
+import { PdfButton } from '@/components/ui/PdfButton'
 import { UXP } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
 
@@ -1010,24 +1011,12 @@ function OverheadInvoiceDrawer({
                 {fmtKr(Number(inv.amount ?? 0))}
               </span>
               {bizId && inv.file_id ? (
-                <button
-                  type="button"
+                <PdfButton
                   onClick={() => {
                     const url = `/api/integrations/fortnox/file?business_id=${encodeURIComponent(bizId)}&file_id=${encodeURIComponent(inv.file_id)}`
                     setPdfModal({ url, title: `${inv._supplier_name ?? 'Invoice'} — #${inv.invoice_number}` })
                   }}
-                  style={{
-                    padding:        '4px 10px',
-                    background:     UXP.lavFill,
-                    color:          UXP.lavText,
-                    border:         'none',
-                    borderRadius:   999,
-                    fontSize:       10,
-                    fontWeight:     500,
-                    cursor:         'pointer',
-                    fontFamily:     'inherit',
-                  }}
-                >PDF</button>
+                />
               ) : inv.fortnox_url ? (
                 <a
                   href={inv.fortnox_url} target="_blank" rel="noopener noreferrer"

@@ -43,6 +43,7 @@ import { createClient } from '@/lib/supabase/client'
 import AppShell from '@/components/AppShell'
 import { PageContainer } from '@/components/ui/Layout'
 import { ResponsiveChart } from '@/components/ui/ResponsiveChart'
+import { PdfButton } from '@/components/ui/PdfButton'
 import KpiCardUX from '@/components/ux/KpiCard'
 import PairedBarChart from '@/components/ux/PairedBarChart'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
@@ -1003,23 +1004,11 @@ function MoneyFlowRow({ bankPos, cashFlow, recentInv, bizId }: any) {
                     {inv.total != null ? fmtKr(inv.total) : '—'}
                   </div>
                   {pdfUrl ? (
-                    <button
-                      type="button"
-                      onClick={() => setPdfModal({ url: pdfUrl, title: `${inv.supplier_name} — ${inv.invoice_number ?? ''}` })}
+                    <PdfButton
+                      size="xs"
                       title="View invoice PDF in-app"
-                      style={{
-                        padding:        '2px 8px',
-                        background:     UXP.lavFill,
-                        color:          UXP.lavText,
-                        border:         'none',
-                        borderRadius:   999,
-                        fontSize:       9,
-                        fontWeight:     500,
-                        cursor:         'pointer',
-                        fontFamily:     'inherit',
-                        letterSpacing:  '0.02em',
-                      }}
-                    >PDF</button>
+                      onClick={() => setPdfModal({ url: pdfUrl, title: `${inv.supplier_name} — ${inv.invoice_number ?? ''}` })}
+                    />
                   ) : <span />}
                 </div>
               )

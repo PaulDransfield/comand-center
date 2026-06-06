@@ -26,6 +26,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 import { PdfModal } from '@/components/ui/PdfModal'
+import { PdfButton } from '@/components/ui/PdfButton'
 
 interface EditContextResponse {
   product: {
@@ -395,26 +396,13 @@ export function EditItemModal({ productId, onClose, onSaved }: {
                               {fmtKr(a.latest_price)}/{a.unit ?? '?'} · last {a.latest_date}
                             </div>
                             {a.latest_invoice && data.product?.business_id && (
-                              <button
-                                type="button"
-                                onClick={e => {
-                                  e.stopPropagation()
-                                  setPdfView({
-                                    url:   `/api/inventory/invoice-pdf?business_id=${encodeURIComponent(data.product.business_id)}&invoice_number=${encodeURIComponent(a.latest_invoice!)}`,
-                                    title: `Invoice ${a.latest_invoice} · ${a.supplier_name_snapshot ?? 'supplier'}`,
-                                  })
-                                }}
+                              <PdfButton
                                 title={`View source PDF for invoice ${a.latest_invoice}`}
-                                style={{
-                                  padding: '3px 10px', fontSize: 10, fontWeight: 600,
-                                  background: UXP.lavFill, color: UXP.lavText,
-                                  border: `0.5px solid ${UXP.lavMid}`, borderRadius: 999,
-                                  cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.02em',
-                                  textTransform: 'uppercase' as const,
-                                }}
-                              >
-                                View PDF
-                              </button>
+                                onClick={() => setPdfView({
+                                  url:   `/api/inventory/invoice-pdf?business_id=${encodeURIComponent(data.product.business_id)}&invoice_number=${encodeURIComponent(a.latest_invoice!)}`,
+                                  title: `Invoice ${a.latest_invoice} · ${a.supplier_name_snapshot ?? 'supplier'}`,
+                                })}
+                              />
                             )}
                           </div>
                         )}

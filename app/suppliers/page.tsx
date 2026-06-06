@@ -22,6 +22,7 @@ import { PageContainer } from '@/components/ui/Layout'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
 import KpiCardUX from '@/components/ux/KpiCard'
 import Sparkline from '@/components/ui/Sparkline'
+import { PdfButton } from '@/components/ui/PdfButton'
 import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 import type {
@@ -504,27 +505,14 @@ function InvoiceDrawer({ row, bizId, onClose }: { row: SupplierRollupRow; bizId:
                   invoice-pdf endpoint (just-in-time detail fetch +
                   302 to file proxy). Never link out to Fortnox web. */}
               {bizId && (inv.file_id || inv.given_number) && (
-                <button
-                  type="button"
+                <PdfButton
                   onClick={() => {
                     const url = inv.file_id
                       ? `/api/integrations/fortnox/file?business_id=${encodeURIComponent(bizId)}&file_id=${encodeURIComponent(inv.file_id)}`
                       : `/api/integrations/fortnox/invoice-pdf?business_id=${encodeURIComponent(bizId)}&given_number=${encodeURIComponent(inv.given_number!)}`
                     setPdfModal({ url, title: `${row.supplier_name} — #${inv.invoice_number}` })
                   }}
-                  style={{
-                    padding:        '4px 10px',
-                    background:     UXP.lavFill,
-                    color:          UXP.lavText,
-                    border:         'none',
-                    borderRadius:   999,
-                    fontSize:       10,
-                    fontWeight:     500,
-                    cursor:         'pointer',
-                    fontFamily:     'inherit',
-                    letterSpacing:  '0.02em',
-                  }}
-                >PDF</button>
+                />
               )}
             </div>
           ))}
