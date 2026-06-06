@@ -53,15 +53,22 @@ async function run(req: NextRequest): Promise<NextResponse> {
 
   const db = createAdminClient()
 
-  // Pull one connected Fortnox integration per call. ORDER BY oldest
-  // last_synced_at first so we don't keep hammering the same customer.
-  const { data: integs } = await db
+  // Pull connected Fortnox integrations. Match the supplier-sync's
+  // filter ('connected' + 'warning') so a transient warning state
+  // doesn't pause backfill progress. ORDER BY oldest last_sync_at first
+  // (column is last_sync_at, not last_synced_at — caught one too many
+  // times).
+  const { data: integs, error: integErr } = await db
     .from('integrations')
-    .select('id, org_id, business_id, status, credentials_enc, last_synced_at')
+    .select('id, org_id, business_id, status, credentials_enc, last_sync_at')
     .eq('provider', 'fortnox')
-    .eq('status', 'connected')
-    .order('last_synced_at', { ascending: true, nullsFirst: true })
+    .in('status', ['connected', 'warning'])
+    .order('last_sync_at', { ascending: true, nullsFirst: true })
     .limit(20)
+  if (integErr) {
+    log.error('fortnox_pdf_backfill integration query failed', { error: integErr.message })
+    return NextResponse.json({ ok: false, error: integErr.message }, { status: 500 })
+  }
 
   let totalProcessed = 0
   let totalResolved  = 0
