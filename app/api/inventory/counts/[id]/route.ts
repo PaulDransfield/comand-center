@@ -46,10 +46,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const forbidden = requireBusinessAccess(auth, count.business_id)
   if (forbidden) return forbidden
 
-  // All non-archived products for the business
+  // All non-archived products for the business. M130 — also pull
+  // created_via so the recipe-import-draft tag flows through to the
+  // is_recipe_sourced flag below (matches the items API).
   const { data: products } = await db
     .from('products')
-    .select('id, name, category, invoice_unit, base_unit, pack_size, default_supplier_name, source_recipe_id')
+    .select('id, name, category, invoice_unit, base_unit, pack_size, default_supplier_name, source_recipe_id, created_via')
     .eq('business_id', count.business_id)
     .is('archived_at', null)
     .order('category')
@@ -101,7 +103,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       base_unit:         p.base_unit,
       pack_size:         p.pack_size != null ? Number(p.pack_size) : null,
       default_supplier:  p.default_supplier_name,
-      is_recipe_sourced: !!p.source_recipe_id,
+      // M130 — recipe-import drafts (products created from the recipe
+      // editor's "Add ingredient → new product" path) deserve the same
+      // RECIPE badge / suppressed warnings as promoted recipe products.
+      // Mirrors items/route.ts:439,489.
+      is_recipe_sourced: !!p.source_recipe_id || p.created_via === 'recipe_import_draft',
       current_unit_price_sek: currentPricePerInvoiceUnit,
       saved: line ? {
         line_id:                line.id,
