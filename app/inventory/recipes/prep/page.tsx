@@ -2528,68 +2528,16 @@ function PrepListPageInner() {
       )}
 
       {/* Line-detail modal — works in BOTH prep mode (session line tap)
-          and create mode (preview row tap). Shows method + ingredient
-          list (component) or per-recipe uses (product). Edits autosave
-          via the same PATCH endpoints regardless of mode.
-          openModal.session_line_id: non-null = update sessionLines on
-          save; null = preview mode, refetch the preview so subsequent
-          opens see fresh data. */}
-      {openModal && (() => {
-        const { line, session_line_id } = openModal
-        return (
-          <LinePrepModal
-            line={line}
-            recipeNameById={dishById}
-            onClose={() => setOpenModal(null)}
-            onMethodSaved={(newValue) => {
-              // Update modal-local view so re-opening shows the latest.
-              setOpenModal(prev => prev ? {
-                ...prev,
-                line: { ...prev.line, meta: { ...(prev.line.meta ?? {}), method: newValue } },
-              } : prev)
-              if (session_line_id) {
-                // Prep mode — write into sessionLines too.
-                setSessionLines(prev => prev.map(l => l.id === session_line_id
-                  ? { ...l, meta: { ...(l.meta ?? {}), method: newValue } }
-                  : l))
-              } else {
-                // Preview mode — debounced recompute (M4) avoids 5
-                // round-trips when chef edits 5 ingredients in a burst.
-                scheduleRecompute()
-              }
-            }}
-            onIngredientNoteSaved={(ingredientId, newNotes) => {
-              setOpenModal(prev => {
-                if (!prev) return prev
-                const l = prev.line
-                if (l.kind === 'component') {
-                  const ings = (l.meta?.ingredients ?? []).map(i =>
-                    i.ingredient_id === ingredientId ? { ...i, notes: newNotes } : i)
-                  return { ...prev, line: { ...l, meta: { ...(l.meta ?? {}), ingredients: ings } } }
-                }
-                const uses = (l.meta?.uses ?? []).map(u =>
-                  u.ingredient_id === ingredientId ? { ...u, notes: newNotes } : u)
-                return { ...prev, line: { ...l, meta: { ...(l.meta ?? {}), uses } } }
-              })
-              if (session_line_id) {
-                setSessionLines(prev => prev.map(l => {
-                  if (l.id !== session_line_id) return l
-                  if (l.kind === 'component') {
-                    const ings = (l.meta?.ingredients ?? []).map(i =>
-                      i.ingredient_id === ingredientId ? { ...i, notes: newNotes } : i)
-                    return { ...l, meta: { ...(l.meta ?? {}), ingredients: ings } }
-                  }
-                  const uses = (l.meta?.uses ?? []).map(u =>
-                    u.ingredient_id === ingredientId ? { ...u, notes: newNotes } : u)
-                  return { ...l, meta: { ...(l.meta ?? {}), uses } }
-                }))
-              } else {
-                scheduleRecompute()                        // M4
-              }
-            }}
-          />
-        )
-      })()}
+          and create mode (preview row tap). Read-only: shows method +
+          ingredients (component) or per-recipe uses (product). All
+          edits live in the recipe editor; chefs view here, owners edit
+          there. */}
+      {openModal && (
+        <LinePrepModal
+          line={openModal.line}
+          onClose={() => setOpenModal(null)}
+        />
+      )}
     </AppShell>
   )
 }
@@ -2635,13 +2583,10 @@ function previewProductToSessionLine(p: PrepProductLine): PrepSessionLine {
 }
 
 function LinePrepModal({
-  line, recipeNameById, onClose, onMethodSaved, onIngredientNoteSaved,
+  line, onClose,
 }: {
   line: PrepSessionLine
-  recipeNameById: Map<string, DishRow>
   onClose: () => void
-  onMethodSaved: (v: string | null) => void
-  onIngredientNoteSaved: (ingredientId: string, v: string | null) => void
 }) {
   // Method fallback: prefer recipes.method, fall back to recipes.notes
   // when method is empty. Legacy / bulk-importer flows sometimes wrote
@@ -2753,21 +2698,35 @@ function LinePrepModal({
           </div>
         )}
 
-        {/* COMPONENT: method + ingredients */}
+        {/* COMPONENT: method + ingredients — read-only.
+            Owner edits the underlying recipe in the recipe editor;
+            chefs read it here without risk of an accidental tap
+            changing a prep instruction mid-service. */}
         {line.kind === 'component' && (
           <>
             <div style={{ marginTop: 8 }}>
               <div style={{ fontSize: 12, color: UXP.ink3, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 8 }}>
                 Method
               </div>
-              <InlineMethodEditor
-                recipeId={line.entity_id}
-                value={methodVal}
-                onSaved={onMethodSaved}
-              />
+              {methodVal ? (
+                <div style={{
+                  padding: '12px 14px',
+                  background: UXP.subtleBg,
+                  border: `0.5px solid ${UXP.border}`,
+                  borderRadius: 6,
+                  fontSize: 14, color: UXP.ink2, lineHeight: 1.7,
+                  whiteSpace: 'pre-wrap' as const,
+                }}>
+                  {methodVal}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: UXP.ink4, fontStyle: 'italic' as const }}>
+                  No method recorded on this recipe yet.
+                </div>
+              )}
               {!line.meta?.method && line.meta?.notes && (
                 <div style={{ fontSize: 11, color: UXP.ink4, fontStyle: 'italic' as const, marginTop: 6 }}>
-                  Shown from recipe&apos;s Notes — edit above to save as the official Method.
+                  Shown from recipe&apos;s Notes.
                 </div>
               )}
             </div>
@@ -2784,36 +2743,29 @@ function LinePrepModal({
               {(line.meta?.ingredients ?? []).map(ing => (
                 <SubIngredientRow
                   key={ing.ingredient_id}
-                  recipeId={line.entity_id}
                   ing={ing}
                   imageUrl={ing.product_id ? images[ing.product_id]?.image_url : undefined}
-                  onSaved={(v) => onIngredientNoteSaved(ing.ingredient_id, v)}
                 />
               ))}
             </div>
           </>
         )}
 
-        {/* PRODUCT: per-recipe prep notes */}
+        {/* PRODUCT: per-recipe prep notes — read-only.
+            Lists every recipe that consumes this ingredient and any
+            prep notes the owner attached on the recipe side. */}
         {line.kind === 'product' && (
           <div style={{ marginTop: 8 }}>
-            <div style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+            <div style={{ fontSize: 12, color: UXP.ink3, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 8 }}>
               Used in
             </div>
-            <div style={{ fontSize: 11, color: UXP.ink3, marginBottom: 8 }}>
-              Write what to do with this ingredient against each recipe that uses it ({'"'}juice &amp; zest{'"'}, {'"'}quarter{'"'}, {'"'}dice{'"'}). Saves to that recipe&apos;s ingredient note.
-            </div>
             {(line.meta?.uses ?? []).length === 0 && (
-              <div style={{ fontSize: 11, color: UXP.ink4, fontStyle: 'italic' as const }}>
+              <div style={{ fontSize: 12, color: UXP.ink4, fontStyle: 'italic' as const }}>
                 Not used in any recipe yet.
               </div>
             )}
             {(line.meta?.uses ?? []).map(u => (
-              <ProductUseRow
-                key={u.ingredient_id}
-                use={u}
-                onSaved={(v) => onIngredientNoteSaved(u.ingredient_id, v)}
-              />
+              <ProductUseRow key={u.ingredient_id} use={u} />
             ))}
           </div>
         )}
@@ -2827,53 +2779,23 @@ function LinePrepModal({
 }
 
 function SubIngredientRow({
-  recipeId, ing, imageUrl, onSaved,
+  ing, imageUrl,
 }: {
-  recipeId: string
   ing: SubIngredient
   imageUrl?: string
-  onSaved: (v: string | null) => void
 }) {
-  const [draft, setDraft] = useState(ing.notes ?? '')
-  const [saving, setSaving] = useState(false)
-  useEffect(() => { setDraft(ing.notes ?? '') }, [ing.notes])
-
-  const save = useCallback(async () => {
-    const trimmed = draft.trim()
-    const incoming = (ing.notes ?? '').trim()
-    if (trimmed === incoming) return
-    setSaving(true)
-    try {
-      const r = await fetch(
-        `/api/inventory/recipes/${recipeId}/ingredients/${ing.ingredient_id}`,
-        {
-          method: 'PATCH', cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ notes: trimmed || null }),
-        },
-      )
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
-      onSaved(trimmed || null)
-    } catch (e) {
-      // Surface as a row-local error; full toast UI isn't worth it here.
-      console.error(e)
-    } finally {
-      setSaving(false)
-    }
-  }, [draft, ing.notes, recipeId, ing.ingredient_id, onSaved])
-
-  // Thumbnail + name on row 1, qty + note input on row 2. The grid
-  // mirrors the article presentation used elsewhere in the app — thumb
-  // is always 'sm' (32px) for inline lists; <ProductThumb> renders the
-  // generic package placeholder when imageUrl is missing.
+  // Read-only ingredient row. Owner attaches a prep note on the recipe
+  // (e.g. "juice & zest"); we surface it here as a subdued line under
+  // the qty so the chef sees the intent. No input — chef can't edit.
+  const note = ing.notes?.trim() || null
   return (
     <div style={{
       display: 'grid',
       gridTemplateColumns: '40px 1fr auto',
-      alignItems: 'center', columnGap: 10, rowGap: 6,
+      alignItems: 'center', columnGap: 10, rowGap: 4,
       padding: '10px 0', borderTop: `0.5px solid ${UXP.border}`,
     }}>
-      <div style={{ gridRow: 'span 2', alignSelf: 'flex-start', paddingTop: 2 }}>
+      <div style={{ gridRow: note ? 'span 2' : 'span 1', alignSelf: 'flex-start', paddingTop: 2 }}>
         <ProductThumb url={imageUrl} size="sm" fallback="package" />
       </div>
       <span style={{
@@ -2889,81 +2811,52 @@ function SubIngredientRow({
       }}>
         {ing.quantity} {ing.unit ?? ''}
       </span>
-      <input
-        type="text"
-        value={draft}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={save}
-        placeholder="prep note — e.g. juice & zest"
-        disabled={saving}
-        style={{
+      {note && (
+        <div style={{
           gridColumn: '2 / -1',
-          width: '100%', boxSizing: 'border-box', padding: '6px 10px',
-          fontSize: 12, color: UXP.ink2,
-          background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
-          borderRadius: 5, fontFamily: 'inherit',
-        }}
-      />
+          fontSize: 12, color: UXP.ink3, fontStyle: 'italic' as const, lineHeight: 1.4,
+        }}>
+          {note}
+        </div>
+      )}
     </div>
   )
 }
 
-function ProductUseRow({
-  use, onSaved,
-}: {
-  use: UseRef
-  onSaved: (v: string | null) => void
-}) {
-  const [draft, setDraft] = useState(use.notes ?? '')
-  const [saving, setSaving] = useState(false)
-  useEffect(() => { setDraft(use.notes ?? '') }, [use.notes])
-
-  const save = useCallback(async () => {
-    const trimmed = draft.trim()
-    const incoming = (use.notes ?? '').trim()
-    if (trimmed === incoming) return
-    setSaving(true)
-    try {
-      const r = await fetch(
-        `/api/inventory/recipes/${use.recipe_id}/ingredients/${use.ingredient_id}`,
-        {
-          method: 'PATCH', cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ notes: trimmed || null }),
-        },
-      )
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
-      onSaved(trimmed || null)
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setSaving(false)
-    }
-  }, [draft, use.notes, use.recipe_id, use.ingredient_id, onSaved])
-
+function ProductUseRow({ use }: { use: UseRef }) {
+  // Read-only: recipe name + qty/unit on row 1, owner-attached prep
+  // note (if any) on row 2. No input — chef can't edit.
+  const note = use.notes?.trim() || null
   return (
     <div style={{
-      display: 'grid', gridTemplateColumns: '180px 1fr',
-      alignItems: 'center', gap: 8,
-      padding: '6px 0', borderTop: `0.5px solid ${UXP.border}`,
+      padding: '10px 0', borderTop: `0.5px solid ${UXP.border}`,
     }}>
-      <span style={{ fontSize: 12, color: UXP.ink2, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
-        {use.recipe_name ?? '—'}
-      </span>
-      <input
-        type="text"
-        value={draft}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={save}
-        placeholder="e.g. juice & zest"
-        disabled={saving}
-        style={{
-          width: '100%', boxSizing: 'border-box', padding: '4px 8px',
-          fontSize: 11, color: UXP.ink2,
-          background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
-          borderRadius: 4, fontFamily: 'inherit',
-        }}
-      />
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', gap: 10,
+        alignItems: 'baseline',
+      }}>
+        <span style={{
+          fontSize: 13, color: UXP.ink1, fontWeight: 500,
+          overflowWrap: 'break-word' as const, wordBreak: 'break-word' as const,
+          lineHeight: 1.35,
+        }}>
+          {use.recipe_name ?? '—'}
+        </span>
+        <span style={{
+          fontSize: 12, color: UXP.ink3, fontVariantNumeric: 'tabular-nums' as const,
+          whiteSpace: 'nowrap' as const, fontWeight: 600,
+        }}>
+          {use.quantity} {use.unit ?? ''}
+        </span>
+      </div>
+      {note && (
+        <div style={{
+          marginTop: 4,
+          fontSize: 12, color: UXP.ink3, fontStyle: 'italic' as const, lineHeight: 1.4,
+        }}>
+          {note}
+        </div>
+      )}
     </div>
   )
 }
@@ -2982,176 +2875,6 @@ function Section({ title, subtitle, children }: { title: string; subtitle?: stri
       <div style={{ background: UXP.cardBg, border: `0.5px solid ${UXP.border}`, borderRadius: 8, overflow: 'hidden' }}>
         {children}
       </div>
-    </div>
-  )
-}
-
-// ───────────────────────────────────────────────────────────────────────
-// Inline editors — autosave on blur. Both target the canonical source
-// (recipes.method / recipe_ingredients.notes) so the data lives on the
-// underlying recipe and benefits every future prep list. Stops the chef
-// having to leave the prep flow to fix a missing description.
-
-function InlineMethodEditor({
-  recipeId, value, onSaved,
-}: {
-  recipeId: string
-  value: string | null
-  onSaved: (newValue: string | null) => void
-}) {
-  const [draft, setDraft] = useState(value ?? '')
-  const [saving, setSaving] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
-
-  // Keep draft in sync if the prop changes (e.g. another tab edited).
-  useEffect(() => { setDraft(value ?? '') }, [value])
-
-  const save = useCallback(async () => {
-    const trimmed = draft.trim()
-    const incoming = (value ?? '').trim()
-    if (trimmed === incoming) return  // no-op
-    setSaving(true); setErr(null)
-    try {
-      const r = await fetch(`/api/inventory/recipes/${recipeId}`, {
-        method: 'PATCH',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ method: trimmed || null }),
-      })
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
-      onSaved(trimmed || null)
-    } catch (e: any) {
-      setErr(e.message)
-    } finally {
-      setSaving(false)
-    }
-  }, [draft, value, recipeId, onSaved])
-
-  // M8 — server caps recipes.method at 20k chars; mirror client-side
-  // with maxLength + a counter when close so a chef pasting a long
-  // method doesn't suffer silent truncation on save.
-  const METHOD_MAX = 20000
-  const remaining  = METHOD_MAX - draft.length
-  // Method is the most-read content on this modal — kitchens scan it
-  // mid-service. Default to 8 rows so a short method is fully visible
-  // without scrolling; grow up to 20 rows for long methods. Bigger font
-  // (14px) + roomier line-height (1.7) for tap-to-read legibility on
-  // a phone propped against the prep counter.
-  return (
-    <div style={{ marginTop: 6 }} onClick={e => e.stopPropagation()}>
-      <textarea
-        value={draft}
-        onChange={e => setDraft(e.target.value.slice(0, METHOD_MAX))}
-        onBlur={save}
-        placeholder="Method — write how to make this. Saves automatically."
-        rows={Math.max(8, Math.min(20, draft.split('\n').length + 2))}
-        disabled={saving}
-        maxLength={METHOD_MAX}
-        style={{
-          width: '100%', boxSizing: 'border-box', padding: '12px 14px',
-          fontSize: 14, color: UXP.ink2, lineHeight: 1.7,
-          background: UXP.subtleBg, border: `0.5px solid ${UXP.border}`,
-          borderRadius: 6, fontFamily: 'inherit', resize: 'vertical' as const,
-          textDecoration: 'none' as const,
-        }}
-      />
-      {/* M8 — counter only shows when getting close to the cap, to
-          avoid clutter on small methods. */}
-      {remaining < 500 && (
-        <div style={{ fontSize: 10, color: remaining < 0 ? UXP.coral : UXP.ink4, marginTop: 4, textAlign: 'right' as const }}>
-          {draft.length.toLocaleString()} / {METHOD_MAX.toLocaleString()} chars
-        </div>
-      )}
-      {err && (
-        <div style={{ fontSize: 10, color: UXP.coral, marginTop: 4 }}>{err}</div>
-      )}
-    </div>
-  )
-}
-
-function InlineUsesEditor({
-  uses, onSaved,
-}: {
-  uses: UseRef[]
-  onSaved: (ingredientId: string, newNotes: string | null) => void
-}) {
-  return (
-    <div style={{
-      marginTop: 6, padding: '6px 10px',
-      background: UXP.subtleBg, border: `0.5px solid ${UXP.border}`,
-      borderRadius: 5, display: 'flex', flexDirection: 'column' as const, gap: 6,
-      textDecoration: 'none' as const,
-    }}
-      onClick={e => e.stopPropagation()}
-    >
-      {uses.length === 0 && (
-        <div style={{ fontSize: 10, color: UXP.ink4, fontStyle: 'italic' as const }}>
-          Not used in any recipe yet.
-        </div>
-      )}
-      {uses.map(u => (
-        <InlineNoteEditor key={u.ingredient_id} use={u} onSaved={onSaved} />
-      ))}
-    </div>
-  )
-}
-
-function InlineNoteEditor({
-  use, onSaved,
-}: {
-  use: UseRef
-  onSaved: (ingredientId: string, newNotes: string | null) => void
-}) {
-  const [draft, setDraft] = useState(use.notes ?? '')
-  const [saving, setSaving] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
-  useEffect(() => { setDraft(use.notes ?? '') }, [use.notes])
-
-  const save = useCallback(async () => {
-    const trimmed = draft.trim()
-    const incoming = (use.notes ?? '').trim()
-    if (trimmed === incoming) return
-    setSaving(true); setErr(null)
-    try {
-      const r = await fetch(
-        `/api/inventory/recipes/${use.recipe_id}/ingredients/${use.ingredient_id}`,
-        {
-          method: 'PATCH',
-          cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ notes: trimmed || null }),
-        },
-      )
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
-      onSaved(use.ingredient_id, trimmed || null)
-    } catch (e: any) {
-      setErr(e.message)
-    } finally {
-      setSaving(false)
-    }
-  }, [draft, use.notes, use.recipe_id, use.ingredient_id, onSaved])
-
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', alignItems: 'center', gap: 8 }}>
-      <span style={{ fontSize: 10, color: UXP.ink4, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
-        {use.recipe_name ?? '—'}
-      </span>
-      <input
-        type="text"
-        value={draft}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={save}
-        placeholder="e.g. juice & zest / quarter / dice"
-        disabled={saving}
-        style={{
-          width: '100%', boxSizing: 'border-box', padding: '4px 8px',
-          fontSize: 11, color: UXP.ink2,
-          background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
-          borderRadius: 4, fontFamily: 'inherit',
-          textDecoration: 'none' as const,
-        }}
-        title={err ?? undefined}
-      />
     </div>
   )
 }
