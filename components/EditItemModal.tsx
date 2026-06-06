@@ -44,6 +44,8 @@ interface EditContextResponse {
     price_override_currency: string | null
     weight_per_piece_g:      number | null   // M122
     weight_per_piece_source: string | null   // M122 — manual / supplier_article / name_parsed
+    volume_per_piece_ml:     number | null   // M136
+    volume_per_piece_source: string | null   // M136 — manual / supplier_article / name_parsed / ai_inferred
     archived_at: string | null
   }
   latest_cost: {
@@ -325,6 +327,30 @@ export function EditItemModal({ productId, onClose, onSaved }: {
                         Lets recipes that ask for grams of this item cost correctly.
                         {current.weight_per_piece_source && (
                           <> Source: <strong>{current.weight_per_piece_source}</strong>.</>
+                        )}
+                      </div>
+                    </Field>
+                  )}
+                  {/* M136 — Volume per piece. Symmetric to weight_per_piece_g
+                      but for liquid bottles sold by st. Lets a recipe ask
+                      "60 ml of Mystic Mango" against a 20cl bottle product
+                      (st-priced) — engine converts via this value. */}
+                  {current.base_unit === 'st' && (
+                    <Field label="Volume per piece (ml)">
+                      <input
+                        type="number" step="0.01" min="0"
+                        value={current.volume_per_piece_ml ?? ''}
+                        onChange={e => setEdits(p => ({
+                          ...p,
+                          volume_per_piece_ml: e.target.value === '' ? null : Number(e.target.value),
+                        }))}
+                        style={inputStyle}
+                        placeholder="e.g. 200 (a 20cl bottle)"
+                      />
+                      <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 3, lineHeight: 1.4 }}>
+                        Lets recipes that ask for ml or cl of this item cost correctly.
+                        {current.volume_per_piece_source && (
+                          <> Source: <strong>{current.volume_per_piece_source}</strong>.</>
                         )}
                       </div>
                     </Field>

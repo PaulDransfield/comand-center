@@ -40,22 +40,38 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const forbidden = requireBusinessAccess(auth, product.business_id)
   if (forbidden) return forbidden
 
-  // M122 — weight_per_piece_g + weight_per_piece_source fetched separately
-  // and guarded so the endpoint keeps working before the SQL is applied.
-  // Once the column lands, both fields populate; until then they're null.
+  // M122 / M136 — per-piece weight + volume fetched separately and guarded
+  // so the endpoint keeps working before each SQL is applied. The two
+  // pairs are independent: M122 may be applied while M136 isn't, or
+  // vice versa. Each pair tries together first, then falls back to the
+  // weight-only pair (the older M122 shape) if M136 columns are absent.
   let weight_per_piece_g:      number | null = null
   let weight_per_piece_source: string | null = null
+  let volume_per_piece_ml:     number | null = null
+  let volume_per_piece_source: string | null = null
   {
-    const { data: wRow, error: wErr } = await db
+    const { data: row, error: rErr } = await db
       .from('products')
-      .select('weight_per_piece_g, weight_per_piece_source')
+      .select('weight_per_piece_g, weight_per_piece_source, volume_per_piece_ml, volume_per_piece_source')
       .eq('id', params.id)
       .maybeSingle()
-    if (!wErr && wRow) {
-      weight_per_piece_g      = (wRow as any).weight_per_piece_g != null ? Number((wRow as any).weight_per_piece_g) : null
-      weight_per_piece_source = (wRow as any).weight_per_piece_source ?? null
+    if (!rErr && row) {
+      weight_per_piece_g      = (row as any).weight_per_piece_g != null ? Number((row as any).weight_per_piece_g) : null
+      weight_per_piece_source = (row as any).weight_per_piece_source ?? null
+      volume_per_piece_ml     = (row as any).volume_per_piece_ml != null ? Number((row as any).volume_per_piece_ml) : null
+      volume_per_piece_source = (row as any).volume_per_piece_source ?? null
+    } else if (rErr) {
+      // M136 not applied yet — fall back to the M122-only shape.
+      const { data: wRow } = await db
+        .from('products')
+        .select('weight_per_piece_g, weight_per_piece_source')
+        .eq('id', params.id)
+        .maybeSingle()
+      if (wRow) {
+        weight_per_piece_g      = (wRow as any).weight_per_piece_g != null ? Number((wRow as any).weight_per_piece_g) : null
+        weight_per_piece_source = (wRow as any).weight_per_piece_source ?? null
+      }
     }
-    // 42703 = undefined_column. Anything else, leave the null defaults.
   }
 
   // Latest cost — same reader the recipe drawer uses, so the modal can
@@ -193,6 +209,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       default_waste_pct: product.default_waste_pct != null ? Number(product.default_waste_pct) : 0,
       weight_per_piece_g,
       weight_per_piece_source,
+      volume_per_piece_ml,
+      volume_per_piece_source,
     },
     latest_cost: latest ? {
       unit_price:       latest.latest_price,
