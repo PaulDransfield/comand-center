@@ -66,3 +66,25 @@ Reasoning: easy to extend without an ALTER TYPE. Allowed values: `complete`, `pa
 ## Trigger to start Phase 2
 
 Phase 1 has been in production for one full daily sync cycle AND owner has spot-checked `/admin/data-quality` or queried `ingestion_log` once to confirm the ledger is populating. Phase 2 then closes the file_id gap with the completeness flag already in place to verify the fix.
+
+## Phases 2 and 3 — shipped 2026-06-06
+
+Phase 2 ships file-id resolution end-to-end:
+
+- `lib/fortnox/api/file-connections.ts` — shared `resolveSupplierInvoiceFileId(token, invoiceNumber)`. Tries detail endpoint first, falls back to authoritative `supplierinvoicefileconnections`. Returns tagged union `{kind: 'has_pdf'|'no_pdf'|'not_found'|'error'}` — caller branches truthfully.
+- `app/api/cron/fortnox-supplier-sync` — opens a ledger per page-fetch; every upserted row gets `ingestion_status` + `ingestion_meta`. Inline file-id resolve for up to 25 new invoices per page (capped to keep the sync tick under budget). New invoices flip `header_only → complete` on the spot.
+- `app/api/cron/fortnox-pdf-backfill` (new cron, `40 */6 * * *`) — walks every `header_only` row for connected Fortnox integrations. Drain-fully inner loop: each customer keeps pulling 50-row pages until empty or deadline (270s wall budget), so a single tick can process 500–1,000 invoices instead of 50/customer. Self-chains if the deadline hits before all customers are drained.
+- Initial-drain footnote: BATCH_SIZE=50 + customer-drain inner loop was a refactor from the first ship-and-trigger pass — early ticks processed only `BATCH_SIZE × customer_count` per call (100 at two customers) because the original code didn't loop within a customer. The fix landed in commit 65ddc9b.
+
+Phase 3 ships passive observability:
+
+- `app/api/cron/ingestion-coverage-check` (new cron, `30 7 * * *`) — daily coverage check. Reads last 14d of `ingestion_log`, splits today vs trailing 13d baseline. Four alert classes via `sendOpsEmail`: coverage regression ≥5pp, new low-coverage field, failed-ledger ratio >20%, silent integration (connected Fortnox biz with zero ledger entries in 24h). Tunables `ALERT_DROP_PCT=5, ALERT_NEW_FIELD_FLOOR=0.50, ALERT_FAIL_RATIO=0.20, MIN_SAMPLE=5`.
+- Self-recalibrating baseline: trailing 13d is the baseline, no separate baseline table. As the system matures the floor rises naturally.
+
+## Phase 4 — deferred
+
+Retire the split between supplier-sync cron and pdf-extraction-worker. Today supplier-sync handles file_id resolution inline (Phase 2); pdf-extraction-worker still owns PDF→extraction. Folding them yields one ingest path per invoice and removes "which worker last touched this" ambiguity. Trigger: 30 days of clean Phase 3 coverage + no oncall regressions.
+
+## Phase 5 — deferred
+
+Data quality dashboard at `/admin/data-quality` (engineering view) + customer-trimmed view at `/integrations` (owner view). The dashboards are the human-facing surface of the ledger that Phase 3 alerts already monitor. Trigger: owner asks for at-a-glance health OR a second customer hits coverage regression in the same week.
