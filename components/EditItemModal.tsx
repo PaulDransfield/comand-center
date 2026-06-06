@@ -27,6 +27,7 @@ import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 import { PdfModal } from '@/components/ui/PdfModal'
 import { PdfButton } from '@/components/ui/PdfButton'
+import { CategoryPill } from '@/components/ui/CategoryPill'
 
 interface EditContextResponse {
   product: {
@@ -431,10 +432,12 @@ export function EditItemModal({ productId, onClose, onSaved }: {
                           {u.name}
                           {u.transitive && !u.direct && <span style={subBadge}>via sub-recipe</span>}
                         </div>
-                        <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 1 }}>
-                          {u.type ?? 'recipe'} · {u.portions} portion{u.portions === 1 ? '' : 's'}
-                          {u.direct && u.direct_qty != null && ` · ${u.direct_qty} ${u.direct_unit ?? ''}`}
-                          {u.direct && (u.direct_waste_pct ?? 0) > 0 && ` · ${u.direct_waste_pct}% waste`}
+                        <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 1, display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                          <CategoryPill type={u.type} showEmpty />
+                          <span>· {u.portions} portion{u.portions === 1 ? '' : 's'}
+                            {u.direct && u.direct_qty != null && ` · ${u.direct_qty} ${u.direct_unit ?? ''}`}
+                            {u.direct && (u.direct_waste_pct ?? 0) > 0 && ` · ${u.direct_waste_pct}% waste`}
+                          </span>
                         </div>
                       </div>
                     </div>

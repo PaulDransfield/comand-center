@@ -78,8 +78,8 @@ const VAT_RATES      = [6, 12, 25] as const
 const UNIT_OPTIONS   = ['g','kg','ml','l','st','styck','msk','tsk','krm','knippe','klyfta','skiva','bunt','pkt','burk','flaska','portion'] as const
 const PRODUCT_CATEGORIES = ['food','beverage','alcohol','disposables','takeaway_material','cleaning','other'] as const
 
-const FOOD_TYPES  = new Set(['starter','main','pasta','pizza','dessert','side','other'])
-const DRINK_TYPES = new Set(['cocktail','drink','wine','beer','spirit','softdrink','cider','alcohol_free'])
+// FOOD_TYPES / DRINK_TYPES imported from lib/categoryColors.ts (single source of truth).
+import { FOOD_TYPES, DRINK_TYPES } from '@/lib/categoryColors'
 // Combined dish-shaped types — anything that can be sold to a customer.
 // Used by isSubRecipe derivation: if type is in DISH_TYPES → not a sub.
 const DISH_TYPES  = new Set([...FOOD_TYPES, ...DRINK_TYPES])

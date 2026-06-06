@@ -14,6 +14,7 @@ import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
 import { PageContainer } from '@/components/ui/Layout'
 import { fmtKr } from '@/lib/format'
+import { DRINK_TYPES } from '@/lib/categoryColors'
 
 interface MenuItem {
   id:                    string
@@ -83,10 +84,10 @@ export default function MenuEditorPage() {
     fetch(`/api/inventory/recipes?business_id=${bizId}`, { cache: 'no-store' })
       .then(r => r.json())
       .then(j => {
-        const DRINK = new Set(['cocktail','drink','wine','beer','spirit','softdrink','cider','alcohol_free'])
+        // DRINK_TYPES imported from lib/categoryColors.ts — single source of truth.
         const all: RecipeOption[] = (j.recipes ?? []).map((r: any) => ({ id: r.id, name: r.name, type: r.type }))
         const filtered = all.filter(r => {
-          const isDrink = DRINK.has(String(r.type ?? '').toLowerCase())
+          const isDrink = DRINK_TYPES.has(String(r.type ?? '').toLowerCase())
           return menu.type === 'drink' ? isDrink : !isDrink
         })
         setRecipeOptions(filtered)
