@@ -9,6 +9,7 @@
     { "path": "/api/cron/manual-tracker-audit",            "schedule": "45 5 * * *" },
     { "path": "/api/cron/fortnox-backfill-worker",         "schedule": "0 6 * * *" },
     { "path": "/api/cron/fortnox-supplier-sync",           "schedule": "10 6 * * *" },
+    { "path": "/api/cron/fortnox-pdf-backfill",            "schedule": "40 */6 * * *" },
     { "path": "/api/cron/scheduling-sync",                 "schedule": "20 6 * * *" },
     { "path": "/api/cron/voucher-cache-refresh",           "schedule": "15 6 * * *" },
     { "path": "/api/cron/inventory-lines-sync",            "schedule": "30 6 * * *" },

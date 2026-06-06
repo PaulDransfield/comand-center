@@ -23,6 +23,7 @@ import { log }                          from '@/lib/log/structured'
 import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
 import { getFreshFortnoxAccessToken }   from '@/lib/fortnox/api/auth'
 import { extractSupplierInvoiceVoucher } from '@/lib/fortnox/extract-voucher-ref'
+import { resolveSupplierInvoiceFileId } from '@/lib/fortnox/api/file-connections'
 import { openLedger, closeLedger, computeRowStatus, buildIngestionMeta } from '@/lib/ingestion/ledger'
 
 // Field-level contract for one supplier-invoice row (M135 Phase 1).
@@ -45,6 +46,11 @@ export const maxDuration     = 60
 const FORTNOX_API     = 'https://api.fortnox.se/3'
 const DEFAULT_BACKFILL_MONTHS = 12   // first run pulls last year
 const RESUME_OVERLAP_DAYS     = 1    // re-pull last day to catch late-arriving rows
+// Phase 2 — how many of THIS batch's new invoices to resolve file_id for
+// inline. The dedicated /api/cron/fortnox-pdf-backfill worker drains the
+// rest so the daily sync stays narrow. 25 = ~25s extra per run typical;
+// a first-time 12-month backfill puts the rest on the backfill cron.
+const INLINE_RESOLVE_CAP      = 25
 
 export async function POST(req: NextRequest) {
   if (!checkCronSecret(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -208,6 +214,53 @@ export async function POST(req: NextRequest) {
           rowsUpserted += upsertRows.length
         }
         await closeLedger({ db, handle: ledger, populated_fields: HEADER_FIELDS, rows_processed: invoices.length })
+
+        // Phase 2 — inline file_id resolution for the rows we just upserted.
+        // Capped at INLINE_RESOLVE_CAP per batch so a first-time backfill
+        // (12 months of invoices) doesn't blow the function's time budget.
+        // The leftover header_only rows are picked up by the dedicated
+        // /api/cron/fortnox-pdf-backfill worker. Concurrency 1 because
+        // fortnoxFetch's semaphore already caps in-flight at 2 per token
+        // (the file_id resolver does 1-2 Fortnox calls per invoice).
+        const toResolve = upsertRows.slice(0, INLINE_RESOLVE_CAP)
+        for (const row of toResolve) {
+          const subLedger = await openLedger({
+            db,
+            source:          'fortnox',
+            resource:        'supplier_invoices',
+            operation:       'file_connections',
+            business_id:     integ.business_id,
+            org_id:          integ.org_id,
+            expected_fields: ['file_id', 'has_pdf'],
+            context:         { given_number: row.given_number, called_from: 'supplier_sync_inline' },
+          })
+          const result = await resolveSupplierInvoiceFileId(accessToken, row.given_number)
+          if (result.kind === 'has_pdf' || result.kind === 'no_pdf') {
+            const fileId = result.kind === 'has_pdf' ? result.file_id : null
+            const populated: string[] = [...HEADER_FIELDS, 'has_pdf']
+            if (fileId) populated.push('file_id')
+            await db.from('fortnox_supplier_invoices')
+              .update({
+                file_id:            fileId,
+                has_pdf:            fileId != null,
+                file_id_fetched_at: new Date().toISOString(),
+                ingestion_status:   'complete',
+                ingestion_meta:     buildIngestionMeta({
+                  ledgerId:         subLedger.id,
+                  source_path:      'fortnox_supplier_sync_inline',
+                  expected_fields:  EXPECTED_FIELDS,
+                  populated_fields: populated,
+                  extra:            { resolved_via: result.kind === 'has_pdf' ? result.source : 'no_pdf' },
+                }),
+              })
+              .eq('business_id', integ.business_id)
+              .eq('given_number', row.given_number)
+            await closeLedger({ db, handle: subLedger, populated_fields: fileId ? ['file_id', 'has_pdf'] : ['has_pdf'], rows_processed: 1 })
+          } else {
+            // not_found or error — leave as header_only so the backfill worker retries.
+            await closeLedger({ db, handle: subLedger, populated_fields: [], error: result.kind === 'not_found' ? 'invoice_not_found' : (result as any).reason, rows_processed: 1 })
+          }
+        }
 
         if (invoices.length < 500) break
         page++
