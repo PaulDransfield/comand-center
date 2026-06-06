@@ -296,6 +296,23 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       patch.weight_per_piece_source = 'manual'
     }
   }
+  // M136 — volume_per_piece_ml for piece-priced liquids (20cl/33cl/75cl
+  // bottles etc.). Symmetric to weight_per_piece_g. Owner-set value
+  // wins over name-parse fallback in the cost engine's volume↔count
+  // bridge. Upper bound 100000 ml = 100 litres (drum-sized).
+  if (body.volume_per_piece_ml !== undefined) {
+    if (body.volume_per_piece_ml === null || body.volume_per_piece_ml === '') {
+      patch.volume_per_piece_ml     = null
+      patch.volume_per_piece_source = null
+    } else {
+      const v = Number(body.volume_per_piece_ml)
+      if (!Number.isFinite(v) || v <= 0 || v > 100000) {
+        return NextResponse.json({ error: 'volume_per_piece_ml must be > 0 and ≤ 100000' }, { status: 400 })
+      }
+      patch.volume_per_piece_ml     = Math.round(v * 1000) / 1000
+      patch.volume_per_piece_source = 'manual'
+    }
+  }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'no editable fields supplied' }, { status: 400 })
   }

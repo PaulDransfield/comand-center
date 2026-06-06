@@ -66,6 +66,8 @@ export interface ProductLatestPrice {
   density_source:   string | null   // M120 — manual | ai_inferred | convention_default | null
   weight_per_piece_g:       number | null  // M122 — for mass↔count conversion in the cost engine
   weight_per_piece_source:  string | null  // M122 — manual | supplier_article | name_parsed | null
+  volume_per_piece_ml:      number | null  // M136 — for volume↔count conversion in the cost engine
+  volume_per_piece_source:  string | null  // M136 — manual | supplier_article | name_parsed | ai_inferred | null
   // Price-trend signal: median price (in native unit, SEK-converted)
   // across all PRIOR invoice lines in the 90 days before latest_date.
   // change_pct compares latest_price_sek against prior_median_price_sek.
@@ -384,17 +386,23 @@ export function computeRecipeCost(
       } else if (baseUnit === 'st' && unitFamily(ing.unit) === 'volume') {
         // Volume↔count bridge — mirrors the M122 mass↔count path above for
         // piece-priced liquids. Recipe asks "60 ml of Mystic Mango"; the
-        // product is base_unit='st' but the NAME discloses 20cl (200 ml)
-        // per piece. Use volumePerPieceMlFromName to recover the per-piece
-        // volume from the name, then cost as `pieces × cost_per_base_unit`.
-        // When name discloses nothing we fall through to honest-incomplete.
-        const volPerPieceMl = volumePerPieceMlFromName(p?.product_name)
-        const qtyInMl       = convertQuantity(ing.quantity, ing.unit, 'ml')
+        // product is base_unit='st' but each piece holds some ml.
+        // Resolution order:
+        //   1. M136 products.volume_per_piece_ml (owner-set value)
+        //   2. parsed from product name ("20cl" / "33cl" / "75cl")
+        // Falls through to honest-incomplete when neither is available.
+        const dbVolPerPiece   = p?.volume_per_piece_ml ?? null
+        const nameVolPerPiece = volumePerPieceMlFromName(p?.product_name)
+        const volPerPieceMl   = (dbVolPerPiece != null && dbVolPerPiece > 0) ? dbVolPerPiece : nameVolPerPiece
+        const volSource       = (dbVolPerPiece != null && dbVolPerPiece > 0)
+          ? (p?.volume_per_piece_source ?? 'manual')
+          : (nameVolPerPiece != null ? 'name_parsed' : null)
+        const qtyInMl         = convertQuantity(ing.quantity, ing.unit, 'ml')
         if (volPerPieceMl != null && volPerPieceMl > 0 && qtyInMl != null) {
           const pieces = qtyInMl / volPerPieceMl
           lineCost = Math.round(pieces * costPerBase * 100) / 100
           volumePerPieceMlUsed   = volPerPieceMl
-          volumePerPieceMlSource = 'name_parsed'
+          volumePerPieceMlSource = volSource
           unitMismatch = false
         } else {
           lineCost = null
@@ -662,11 +670,11 @@ async function getProductLatestPricesLeaf(
     if (DENSITY_COLUMNS_AVAILABLE) {
       const { data, error: pErr } = await db
         .from('products')
-        .select('id, name, invoice_unit, pack_size, base_unit, density_g_per_ml, density_source, weight_per_piece_g, weight_per_piece_source')
+        .select('id, name, invoice_unit, pack_size, base_unit, density_g_per_ml, density_source, weight_per_piece_g, weight_per_piece_source, volume_per_piece_ml, volume_per_piece_source')
         .in('id', slice)
       if (pErr) {
-        if ((pErr as any).code === '42703' || /density_g_per_ml.*does not exist/i.test(pErr.message) || /weight_per_piece_g.*does not exist/i.test(pErr.message)) {
-          DENSITY_COLUMNS_AVAILABLE = false   // M120 / M122 not applied yet — stop trying.
+        if ((pErr as any).code === '42703' || /density_g_per_ml.*does not exist/i.test(pErr.message) || /weight_per_piece_g.*does not exist/i.test(pErr.message) || /volume_per_piece_ml.*does not exist/i.test(pErr.message)) {
+          DENSITY_COLUMNS_AVAILABLE = false   // M120 / M122 / M136 not applied yet — stop trying.
         } else {
           throw new Error(`[recipe-cost] products lookup failed: ${pErr.message}`)
         }
@@ -694,6 +702,8 @@ async function getProductLatestPricesLeaf(
         density_source:   (p as any).density_source ?? null,
         weight_per_piece_g:      (p as any).weight_per_piece_g != null ? Number((p as any).weight_per_piece_g) : null,
         weight_per_piece_source: (p as any).weight_per_piece_source ?? null,
+        volume_per_piece_ml:     (p as any).volume_per_piece_ml != null ? Number((p as any).volume_per_piece_ml) : null,
+        volume_per_piece_source: (p as any).volume_per_piece_source ?? null,
         prior_median_price_sek: null,
         change_pct:             null,
       })
@@ -802,6 +812,8 @@ async function getProductLatestPricesLeaf(
       density_source:   existing?.density_source ?? null,
       weight_per_piece_g:      existing?.weight_per_piece_g ?? null,
       weight_per_piece_source: existing?.weight_per_piece_source ?? null,
+      volume_per_piece_ml:     existing?.volume_per_piece_ml ?? null,
+      volume_per_piece_source: existing?.volume_per_piece_source ?? null,
       prior_median_price_sek: priorMedianSek,
       change_pct:             changePct,
     })
@@ -847,10 +859,10 @@ export async function getProductLatestPrices(
     if (DENSITY_COLUMNS_AVAILABLE) {
       const { data, error: pErr } = await db
         .from('products')
-        .select('id, name, invoice_unit, pack_size, base_unit, source_recipe_id, price_override, price_override_currency, density_g_per_ml, density_source, weight_per_piece_g, weight_per_piece_source')
+        .select('id, name, invoice_unit, pack_size, base_unit, source_recipe_id, price_override, price_override_currency, density_g_per_ml, density_source, weight_per_piece_g, weight_per_piece_source, volume_per_piece_ml, volume_per_piece_source')
         .in('id', slice)
       if (pErr) {
-        if ((pErr as any).code === '42703' || /density_g_per_ml.*does not exist/i.test(pErr.message) || /weight_per_piece_g.*does not exist/i.test(pErr.message)) {
+        if ((pErr as any).code === '42703' || /density_g_per_ml.*does not exist/i.test(pErr.message) || /weight_per_piece_g.*does not exist/i.test(pErr.message) || /volume_per_piece_ml.*does not exist/i.test(pErr.message)) {
           DENSITY_COLUMNS_AVAILABLE = false
         } else {
           throw new Error(`[recipe-cost] products(public) lookup failed: ${pErr.message}`)
@@ -884,6 +896,8 @@ export async function getProductLatestPrices(
         density_source:    (p as any).density_source ?? null,
         weight_per_piece_g:      (p as any).weight_per_piece_g != null ? Number((p as any).weight_per_piece_g) : null,
         weight_per_piece_source: (p as any).weight_per_piece_source ?? null,
+        volume_per_piece_ml:     (p as any).volume_per_piece_ml != null ? Number((p as any).volume_per_piece_ml) : null,
+        volume_per_piece_source: (p as any).volume_per_piece_source ?? null,
         prior_median_price_sek: null,
         change_pct:             null,
       })
