@@ -1,6 +1,56 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-06-02 | Session 24: M116 (prep_sessions) + M117 (recipes.portions_per_cover) + M118 (prep_pre_orders) all applied via owner during the prep + order pipeline build
+> Last updated: 2026-06-06 | Session 25: M128 + M130 + M132 + M135 applied during the ingestion ledger + recipe-import-draft + global-enrichment schema ship. Audit-confirmed via diagnostic query.
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
+
+---
+
+## Applied — 2026-06-06 (Session 25: ingestion ledger + bug fix + global enrichment schema)
+
+### M135 — ingestion_log + fortnox_supplier_invoices.ingestion_status ✅ applied 2026-06-06
+**File:** `sql/M135-INGESTION-LEDGER.sql`
+**Purpose:** Phase 1 of `docs/INGESTION-PIPELINE-RELIABILITY-PLAN.md`. Adds a per-row completeness flag on every Fortnox-sourced supplier invoice plus a truthful audit ledger of every external API call. Powers Phase 2 file-id resolution (supplier-sync inline + dedicated `fortnox-pdf-backfill` cron) and Phase 3 daily coverage check.
+**Schema:**
+- `ingestion_log(id, source, resource, operation, business_id, org_id, started_at, finished_at, status CHECK IN ('open','complete','failed'), error, expected_fields TEXT[], populated_fields TEXT[], context JSONB, rows_processed)`
+- `fortnox_supplier_invoices.ingestion_status TEXT NOT NULL DEFAULT 'header_only'` + CHECK `IN ('header_only','complete','failed')`
+- `fortnox_supplier_invoices.ingestion_meta JSONB` — per-row record of which fields were expected vs populated at write time
+- Truthful backfill on existing rows: `complete` where `file_id IS NOT NULL`, else `header_only`
+- Indexes on ledger for the coverage-check query path
+**Idempotent.** All ADD COLUMN / ADD CONSTRAINT wrapped in IF NOT EXISTS guards.
+
+### M130 — products.created_via allows 'recipe_import_draft' ✅ applied 2026-06-06
+**File:** `sql/M130-PRODUCTS-RECIPE-IMPORT-DRAFT.sql`
+**Purpose:** CHECK constraint widen so the recipe editor's "Add ingredient → New product" path can create placeholder products (no supplier match yet, waiting for an invoice). Matcher pairs them automatically when an invoice arrives with the same `(supplier, normalised_description, unit)` signature. Items + counts API both flag these as `is_recipe_sourced = true` so the no_article / no_price / no_supplier "Needs attention" warnings are suppressed until the match lands.
+**Schema:**
+- `ALTER TABLE products DROP CONSTRAINT IF EXISTS products_created_via_chk`
+- `ADD CONSTRAINT products_created_via_chk CHECK (created_via IN ('auto_exact', 'auto_fuzzy', 'owner_review', 'manual', 'fortnox_backfill', 'recipe_promotion', 'recipe_import_draft'))`
+**Idempotent.** Pure CHECK relaxation; no row rewrites.
+**Note:** This was discovered as a missed migration during the Aragosta Pasta create flow on 2026-06-06 — surfaced as "new row for relation \"products\" violates check constraint products_created_via_chk". The codebase had been writing the new value since M130 was written but the CHECK in production still held the M075/M123 list.
+
+### M128 — products external-catalogue link ✅ applied 2026-06-06
+**File:** `sql/M128-PRODUCTS-EXTERNAL-CATALOGUE.sql`
+**Purpose:** Link customer products to public supplier catalogues (Spendrups, Systembolaget) for thumbnail + spec enrichment when the regular `(fortnox_number, article_number)` join misses. Supplier-article batch lookup falls back through these columns.
+**Schema:**
+- `ALTER TABLE products ADD COLUMN IF NOT EXISTS external_catalogue_source TEXT` (sentinel: `'SPENDRUPS'`, `'SYSTEMBOLAGET'`, etc.)
+- `ALTER TABLE products ADD COLUMN IF NOT EXISTS external_catalogue_article TEXT`
+- Partial index `products_external_catalogue_idx ON (external_catalogue_source, external_catalogue_article) WHERE external_catalogue_source IS NOT NULL`
+**Idempotent.** Application code has a defensive fallback (`supplier-article/batch/route.ts:53-54`) that catches missing-column errors and retries without it, so this was non-blocking — application just missed an enrichment path.
+
+### M132 — global product enrichment (Phase 1 schema) ✅ applied 2026-06-06
+**File:** `sql/M132-GLOBAL-PRODUCT-ENRICHMENT.sql`
+**Purpose:** Phase 1 of `docs/GLOBAL-PRODUCT-ENRICHMENT-PLAN.md` — SCHEMA ONLY. Lets customer A's owner-saved physical-truth refinements (pack_size, base_unit, weight per piece, density, category) flow back to a shared layer so customer B inherits them on day 1. Pricing, waste %, aliases, recipes STAY per-business.
+**Schema:**
+- `supplier_articles.refined_pack_size / refined_base_unit / refined_weight_per_piece_g / refined_density_g_per_ml / refined_category / refined_confidence smallint DEFAULT 0 / refined_last_updated_at`
+- CHECK: `refined_confidence BETWEEN 0 AND 2` (0=none, 1=single-customer, 2=verified-by-2+)
+- CHECK: `refined_category IN ('food','beverage','alcohol','cleaning','disposables','packaging','equipment','other')` or NULL
+- `supplier_article_refinement_log(id bigserial, supplier_fortnox_number, article_number, business_id, field, value JSONB, set_at)` with FK to `supplier_articles` ON DELETE CASCADE
+- CHECK on log: `field IN ('pack_size','base_unit','weight_per_piece_g','density_g_per_ml','category')` — whitelist
+- `businesses.share_refinements_with_platform BOOLEAN NOT NULL DEFAULT true` — opt-out flag for Settings
+- Indexes on log for (article), (business), (field)
+**Idempotent.** All ADD COLUMN / constraints wrapped in IF NOT EXISTS / DO NOT EXISTS guards.
+**Note:** Phase 2 (write hook + read overlay) hasn't been built yet — this is dormant schema until then.
+
+### Migration audit run 2026-06-06
+A diagnostic query verified the in-DB state of M119–M135 against `information_schema` + `pg_constraint`. Result: 15/17 PASS, only M128 + M132 MISS — both applied immediately after audit. Subsequent re-run would show 17/17 PASS.
 
 ---
 
