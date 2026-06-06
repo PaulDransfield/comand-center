@@ -13,12 +13,13 @@ export const dynamic = 'force-dynamic'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AppShell from '@/components/AppShell'
-import { UXP } from '@/lib/constants/tokens'
+import { UXP, Z } from '@/lib/constants/tokens'
 import { ProductThumb } from '@/components/ui/ProductThumb'
 import { PageContainer } from '@/components/ui/Layout'
 import { PageErrorBoundary } from '@/components/ui/PageErrorBoundary'
 import { DRINK_TYPES } from '@/lib/categoryColors'
 import { CategoryPill } from '@/components/ui/CategoryPill'
+import { useIsMobile } from '@/lib/hooks/useViewport'
 
 interface DishRow {
   id:                  string
@@ -170,10 +171,21 @@ export default function PrepListPage() {
 }
 
 function PrepListPageInner() {
+  // Phase 1 — mobile-first layout gate. At tablet/desktop (≥768) the existing
+  // two-pane layout renders unchanged. On mobile we re-lay create-mode into a
+  // single vertical column with a sticky send bar. All handlers + state +
+  // engine calls are identical; this is presentational only.
+  const isMobile = useIsMobile()
+
   const [bizId, setBizId] = useState<string | null>(null)
   const [dishes, setDishes] = useState<DishRow[]>([])
   const [loadingDishes, setLoadingDishes] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Mobile collapsibles — preview opens by default (chef wants to see the
+  // aggregation immediately); pre-orders collapse to a one-line summary so
+  // the covers hero is reachable above the fold on a phone.
+  const [mobilePreOrdersOpen, setMobilePreOrdersOpen] = useState(false)
+  const [mobilePreviewOpen,   setMobilePreviewOpen]   = useState(true)
 
   // selected = recipe_id → qty (covers/portions). 0 / missing = not in the list.
   const [selected, setSelected] = useState<Record<string, number>>({})
@@ -891,7 +903,7 @@ function PrepListPageInner() {
             CREATE MODE — no active session. Pick dishes, preview the
             aggregation, "Save & start prep" persists it.
             ────────────────────────────────────────────────────────────── */}
-        {bizId && !activeSession && !sessionLoading && !loadingDishes && dishes.length > 0 && (
+        {bizId && !activeSession && !sessionLoading && !loadingDishes && dishes.length > 0 && !isMobile && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
 
             {/* ── LEFT: dish picker + qty inputs ───────────────────── */}
@@ -1469,7 +1481,605 @@ function PrepListPageInner() {
             </div>
           </div>
         )}
+
+        {/* ──────────────────────────────────────────────────────────────
+            CREATE MODE — mobile single-column layout (Phase 1).
+            Same state, same handlers, same writes — only the placement
+            differs. The compact view toggle + Food/Drinks rail above this
+            block remain; below we reflow into a thumb-friendly column:
+              (a) covers hero  (b) pre-orders collapsible  (c) selected
+              (d) dish picker  (e) preview collapsible  (f) sticky save.
+            All quantities + the saved session payload remain server-
+            computed via aggregatePrepRequirements; the sticky save bar
+            posts to /api/inventory/prep-sessions exactly like desktop.
+            ────────────────────────────────────────────────────────────── */}
+        {bizId && !activeSession && !sessionLoading && !loadingDishes && dishes.length > 0 && isMobile && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+            {/* (a) COVERS HERO — promoted to the top of the column so it
+                sits above the fold. Same coversInput state, same
+                applyCovers() handler — only the visual prominence
+                changes. Reserved space for Phase 2 chips (not added here). */}
+            <div style={{
+              background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+              borderRadius: UXP.r_lg, padding: 14, boxShadow: UXP.shadowSoft,
+            }}>
+              <div style={{
+                fontSize: UXP.fsMicro, color: UXP.ink4, fontWeight: 700,
+                letterSpacing: '0.06em', textTransform: 'uppercase' as const, marginBottom: 8,
+              }}>
+                Expected covers
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  placeholder="e.g. 80"
+                  value={coversInput}
+                  onChange={e => {
+                    const cleaned = e.target.value.replace(/[^0-9.]/g, '')
+                    setCoversInput(cleaned)
+                  }}
+                  onKeyDown={e => { if (e.key === 'Enter') applyCovers() }}
+                  style={{
+                    ...inputStyle, flex: 1, padding: '12px 14px', fontSize: 16,  // 16px prevents iOS zoom
+                    textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const,
+                    minHeight: 44,
+                  }}
+                  aria-label="Expected covers"
+                />
+                <button
+                  type="button"
+                  onClick={applyCovers}
+                  disabled={!coversInput || Number(coversInput) <= 0}
+                  style={{
+                    padding: '12px 20px', fontSize: 13, fontWeight: 600,
+                    background: UXP.lavDeep, color: '#fff', border: 'none',
+                    borderRadius: UXP.r_md, cursor: 'pointer', fontFamily: 'inherit',
+                    minHeight: 44, whiteSpace: 'nowrap' as const,
+                    opacity: !coversInput || Number(coversInput) <= 0 ? 0.4 : 1,
+                  }}
+                >
+                  Apply
+                </button>
+              </div>
+              <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 6, lineHeight: 1.4 }}>
+                Distributes portions from each dish&apos;s mix share. Dishes without a share set are skipped.
+              </div>
+            </div>
+
+            {/* (b) PRE-ORDERS — collapsible. Default: one-line summary.
+                Expanded: existing rows + the same inline add form used on
+                desktop. createPreOrder / deletePreOrder handlers reused. */}
+            <div style={{
+              background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+              borderRadius: UXP.r_lg, padding: 0, boxShadow: UXP.shadowSoft,
+              overflow: 'hidden' as const,
+            }}>
+              <button
+                onClick={() => setMobilePreOrdersOpen(o => !o)}
+                style={{
+                  width: '100%', display: 'flex', justifyContent: 'space-between',
+                  alignItems: 'center', padding: '12px 14px', background: 'transparent',
+                  border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                  minHeight: 48, textAlign: 'left' as const,
+                }}
+                aria-expanded={mobilePreOrdersOpen}
+              >
+                <div>
+                  <div style={{
+                    fontSize: UXP.fsMicro, color: UXP.ink4, fontWeight: 700,
+                    letterSpacing: '0.06em', textTransform: 'uppercase' as const,
+                  }}>
+                    Pre-orders · {serviceDate}
+                  </div>
+                  <div style={{ fontSize: 12, color: UXP.ink2, marginTop: 2 }}>
+                    {preOrders.length === 0
+                      ? 'None — tap to add'
+                      : `${preOrders.length} party · ${preOrders.reduce((s, p) => s + p.party_size, 0)} covers committed`}
+                  </div>
+                </div>
+                <span style={{ fontSize: 16, color: UXP.ink3 }}>
+                  {mobilePreOrdersOpen ? '−' : '+'}
+                </span>
+              </button>
+
+              {mobilePreOrdersOpen && (
+                <div style={{ padding: '0 14px 14px', borderTop: `0.5px solid ${UXP.borderSoft}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10, marginBottom: 8 }}>
+                    <input
+                      type="date"
+                      value={serviceDate}
+                      onChange={e => setServiceDate(e.target.value)}
+                      style={{ ...inputStyle, padding: '8px 10px', fontSize: 13, width: 160, minHeight: 40 }}
+                      aria-label="Service date"
+                    />
+                  </div>
+                  {preOrdersLoading && (
+                    <div style={{ fontSize: 11, color: UXP.ink4 }}>Loading…</div>
+                  )}
+                  {preOrders.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                      {preOrders.map(po => (
+                        <div key={po.id} style={{
+                          padding: '8px 10px', background: UXP.subtleBg,
+                          border: `0.5px solid ${UXP.border}`, borderRadius: UXP.r_md,
+                          display: 'flex', justifyContent: 'space-between', gap: 8,
+                        }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, color: UXP.ink1, fontWeight: 500,
+                                          overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                              {po.party_name || `Party of ${po.party_size}`} · {po.party_size}p
+                            </div>
+                            <div style={{ fontSize: 11, color: UXP.ink3, marginTop: 2 }}>
+                              {po.items.map(it => {
+                                const d = dishById.get(it.recipe_id)
+                                return `${it.qty}× ${d?.name ?? '?'}`
+                              }).join(' · ') || 'No items'}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => deletePreOrder(po.id)}
+                            style={{ background: 'none', border: 'none', color: UXP.ink3,
+                                     cursor: 'pointer', fontSize: 18, padding: '0 4px', minWidth: 32 }}
+                            aria-label="Remove pre-order"
+                          >×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {draftPreOrder ? (
+                    <div style={{
+                      background: UXP.lavFill, border: `0.5px solid ${UXP.lavMid}`,
+                      borderRadius: UXP.r_md, padding: 10,
+                      display: 'flex', flexDirection: 'column' as const, gap: 8,
+                    }}>
+                      <input type="text" placeholder="Party name (optional)"
+                        value={draftPreOrder.party_name}
+                        onChange={e => setDraftPreOrder(d => d ? { ...d, party_name: e.target.value } : d)}
+                        style={{ ...inputStyle, fontSize: 13, padding: '10px 12px', minHeight: 44 }} />
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        <input type="number" min={1} placeholder="Party size" inputMode="numeric"
+                          value={draftPreOrder.party_size}
+                          onChange={e => setDraftPreOrder(d => d ? { ...d, party_size: e.target.value } : d)}
+                          style={{ ...inputStyle, fontSize: 13, padding: '10px 12px', minHeight: 44 }} />
+                        <input type="text" placeholder="Notes"
+                          value={draftPreOrder.notes}
+                          onChange={e => setDraftPreOrder(d => d ? { ...d, notes: e.target.value } : d)}
+                          style={{ ...inputStyle, fontSize: 13, padding: '10px 12px', minHeight: 44 }} />
+                      </div>
+                      <div style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600,
+                                    letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+                        Items
+                      </div>
+                      {Object.entries(draftPreOrder.items).filter(([, q]) => q > 0).length === 0 && (
+                        <div style={{ fontSize: 11, color: UXP.ink4 }}>
+                          Tap a dish in the picker below to add it.
+                        </div>
+                      )}
+                      {Object.entries(draftPreOrder.items).filter(([, q]) => q > 0).map(([rid, qty]) => {
+                        const d = dishById.get(rid)
+                        return (
+                          <div key={rid} style={{
+                            display: 'grid', gridTemplateColumns: '1fr 64px 32px',
+                            alignItems: 'center', gap: 6,
+                          }}>
+                            <span style={{ fontSize: 12, color: UXP.ink1,
+                                           overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                              {d?.name ?? '?'}
+                            </span>
+                            <input type="number" min={1} value={qty} inputMode="numeric"
+                              onChange={e => {
+                                const n = Math.max(0, Math.floor(Number(e.target.value)))
+                                setDraftPreOrder(d2 => d2 ? { ...d2, items: { ...d2.items, [rid]: n } } : d2)
+                              }}
+                              style={{ ...inputStyle, fontSize: 13, padding: '8px 8px',
+                                       textAlign: 'right' as const, minHeight: 40 }} />
+                            <button onClick={() => setDraftPreOrder(d2 => d2 ? { ...d2, items: { ...d2.items, [rid]: 0 } } : d2)}
+                                    style={{ background: 'none', border: 'none', color: UXP.ink3,
+                                             cursor: 'pointer', fontSize: 18, padding: 0, minWidth: 32, minHeight: 32 }}
+                                    aria-label="Remove item">×</button>
+                          </div>
+                        )
+                      })}
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button onClick={() => setDraftPreOrder(null)}
+                                style={{ ...secondaryBtn, flex: 1, fontSize: 13, padding: '10px 12px', minHeight: 44 }}>
+                          Cancel
+                        </button>
+                        <button onClick={createPreOrder}
+                                disabled={Object.values(draftPreOrder.items).every(q => q <= 0) || !draftPreOrder.party_size}
+                                style={{ ...primaryBtn, flex: 1, fontSize: 13, padding: '10px 12px', minHeight: 44,
+                                         opacity: Object.values(draftPreOrder.items).every(q => q <= 0) || !draftPreOrder.party_size ? 0.4 : 1 }}>
+                          Save pre-order
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setDraftPreOrder({ party_name: '', party_size: '', notes: '', items: {} })}
+                            style={{ ...secondaryBtn, width: '100%', fontSize: 13, padding: '10px 12px', minHeight: 44 }}>
+                      + Add pre-order
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* (c) SELECTED dishes — only shown when there's something to
+                show. Reuses every handler from the desktop pane. Per-row
+                tap targets bumped to ≥44px on the smallest dimension. */}
+            {selectedItems.length > 0 && (
+              <div style={{
+                background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+                borderRadius: UXP.r_lg, padding: 12, boxShadow: UXP.shadowSoft,
+              }}>
+                <div style={{
+                  fontSize: UXP.fsMicro, color: UXP.ink4, fontWeight: 700,
+                  letterSpacing: '0.06em', textTransform: 'uppercase' as const, marginBottom: 8,
+                }}>
+                  Production · {selectedItems.length} dish{selectedItems.length === 1 ? '' : 'es'}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {selectedItems.map(({ recipe_id, qty }) => {
+                    const d = dishById.get(recipe_id)
+                    if (!d) return null
+                    const sharePctStr = d.portions_per_cover != null
+                      ? String(Math.round(d.portions_per_cover * 1000) / 10) : ''
+                    return (
+                      <div key={recipe_id} style={{
+                        display: 'grid', gridTemplateColumns: '1fr 70px 60px 36px',
+                        alignItems: 'center', gap: 6,
+                        padding: '8px 10px', background: UXP.lavFill,
+                        border: `0.5px solid ${UXP.lavMid}`, borderRadius: UXP.r_md,
+                      }}>
+                        <div style={{ fontSize: 13, color: UXP.ink1,
+                                      overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                          {d.name}
+                        </div>
+                        <input type="number" min={0} step={1} inputMode="numeric"
+                          value={qty}
+                          aria-label={`Portions of ${d.name}`}
+                          onChange={e => {
+                            const cleaned = e.target.value.replace(/[^0-9.]/g, '')
+                            const n = cleaned === '' ? 0 : Number(cleaned)
+                            setSelected(s => ({ ...s, [recipe_id]: Number.isFinite(n) && n >= 0 ? n : 0 }))
+                          }}
+                          style={{ ...inputStyle, padding: '8px 8px', fontSize: 13,
+                                   textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, minHeight: 40 }} />
+                        <input type="number" min={0} max={100} step={0.1}
+                          defaultValue={sharePctStr}
+                          key={`pct-m-${recipe_id}-${sharePctStr}`}
+                          placeholder="—"
+                          aria-label={`Mix share % for ${d.name}`}
+                          onBlur={e => {
+                            const raw = e.target.value.trim()
+                            if (raw === '' && d.portions_per_cover == null) return
+                            if (raw === '') { saveDishShare(recipe_id, null); return }
+                            const pct = Number(raw)
+                            if (!Number.isFinite(pct) || pct < 0 || pct > 100) return
+                            const currentPct = d.portions_per_cover != null ? d.portions_per_cover * 100 : null
+                            if (currentPct != null && Math.abs(pct - currentPct) < 0.01) return
+                            saveDishShare(recipe_id, pct)
+                          }}
+                          style={{ ...inputStyle, padding: '8px 6px', fontSize: 12,
+                                   textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, minHeight: 40 }} />
+                        <button onClick={() => setSelected(s => { const c = { ...s }; delete c[recipe_id]; return c })}
+                                style={{ background: 'none', border: 'none', color: UXP.ink3,
+                                         cursor: 'pointer', fontSize: 18, padding: 0, minWidth: 36, minHeight: 36 }}
+                                aria-label="Remove">×</button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* (d) DISH PICKER */}
+            <div style={{
+              background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+              borderRadius: UXP.r_lg, padding: 12, boxShadow: UXP.shadowSoft,
+            }}>
+              <input type="text" placeholder="Search dishes…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                style={{ ...inputStyle, fontSize: 14, padding: '10px 12px', minHeight: 44, marginBottom: 10 }} />
+              <div style={{
+                display: 'flex', flexDirection: 'column' as const, gap: 6,
+                maxHeight: 420, overflowY: 'auto' as const,
+              }}>
+                {filteredDishes.map(d => {
+                  const inList = (selected[d.id] ?? 0) > 0
+                  return (
+                    <button
+                      key={d.id}
+                      onClick={() => {
+                        if (draftPreOrder) {
+                          setDraftPreOrder(d2 => d2 ? {
+                            ...d2,
+                            items: { ...d2.items, [d.id]: (d2.items[d.id] ?? 0) + 1 },
+                          } : d2)
+                        } else {
+                          setSelected(s => ({ ...s, [d.id]: (s[d.id] ?? 0) + 1 || 1 }))
+                        }
+                      }}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        padding: '12px 14px',     // Phase 1 spec: ~12px vertical
+                        minHeight: 48,            // ≥44px touch target
+                        background: inList ? UXP.lavFill : UXP.subtleBg,
+                        border: `0.5px solid ${inList ? UXP.lavMid : UXP.border}`,
+                        borderRadius: UXP.r_md, fontSize: 14, color: UXP.ink1,
+                        textAlign: 'left' as const, cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >
+                      <span style={{ overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                        {d.name}
+                      </span>
+                      <span style={{ marginLeft: 8, flexShrink: 0 }}>
+                        <CategoryPill type={d.type} />
+                      </span>
+                    </button>
+                  )
+                })}
+                {filteredDishes.length === 0 && (
+                  <div style={{ fontSize: 12, color: UXP.ink4, padding: '12px 4px' }}>
+                    No matches.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* (e) PREP PREVIEW — collapsible. Same tab strip, same
+                preview tables as desktop. Computed by aggregatePrepRequirements
+                via /api/inventory/prep-list; nothing computed client-side.
+                Honest-incomplete flags still surface inside the tables. */}
+            {selectedItems.length === 0 ? (
+              <div style={{
+                ...emptyCard, textAlign: 'center' as const, fontSize: 13, color: UXP.ink3,
+              }}>
+                Pick dishes above (or enter covers and tap Apply). The prep preview will appear here.
+              </div>
+            ) : (
+              <div style={{
+                background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+                borderRadius: UXP.r_lg, padding: 0, boxShadow: UXP.shadowSoft,
+                overflow: 'hidden' as const,
+              }}>
+                <button
+                  onClick={() => setMobilePreviewOpen(o => !o)}
+                  style={{
+                    width: '100%', display: 'flex', justifyContent: 'space-between',
+                    alignItems: 'center', padding: '12px 14px', background: 'transparent',
+                    border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                    minHeight: 48, textAlign: 'left' as const,
+                  }}
+                  aria-expanded={mobilePreviewOpen}
+                >
+                  <div>
+                    <div style={{
+                      fontSize: UXP.fsMicro, color: UXP.ink4, fontWeight: 700,
+                      letterSpacing: '0.06em', textTransform: 'uppercase' as const,
+                    }}>
+                      Prep preview
+                    </div>
+                    <div style={{ fontSize: 12, color: UXP.ink2, marginTop: 2 }}>
+                      {computing && 'Aggregating…'}
+                      {!computing && result && (
+                        <>
+                          {result.components.length} component{result.components.length === 1 ? '' : 's'}
+                          {' · '}{result.products.length} ingredient{result.products.length === 1 ? '' : 's'}
+                          {result.flags.length > 0 && <> · <span style={{ color: UXP.coral }}>{result.flags.length} flag{result.flags.length === 1 ? '' : 's'}</span></>}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 16, color: UXP.ink3 }}>
+                    {mobilePreviewOpen ? '−' : '+'}
+                  </span>
+                </button>
+
+                {mobilePreviewOpen && (
+                  <div style={{ padding: '0 12px 14px', borderTop: `0.5px solid ${UXP.borderSoft}` }}>
+                    <div style={{ display: 'flex', gap: 6, margin: '10px 0', alignItems: 'center', flexWrap: 'wrap' as const }}>
+                      <TabPill active={tab === 'components'} onClick={() => setTab('components')}
+                        label="Components" count={result?.components.length ?? 0} />
+                      <TabPill active={tab === 'ingredients'} onClick={() => setTab('ingredients')}
+                        label="Ingredients" count={result?.products.length ?? 0} />
+                      {result && result.flags.length > 0 && (
+                        <TabPill active={tab === 'flags'} onClick={() => setTab('flags')}
+                          label="Flags" count={result.flags.length} tone="coral" />
+                      )}
+                    </div>
+
+                    {tab === 'components' && (
+                      <>
+                        {result && previewComponents.length === 0 && (
+                          <Empty label={view === 'drinks' ? 'No drink sub-recipes in the selected dishes.' : 'None of the entered dishes use sub-recipes.'} />
+                        )}
+                        {result && previewComponents.length > 0 && (
+                          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
+                            {previewComponents.map(c => {
+                              const f = formatPrepQty(c.total_qty, c.unit)
+                              return (
+                                <button key={c.subrecipe_id}
+                                  onClick={() => setOpenModal({ line: previewComponentToSessionLine(c), session_line_id: null })}
+                                  style={{
+                                    display: 'grid', gridTemplateColumns: '1fr 100px',
+                                    alignItems: 'center', gap: 8,
+                                    padding: '10px 12px', background: UXP.subtleBg,
+                                    border: `0.5px solid ${UXP.border}`, borderRadius: UXP.r_md,
+                                    textAlign: 'left' as const, cursor: 'pointer', fontFamily: 'inherit',
+                                    minHeight: 48,
+                                  }}
+                                  title="Tap to view method & ingredients"
+                                >
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontSize: 13, color: UXP.ink1, fontWeight: 500,
+                                                  overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                                      {c.name ?? '—'}
+                                    </div>
+                                    {c.uncertain && (
+                                      <div style={{ fontSize: 10, color: UXP.coral, marginTop: 2 }} title={c.uncertain_reason ?? ''}>
+                                        {c.uncertain_reason ?? 'Set yield to roll up'}
+                                      </div>
+                                    )}
+                                    {!c.uncertain && c.source_recipes.length >= 2 && (
+                                      <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2 }}>
+                                        Shared across {c.source_recipes.length} dishes
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div style={{
+                                    textAlign: 'right' as const, fontSize: 14, fontWeight: 600,
+                                    color: UXP.ink1, fontVariantNumeric: 'tabular-nums' as const,
+                                  }}>
+                                    {c.uncertain ? '—' : `${f.qty} ${f.unit}`}
+                                  </div>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {tab === 'ingredients' && (
+                      <>
+                        {result && previewProducts.length === 0 && (
+                          <Empty label={view === 'drinks' ? 'No raw ingredients for drinks in the selected dishes yet.' : "No raw ingredients aggregated yet. If some components are flagged 'Set yield', their ingredients can't roll up until you fix that."} />
+                        )}
+                        {result && previewProducts.length > 0 && (
+                          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
+                            {previewProducts.map(p => {
+                              const f = formatPrepQty(p.total_qty, p.unit)
+                              return (
+                                <button key={p.product_id}
+                                  onClick={() => setOpenModal({ line: previewProductToSessionLine(p), session_line_id: null })}
+                                  style={{
+                                    display: 'grid', gridTemplateColumns: 'auto 1fr 100px',
+                                    alignItems: 'center', gap: 10,
+                                    padding: '10px 12px', background: UXP.subtleBg,
+                                    border: `0.5px solid ${UXP.border}`, borderRadius: UXP.r_md,
+                                    textAlign: 'left' as const, cursor: 'pointer', fontFamily: 'inherit',
+                                    minHeight: 48,
+                                  }}
+                                  title="Tap to add prep notes per recipe"
+                                >
+                                  <ProductThumb url={prepImages[p.product_id]?.image_url} size="md" />
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontSize: 13, color: UXP.ink1, fontWeight: 500,
+                                                  overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                                      {p.name ?? '—'}
+                                    </div>
+                                    {p.category && (
+                                      <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 1 }}>{p.category}</div>
+                                    )}
+                                  </div>
+                                  <div style={{
+                                    textAlign: 'right' as const, fontSize: 14, fontWeight: 600,
+                                    color: UXP.ink1, fontVariantNumeric: 'tabular-nums' as const,
+                                  }}>
+                                    {f.qty} {f.unit}
+                                  </div>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {tab === 'flags' && result && result.flags.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
+                        {result.flags.map((fl, i) => (
+                          <div key={i} style={{
+                            padding: '10px 12px', background: '#fef3e0',
+                            border: `0.5px solid ${UXP.coral}33`, borderRadius: UXP.r_md,
+                            fontSize: 12, color: UXP.ink2,
+                          }}>
+                            {fl.reason}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* (f) Bottom spacer — clears the sticky send bar so the last
+                row in the preview isn't hidden underneath it. Height =
+                bar (≈72px) + breathing room. The bar itself adds its own
+                safe-area-inset-bottom padding for the iOS home indicator. */}
+            <div style={{ height: 96 }} aria-hidden="true" />
+          </div>
+        )}
       </PageContainer>
+
+      {/* ──────────────────────────────────────────────────────────────
+          STICKY SEND BAR — mobile + create-mode only.
+          Same saveSession() handler as desktop's inline CTA. Renders
+          OUTSIDE PageContainer so it sits above page padding and clears
+          the MobileNav bottom bar (60px tall, fixed at bottom: 0).
+          Z.banner (50) sits below modals (200) and tooltips (300) so the
+          line-edit modal still overlays cleanly.
+          ────────────────────────────────────────────────────────────── */}
+      {bizId && !activeSession && !sessionLoading && !loadingDishes && dishes.length > 0 && isMobile && (
+        <div
+          style={{
+            position: 'fixed' as const,
+            left:     0,
+            right:    0,
+            bottom:   60,                        // sit above MobileNav (60px)
+            zIndex:   Z.banner,
+            background: UXP.cardBg,
+            borderTop: `0.5px solid ${UXP.border}`,
+            boxShadow: '0 -2px 10px rgba(58,53,80,0.06)',
+            // Clear the iOS home indicator. MobileNav owns its own safe-area
+            // padding so we don't double-count here — our bottom sits at
+            // 60px (the nav's top edge) and the nav handles the safe zone.
+            paddingTop:    8,
+            paddingBottom: 8,
+            paddingLeft:   12,
+            paddingRight:  12,
+            display: 'flex', alignItems: 'center', gap: 10,
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 11, color: UXP.ink3, fontWeight: 600 }}>
+              {selectedItems.length === 0 ? (
+                'Pick dishes to enable Save'
+              ) : (
+                <>
+                  {selectedItems.length} dish{selectedItems.length === 1 ? '' : 'es'}
+                  {result && ' · '}
+                  {result && `${result.components.length + result.products.length} prep line${(result.components.length + result.products.length) === 1 ? '' : 's'}`}
+                </>
+              )}
+            </div>
+            <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2, lineHeight: 1.3 }}>
+              Lines freeze at save — edits afterwards won&apos;t change them.
+            </div>
+          </div>
+          <button
+            onClick={saveSession}
+            disabled={saving || selectedItems.length === 0}
+            style={{
+              ...primaryBtn,
+              padding: '12px 18px', fontSize: 14, fontWeight: 600,
+              minHeight: 48,
+              opacity: (saving || selectedItems.length === 0) ? 0.5 : 1,
+              cursor: (saving || selectedItems.length === 0) ? 'not-allowed' as const : 'pointer' as const,
+              whiteSpace: 'nowrap' as const,
+            }}
+          >
+            {saving ? 'Saving…' : 'Save & start prep'}
+          </button>
+        </div>
+      )}
 
       {/* Line-detail modal — works in BOTH prep mode (session line tap)
           and create mode (preview row tap). Shows method + ingredient
