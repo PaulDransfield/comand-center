@@ -99,7 +99,11 @@ const nextConfig = {
       "object-src 'self' https://*.supabase.co",
       // Added *.ingest.de.sentry.io for EU Sentry error reporting
       "connect-src 'self' https://*.supabase.co https://api.anthropic.com https://api.stripe.com https://eu.i.posthog.com wss://*.supabase.co https://*.ingest.de.sentry.io",
-      "frame-ancestors 'none'",
+      // 'self' (not 'none') so the in-app <PdfModal> can iframe our own
+      // /api/integrations/fortnox/file + /api/inventory/invoice-pdf PDF
+      // endpoints. Still blocks external sites from embedding us
+      // (clickjacking protection retained).
+      "frame-ancestors 'self'",
       "form-action 'self'",
       "base-uri 'self'",
     ].join('; ')
@@ -109,7 +113,10 @@ const nextConfig = {
         source: '/(.*)',
         headers: [
           { key: 'Content-Security-Policy',   value: csp },
-          { key: 'X-Frame-Options',           value: 'DENY' },
+          // SAMEORIGIN (not DENY) so the in-app PDF viewer can iframe our
+          // own PDF endpoints. CSP frame-ancestors 'self' is the modern
+          // equivalent — keeping both for older-browser compat.
+          { key: 'X-Frame-Options',           value: 'SAMEORIGIN' },
           { key: 'X-Content-Type-Options',    value: 'nosniff' },
           { key: 'Referrer-Policy',           value: 'strict-origin-when-cross-origin' },
           { key: 'Permissions-Policy',        value: 'camera=(), microphone=(), geolocation=()' },
