@@ -195,11 +195,6 @@ function PrepListPageInner() {
   // reviewed once doesn't see it again.
   const [seedBannerDismissed, setSeedBannerDismissed] = useState(false)
 
-  // Mobile prep-mode: which line row has its inline panel expanded. Single-
-  // line accordion (open one → close the previous). Desktop still uses the
-  // modal so this state is mobile-only — desktop ignores it entirely.
-  const [expandedLineId, setExpandedLineId] = useState<string | null>(null)
-
   // selected = recipe_id → qty (covers/portions). 0 / missing = not in the list.
   const [selected, setSelected] = useState<Record<string, number>>({})
   // M117 — expected covers for auto-fill. Empty string when not in use.
@@ -1079,7 +1074,7 @@ function PrepListPageInner() {
                   return (
                     <button
                       key={t.key}
-                      onClick={() => { setTab(t.key); setExpandedLineId(null) }}
+                      onClick={() => setTab(t.key)}
                       style={{
                         flex: 1,
                         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -1121,7 +1116,6 @@ function PrepListPageInner() {
                     const f = formatPrepQty(line.total_qty, line.unit)
                     const checked = line.checked_at != null
                     const disabled = !!activeSession.completed_at
-                    const expanded = expandedLineId === line.id
                     return (
                       <div key={line.id}>
                         {/* Row */}
@@ -1131,7 +1125,7 @@ function PrepListPageInner() {
                           alignItems: 'center', gap: 0,
                           background: checked ? UXP.lavFill : UXP.cardBg,
                           border: `0.5px solid ${checked ? UXP.lavMid : UXP.border}`,
-                          borderRadius: expanded ? `${UXP.r_md}px ${UXP.r_md}px 0 0` : UXP.r_md,
+                          borderRadius: UXP.r_md,
                           boxShadow: UXP.shadowSoft,
                           transition: 'background 150ms ease',
                         }}>
@@ -1157,9 +1151,16 @@ function PrepListPageInner() {
                               {checked ? '✓' : ''}
                             </span>
                           </button>
-                          {/* Body — taps expand inline. */}
+                          {/* Body — taps open the LinePrepModal (same recipe
+                              card the desktop uses). Mobile previously did an
+                              inline expand with an "Open full recipe →" link
+                              that navigated to /inventory/recipes/[id] — that
+                              was the editor, which let chefs accidentally edit
+                              recipes on their phone. The modal is read-with-
+                              focused-edit-affordances only; the full editor
+                              is owner-territory. */}
                           <button
-                            onClick={() => setExpandedLineId(expanded ? null : line.id)}
+                            onClick={() => setOpenModal({ line, session_line_id: line.id })}
                             disabled={disabled}
                             style={{
                               display: 'block', textAlign: 'left' as const,
@@ -1189,7 +1190,7 @@ function PrepListPageInner() {
                               </div>
                             )}
                             <div style={{ fontSize: 11, color: UXP.lavText, marginTop: 4, fontWeight: 600 }}>
-                              {expanded ? 'Hide details ▴' : 'Method & ingredients ▾'}
+                              Tap for method & ingredients
                             </div>
                           </button>
                           {/* Qty — the heaviest element on the row, right-aligned. */}
@@ -1209,160 +1210,6 @@ function PrepListPageInner() {
                             )}
                           </div>
                         </div>
-                        {/* (4) INLINE EXPANDED PANEL — read-only. Live-read fields
-                            (method/notes/ingredients/uses/archived_at) ride the
-                            same enrichment that powers LinePrepModal. */}
-                        {expanded && (
-                          <div style={{
-                            background: UXP.subtleBg,
-                            border: `0.5px solid ${UXP.border}`,
-                            borderTopWidth: 0,
-                            borderRadius: `0 0 ${UXP.r_md}px ${UXP.r_md}px`,
-                            padding: 14,
-                            marginTop: -1,
-                          }}>
-                            {/* H3 archived banner — sub-recipe archived AFTER the
-                                session was saved. Surface clearly so the chef
-                                knows the qty is the committed snapshot. */}
-                            {line.kind === 'component' && line.meta?.archived_at && (
-                              <div style={{
-                                padding: '8px 10px', marginBottom: 12,
-                                background: '#fef3e0',
-                                border: `0.5px solid ${UXP.coral}`,
-                                borderRadius: UXP.r_sm,
-                                fontSize: 11, color: UXP.coral, lineHeight: 1.4,
-                              }}>
-                                This sub-recipe was archived after the session was saved.
-                                The frozen qty above is what the kitchen committed to.
-                              </div>
-                            )}
-                            {line.kind === 'component' && (
-                              <>
-                                {line.meta?.method && (
-                                  <div style={{ marginBottom: 12 }}>
-                                    <div style={{
-                                      fontSize: 9, color: UXP.ink4, fontWeight: 700,
-                                      letterSpacing: '0.06em', textTransform: 'uppercase' as const,
-                                      marginBottom: 4,
-                                    }}>
-                                      Method
-                                    </div>
-                                    <div style={{
-                                      fontSize: 13, color: UXP.ink2, lineHeight: 1.5,
-                                      whiteSpace: 'pre-wrap' as const,
-                                    }}>
-                                      {line.meta.method}
-                                    </div>
-                                  </div>
-                                )}
-                                {!line.meta?.method && line.meta?.notes && (
-                                  <div style={{ marginBottom: 12 }}>
-                                    <div style={{
-                                      fontSize: 9, color: UXP.ink4, fontWeight: 700,
-                                      letterSpacing: '0.06em', textTransform: 'uppercase' as const,
-                                      marginBottom: 4,
-                                    }}>
-                                      Notes
-                                    </div>
-                                    <div style={{
-                                      fontSize: 13, color: UXP.ink2, lineHeight: 1.5,
-                                      whiteSpace: 'pre-wrap' as const,
-                                    }}>
-                                      {line.meta.notes}
-                                    </div>
-                                  </div>
-                                )}
-                                {line.meta?.ingredients && line.meta.ingredients.length > 0 && (
-                                  <div style={{ marginBottom: 12 }}>
-                                    <div style={{
-                                      fontSize: 9, color: UXP.ink4, fontWeight: 700,
-                                      letterSpacing: '0.06em', textTransform: 'uppercase' as const,
-                                      marginBottom: 4,
-                                    }}>
-                                      Ingredients
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
-                                      {line.meta.ingredients.map(ing => (
-                                        <div key={ing.ingredient_id} style={{
-                                          display: 'flex', justifyContent: 'space-between', gap: 10,
-                                          fontSize: 13, color: UXP.ink2,
-                                        }}>
-                                          <span style={{ overflowWrap: 'break-word' as const, wordBreak: 'break-word' as const }}>
-                                            {ing.product_name ?? '—'}
-                                            {ing.notes && (
-                                              <span style={{ display: 'block', fontSize: 11, color: UXP.ink4, marginTop: 1 }}>
-                                                {ing.notes}
-                                              </span>
-                                            )}
-                                          </span>
-                                          <span style={{
-                                            flexShrink: 0,
-                                            fontVariantNumeric: 'tabular-nums' as const,
-                                            whiteSpace: 'nowrap' as const,
-                                            fontWeight: 500,
-                                          }}>
-                                            {ing.quantity != null ? `${ing.quantity} ${ing.unit ?? ''}`.trim() : ''}
-                                          </span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                                <a
-                                  href={`/inventory/recipes/${line.entity_id}`}
-                                  style={{
-                                    display: 'inline-block',
-                                    fontSize: 12, fontWeight: 600, color: UXP.lavText,
-                                    textDecoration: 'none' as const,
-                                  }}
-                                >
-                                  Open full recipe →
-                                </a>
-                              </>
-                            )}
-                            {line.kind === 'product' && line.meta?.uses && line.meta.uses.length > 0 && (
-                              <div>
-                                <div style={{
-                                  fontSize: 9, color: UXP.ink4, fontWeight: 700,
-                                  letterSpacing: '0.06em', textTransform: 'uppercase' as const,
-                                  marginBottom: 4,
-                                }}>
-                                  Used in
-                                </div>
-                                <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
-                                  {line.meta.uses.map(u => (
-                                    <div key={u.ingredient_id} style={{
-                                      display: 'flex', justifyContent: 'space-between', gap: 10,
-                                      fontSize: 13, color: UXP.ink2,
-                                    }}>
-                                      <span style={{ overflowWrap: 'break-word' as const, wordBreak: 'break-word' as const }}>
-                                        {u.recipe_name ?? '—'}
-                                        {u.notes && (
-                                          <span style={{ display: 'block', fontSize: 11, color: UXP.ink4, marginTop: 1 }}>
-                                            {u.notes}
-                                          </span>
-                                        )}
-                                      </span>
-                                      <span style={{
-                                        flexShrink: 0,
-                                        fontVariantNumeric: 'tabular-nums' as const,
-                                        whiteSpace: 'nowrap' as const,
-                                        fontWeight: 500,
-                                      }}>
-                                        {u.quantity != null ? `${u.quantity} ${u.unit ?? ''}`.trim() : ''}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {line.kind === 'product' && (!line.meta?.uses || line.meta.uses.length === 0) && (
-                              <div style={{ fontSize: 12, color: UXP.ink4 }}>
-                                No per-recipe prep notes attached to this ingredient.
-                              </div>
-                            )}
-                          </div>
-                        )}
                       </div>
                     )
                   })}
@@ -2803,6 +2650,35 @@ function LinePrepModal({
     ? line.meta.method
     : (line.meta?.notes && line.meta.notes.trim() ? line.meta.notes : null)
 
+  // Article thumbnails — fetched in one batch when the modal opens.
+  // Keeps the modal self-sufficient (doesn't depend on parent's preview
+  // image map, which only covers create-mode preview products). Covers
+  // the product line's own thumbnail (kind='product') AND every sub-
+  // recipe ingredient row (kind='component'). Owner-uniform: same
+  // <ProductThumb> rendered everywhere else in the app.
+  const [images, setImages] = useState<Record<string, { image_url: string }>>({})
+  useEffect(() => {
+    const ids = new Set<string>()
+    if (line.kind === 'product' && line.entity_id) ids.add(line.entity_id)
+    for (const ing of line.meta?.ingredients ?? []) {
+      if (ing.product_id) ids.add(ing.product_id)
+    }
+    if (ids.size === 0) { setImages({}); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch('/api/inventory/supplier-article/batch', {
+          method: 'POST', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ product_ids: Array.from(ids) }),
+        })
+        const j = await r.json().catch(() => ({}))
+        if (!cancelled) setImages(j.by_product ?? {})
+      } catch { if (!cancelled) setImages({}) }
+    })()
+    return () => { cancelled = true }
+  }, [line.kind, line.entity_id, line.meta?.ingredients])
+
   return (
     <div
       role="dialog"
@@ -2817,37 +2693,48 @@ function LinePrepModal({
       <div
         onClick={e => e.stopPropagation()}
         style={{
-          width: 'min(600px, 100%)', maxHeight: '90vh', overflowY: 'auto' as const,
+          width: 'min(640px, 100%)', maxHeight: '92vh', overflowY: 'auto' as const,
           background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
           borderRadius: 10, padding: 20,
           boxShadow: '0 12px 32px rgba(58,53,80,0.20)',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: UXP.ink1 }}>
-              {line.name_snapshot}
-            </h2>
-            <div style={{ fontSize: 11, color: UXP.ink3, marginTop: 4 }}>
-              {line.kind === 'component' ? 'Component to prep' : 'Ingredient to pull'}
-              {!line.uncertain && (
-                <span style={{ marginLeft: 8, color: UXP.ink1, fontWeight: 600 }}>
-                  {(() => {
-                    const f = formatPrepQty(line.total_qty, line.unit)
-                    return `${f.qty} ${f.unit}`
-                  })()}
-                </span>
-              )}
-            </div>
-            {line.uncertain && (
-              <div style={{ fontSize: 11, color: UXP.coral, marginTop: 4 }}>
-                {line.uncertain_reason}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', minWidth: 0 }}>
+            {/* Product thumbnail — only for kind='product' lines (the
+                actual article being pulled). Sub-recipe components don't
+                have their own article image; we show per-ingredient
+                thumbs below instead. */}
+            {line.kind === 'product' && (
+              <div style={{ flexShrink: 0 }}>
+                <ProductThumb url={images[line.entity_id]?.image_url} size="md" />
               </div>
             )}
+            <div style={{ minWidth: 0 }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: UXP.ink1 }}>
+                {line.name_snapshot}
+              </h2>
+              <div style={{ fontSize: 11, color: UXP.ink3, marginTop: 4 }}>
+                {line.kind === 'component' ? 'Component to prep' : 'Ingredient to pull'}
+                {!line.uncertain && (
+                  <span style={{ marginLeft: 8, color: UXP.ink1, fontWeight: 600 }}>
+                    {(() => {
+                      const f = formatPrepQty(line.total_qty, line.unit)
+                      return `${f.qty} ${f.unit}`
+                    })()}
+                  </span>
+                )}
+              </div>
+              {line.uncertain && (
+                <div style={{ fontSize: 11, color: UXP.coral, marginTop: 4 }}>
+                  {line.uncertain_reason}
+                </div>
+              )}
+            </div>
           </div>
           <button onClick={onClose}
             aria-label="Close"
-            style={{ background: 'none', border: 'none', color: UXP.ink3, cursor: 'pointer', fontSize: 22, padding: 0, lineHeight: 1 }}>
+            style={{ background: 'none', border: 'none', color: UXP.ink3, cursor: 'pointer', fontSize: 22, padding: 0, lineHeight: 1, flexShrink: 0 }}>
             ×
           </button>
         </div>
@@ -2870,7 +2757,7 @@ function LinePrepModal({
         {line.kind === 'component' && (
           <>
             <div style={{ marginTop: 8 }}>
-              <div style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+              <div style={{ fontSize: 12, color: UXP.ink3, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 8 }}>
                 Method
               </div>
               <InlineMethodEditor
@@ -2879,18 +2766,18 @@ function LinePrepModal({
                 onSaved={onMethodSaved}
               />
               {!line.meta?.method && line.meta?.notes && (
-                <div style={{ fontSize: 10, color: UXP.ink4, fontStyle: 'italic' as const, marginTop: 4 }}>
+                <div style={{ fontSize: 11, color: UXP.ink4, fontStyle: 'italic' as const, marginTop: 6 }}>
                   Shown from recipe&apos;s Notes — edit above to save as the official Method.
                 </div>
               )}
             </div>
 
-            <div style={{ marginTop: 16 }}>
-              <div style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+            <div style={{ marginTop: 20 }}>
+              <div style={{ fontSize: 12, color: UXP.ink3, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 8 }}>
                 Ingredients
               </div>
               {(line.meta?.ingredients ?? []).length === 0 && (
-                <div style={{ fontSize: 11, color: UXP.ink4, fontStyle: 'italic' as const }}>
+                <div style={{ fontSize: 12, color: UXP.ink4, fontStyle: 'italic' as const }}>
                   No ingredients recorded on this recipe yet.
                 </div>
               )}
@@ -2899,6 +2786,7 @@ function LinePrepModal({
                   key={ing.ingredient_id}
                   recipeId={line.entity_id}
                   ing={ing}
+                  imageUrl={ing.product_id ? images[ing.product_id]?.image_url : undefined}
                   onSaved={(v) => onIngredientNoteSaved(ing.ingredient_id, v)}
                 />
               ))}
@@ -2939,10 +2827,11 @@ function LinePrepModal({
 }
 
 function SubIngredientRow({
-  recipeId, ing, onSaved,
+  recipeId, ing, imageUrl, onSaved,
 }: {
   recipeId: string
   ing: SubIngredient
+  imageUrl?: string
   onSaved: (v: string | null) => void
 }) {
   const [draft, setDraft] = useState(ing.notes ?? '')
@@ -2973,16 +2862,31 @@ function SubIngredientRow({
     }
   }, [draft, ing.notes, recipeId, ing.ingredient_id, onSaved])
 
+  // Thumbnail + name on row 1, qty + note input on row 2. The grid
+  // mirrors the article presentation used elsewhere in the app — thumb
+  // is always 'sm' (32px) for inline lists; <ProductThumb> renders the
+  // generic package placeholder when imageUrl is missing.
   return (
     <div style={{
-      display: 'grid', gridTemplateColumns: '160px 80px 1fr',
-      alignItems: 'center', gap: 8,
-      padding: '6px 0', borderTop: `0.5px solid ${UXP.border}`,
+      display: 'grid',
+      gridTemplateColumns: '40px 1fr auto',
+      alignItems: 'center', columnGap: 10, rowGap: 6,
+      padding: '10px 0', borderTop: `0.5px solid ${UXP.border}`,
     }}>
-      <span style={{ fontSize: 12, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+      <div style={{ gridRow: 'span 2', alignSelf: 'flex-start', paddingTop: 2 }}>
+        <ProductThumb url={imageUrl} size="sm" fallback="package" />
+      </div>
+      <span style={{
+        fontSize: 13, color: UXP.ink1, fontWeight: 500,
+        overflowWrap: 'break-word' as const, wordBreak: 'break-word' as const,
+        lineHeight: 1.35,
+      }}>
         {ing.product_name ?? '—'}
       </span>
-      <span style={{ fontSize: 11, color: UXP.ink3, fontVariantNumeric: 'tabular-nums' as const }}>
+      <span style={{
+        fontSize: 12, color: UXP.ink3, fontVariantNumeric: 'tabular-nums' as const,
+        whiteSpace: 'nowrap' as const, fontWeight: 600,
+      }}>
         {ing.quantity} {ing.unit ?? ''}
       </span>
       <input
@@ -2990,13 +2894,14 @@ function SubIngredientRow({
         value={draft}
         onChange={e => setDraft(e.target.value)}
         onBlur={save}
-        placeholder="e.g. juice & zest"
+        placeholder="prep note — e.g. juice & zest"
         disabled={saving}
         style={{
-          width: '100%', boxSizing: 'border-box', padding: '4px 8px',
-          fontSize: 11, color: UXP.ink2,
+          gridColumn: '2 / -1',
+          width: '100%', boxSizing: 'border-box', padding: '6px 10px',
+          fontSize: 12, color: UXP.ink2,
           background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
-          borderRadius: 4, fontFamily: 'inherit',
+          borderRadius: 5, fontFamily: 'inherit',
         }}
       />
     </div>
@@ -3127,6 +3032,11 @@ function InlineMethodEditor({
   // method doesn't suffer silent truncation on save.
   const METHOD_MAX = 20000
   const remaining  = METHOD_MAX - draft.length
+  // Method is the most-read content on this modal — kitchens scan it
+  // mid-service. Default to 8 rows so a short method is fully visible
+  // without scrolling; grow up to 20 rows for long methods. Bigger font
+  // (14px) + roomier line-height (1.7) for tap-to-read legibility on
+  // a phone propped against the prep counter.
   return (
     <div style={{ marginTop: 6 }} onClick={e => e.stopPropagation()}>
       <textarea
@@ -3134,14 +3044,14 @@ function InlineMethodEditor({
         onChange={e => setDraft(e.target.value.slice(0, METHOD_MAX))}
         onBlur={save}
         placeholder="Method — write how to make this. Saves automatically."
-        rows={Math.max(2, Math.min(8, draft.split('\n').length + 1))}
+        rows={Math.max(8, Math.min(20, draft.split('\n').length + 2))}
         disabled={saving}
         maxLength={METHOD_MAX}
         style={{
-          width: '100%', boxSizing: 'border-box', padding: '6px 10px',
-          fontSize: 11, color: UXP.ink2, lineHeight: 1.5,
+          width: '100%', boxSizing: 'border-box', padding: '12px 14px',
+          fontSize: 14, color: UXP.ink2, lineHeight: 1.7,
           background: UXP.subtleBg, border: `0.5px solid ${UXP.border}`,
-          borderRadius: 5, fontFamily: 'inherit', resize: 'vertical' as const,
+          borderRadius: 6, fontFamily: 'inherit', resize: 'vertical' as const,
           textDecoration: 'none' as const,
         }}
       />
