@@ -195,11 +195,6 @@ function PrepListPageInner() {
   // reviewed once doesn't see it again.
   const [seedBannerDismissed, setSeedBannerDismissed] = useState(false)
 
-  // Mobile prep-mode: which line row has its inline panel expanded. Single-
-  // line accordion (open one → close the previous). Desktop still uses the
-  // modal so this state is mobile-only — desktop ignores it entirely.
-  const [expandedLineId, setExpandedLineId] = useState<string | null>(null)
-
   // selected = recipe_id → qty (covers/portions). 0 / missing = not in the list.
   const [selected, setSelected] = useState<Record<string, number>>({})
   // M117 — expected covers for auto-fill. Empty string when not in use.
@@ -1079,7 +1074,7 @@ function PrepListPageInner() {
                   return (
                     <button
                       key={t.key}
-                      onClick={() => { setTab(t.key); setExpandedLineId(null) }}
+                      onClick={() => setTab(t.key)}
                       style={{
                         flex: 1,
                         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -1121,7 +1116,6 @@ function PrepListPageInner() {
                     const f = formatPrepQty(line.total_qty, line.unit)
                     const checked = line.checked_at != null
                     const disabled = !!activeSession.completed_at
-                    const expanded = expandedLineId === line.id
                     return (
                       <div key={line.id}>
                         {/* Row */}
@@ -1131,7 +1125,7 @@ function PrepListPageInner() {
                           alignItems: 'center', gap: 0,
                           background: checked ? UXP.lavFill : UXP.cardBg,
                           border: `0.5px solid ${checked ? UXP.lavMid : UXP.border}`,
-                          borderRadius: expanded ? `${UXP.r_md}px ${UXP.r_md}px 0 0` : UXP.r_md,
+                          borderRadius: UXP.r_md,
                           boxShadow: UXP.shadowSoft,
                           transition: 'background 150ms ease',
                         }}>
@@ -1157,9 +1151,16 @@ function PrepListPageInner() {
                               {checked ? '✓' : ''}
                             </span>
                           </button>
-                          {/* Body — taps expand inline. */}
+                          {/* Body — taps open the LinePrepModal (same recipe
+                              card the desktop uses). Mobile previously did an
+                              inline expand with an "Open full recipe →" link
+                              that navigated to /inventory/recipes/[id] — that
+                              was the editor, which let chefs accidentally edit
+                              recipes on their phone. The modal is read-with-
+                              focused-edit-affordances only; the full editor
+                              is owner-territory. */}
                           <button
-                            onClick={() => setExpandedLineId(expanded ? null : line.id)}
+                            onClick={() => setOpenModal({ line, session_line_id: line.id })}
                             disabled={disabled}
                             style={{
                               display: 'block', textAlign: 'left' as const,
@@ -1189,7 +1190,7 @@ function PrepListPageInner() {
                               </div>
                             )}
                             <div style={{ fontSize: 11, color: UXP.lavText, marginTop: 4, fontWeight: 600 }}>
-                              {expanded ? 'Hide details ▴' : 'Method & ingredients ▾'}
+                              Tap for method & ingredients
                             </div>
                           </button>
                           {/* Qty — the heaviest element on the row, right-aligned. */}
@@ -1209,160 +1210,6 @@ function PrepListPageInner() {
                             )}
                           </div>
                         </div>
-                        {/* (4) INLINE EXPANDED PANEL — read-only. Live-read fields
-                            (method/notes/ingredients/uses/archived_at) ride the
-                            same enrichment that powers LinePrepModal. */}
-                        {expanded && (
-                          <div style={{
-                            background: UXP.subtleBg,
-                            border: `0.5px solid ${UXP.border}`,
-                            borderTopWidth: 0,
-                            borderRadius: `0 0 ${UXP.r_md}px ${UXP.r_md}px`,
-                            padding: 14,
-                            marginTop: -1,
-                          }}>
-                            {/* H3 archived banner — sub-recipe archived AFTER the
-                                session was saved. Surface clearly so the chef
-                                knows the qty is the committed snapshot. */}
-                            {line.kind === 'component' && line.meta?.archived_at && (
-                              <div style={{
-                                padding: '8px 10px', marginBottom: 12,
-                                background: '#fef3e0',
-                                border: `0.5px solid ${UXP.coral}`,
-                                borderRadius: UXP.r_sm,
-                                fontSize: 11, color: UXP.coral, lineHeight: 1.4,
-                              }}>
-                                This sub-recipe was archived after the session was saved.
-                                The frozen qty above is what the kitchen committed to.
-                              </div>
-                            )}
-                            {line.kind === 'component' && (
-                              <>
-                                {line.meta?.method && (
-                                  <div style={{ marginBottom: 12 }}>
-                                    <div style={{
-                                      fontSize: 9, color: UXP.ink4, fontWeight: 700,
-                                      letterSpacing: '0.06em', textTransform: 'uppercase' as const,
-                                      marginBottom: 4,
-                                    }}>
-                                      Method
-                                    </div>
-                                    <div style={{
-                                      fontSize: 13, color: UXP.ink2, lineHeight: 1.5,
-                                      whiteSpace: 'pre-wrap' as const,
-                                    }}>
-                                      {line.meta.method}
-                                    </div>
-                                  </div>
-                                )}
-                                {!line.meta?.method && line.meta?.notes && (
-                                  <div style={{ marginBottom: 12 }}>
-                                    <div style={{
-                                      fontSize: 9, color: UXP.ink4, fontWeight: 700,
-                                      letterSpacing: '0.06em', textTransform: 'uppercase' as const,
-                                      marginBottom: 4,
-                                    }}>
-                                      Notes
-                                    </div>
-                                    <div style={{
-                                      fontSize: 13, color: UXP.ink2, lineHeight: 1.5,
-                                      whiteSpace: 'pre-wrap' as const,
-                                    }}>
-                                      {line.meta.notes}
-                                    </div>
-                                  </div>
-                                )}
-                                {line.meta?.ingredients && line.meta.ingredients.length > 0 && (
-                                  <div style={{ marginBottom: 12 }}>
-                                    <div style={{
-                                      fontSize: 9, color: UXP.ink4, fontWeight: 700,
-                                      letterSpacing: '0.06em', textTransform: 'uppercase' as const,
-                                      marginBottom: 4,
-                                    }}>
-                                      Ingredients
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
-                                      {line.meta.ingredients.map(ing => (
-                                        <div key={ing.ingredient_id} style={{
-                                          display: 'flex', justifyContent: 'space-between', gap: 10,
-                                          fontSize: 13, color: UXP.ink2,
-                                        }}>
-                                          <span style={{ overflowWrap: 'break-word' as const, wordBreak: 'break-word' as const }}>
-                                            {ing.product_name ?? '—'}
-                                            {ing.notes && (
-                                              <span style={{ display: 'block', fontSize: 11, color: UXP.ink4, marginTop: 1 }}>
-                                                {ing.notes}
-                                              </span>
-                                            )}
-                                          </span>
-                                          <span style={{
-                                            flexShrink: 0,
-                                            fontVariantNumeric: 'tabular-nums' as const,
-                                            whiteSpace: 'nowrap' as const,
-                                            fontWeight: 500,
-                                          }}>
-                                            {ing.quantity != null ? `${ing.quantity} ${ing.unit ?? ''}`.trim() : ''}
-                                          </span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                                <a
-                                  href={`/inventory/recipes/${line.entity_id}`}
-                                  style={{
-                                    display: 'inline-block',
-                                    fontSize: 12, fontWeight: 600, color: UXP.lavText,
-                                    textDecoration: 'none' as const,
-                                  }}
-                                >
-                                  Open full recipe →
-                                </a>
-                              </>
-                            )}
-                            {line.kind === 'product' && line.meta?.uses && line.meta.uses.length > 0 && (
-                              <div>
-                                <div style={{
-                                  fontSize: 9, color: UXP.ink4, fontWeight: 700,
-                                  letterSpacing: '0.06em', textTransform: 'uppercase' as const,
-                                  marginBottom: 4,
-                                }}>
-                                  Used in
-                                </div>
-                                <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
-                                  {line.meta.uses.map(u => (
-                                    <div key={u.ingredient_id} style={{
-                                      display: 'flex', justifyContent: 'space-between', gap: 10,
-                                      fontSize: 13, color: UXP.ink2,
-                                    }}>
-                                      <span style={{ overflowWrap: 'break-word' as const, wordBreak: 'break-word' as const }}>
-                                        {u.recipe_name ?? '—'}
-                                        {u.notes && (
-                                          <span style={{ display: 'block', fontSize: 11, color: UXP.ink4, marginTop: 1 }}>
-                                            {u.notes}
-                                          </span>
-                                        )}
-                                      </span>
-                                      <span style={{
-                                        flexShrink: 0,
-                                        fontVariantNumeric: 'tabular-nums' as const,
-                                        whiteSpace: 'nowrap' as const,
-                                        fontWeight: 500,
-                                      }}>
-                                        {u.quantity != null ? `${u.quantity} ${u.unit ?? ''}`.trim() : ''}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {line.kind === 'product' && (!line.meta?.uses || line.meta.uses.length === 0) && (
-                              <div style={{ fontSize: 12, color: UXP.ink4 }}>
-                                No per-recipe prep notes attached to this ingredient.
-                              </div>
-                            )}
-                          </div>
-                        )}
                       </div>
                     )
                   })}
