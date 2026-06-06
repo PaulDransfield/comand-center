@@ -44,9 +44,7 @@ export async function GET(req: NextRequest) {
 
   const db = createAdminClient()
 
-  // Cache-first: look up the local fortnox_supplier_invoices row. The cron
-  // syncs this table including file_id + has_pdf, so we usually know the
-  // FileId (or its absence) without calling Fortnox.
+  // Cache-first: look up the local fortnox_supplier_invoices row.
   const { data: cached } = await db.from('fortnox_supplier_invoices')
     .select('file_id, has_pdf, supplier_name')
     .eq('business_id', businessId)
@@ -56,8 +54,12 @@ export async function GET(req: NextRequest) {
   let fileId: string | null = cached?.file_id ?? null
   let supplierName: string | null = cached?.supplier_name ?? null
 
-  // Cache miss OR file_id never fetched — call Fortnox to resolve.
-  if (cached == null || (cached.has_pdf !== false && !fileId)) {
+  // Re-check Fortnox whenever we don't have a confirmed file_id. Previously
+  // we trusted has_pdf=false from the cache, but customers were stuck on a
+  // stale "no PDF" answer when the supplier uploaded the PDF after our last
+  // sync. Cost is one extra Fortnox API call per click on a no-PDF row —
+  // acceptable for interactive use.
+  if (!fileId) {
     let accessToken: string | null
     try {
       accessToken = await getFreshFortnoxAccessToken(db, auth.orgId, businessId)
@@ -88,6 +90,15 @@ export async function GET(req: NextRequest) {
     fileId = j?.SupplierInvoice?.SupplierInvoiceFileConnections?.[0]?.FileId
           ?? j?.SupplierInvoiceFileConnections?.[0]?.FileId
           ?? null
+    // Write back to the local cache so the next click reflects the latest
+    // Fortnox truth without a second API hop. has_pdf = (fileId != null).
+    if (cached) {
+      void db.from('fortnox_supplier_invoices').update({
+        file_id:            fileId,
+        has_pdf:            fileId != null,
+        file_id_fetched_at: new Date().toISOString(),
+      }).eq('business_id', businessId).eq('given_number', invoiceNumber)
+    }
   }
 
   if (!fileId) {
@@ -159,25 +170,33 @@ export async function GET(req: NextRequest) {
 // new tab so we don't want to dump JSON in the user's face.
 function noPdfResponse(invoiceNumber: string, supplierName: string | null, message: string): NextResponse {
   const supplier = supplierName ? supplierName : 'supplier'
-  // Page renders inside the in-app <PdfModal>'s iframe. The parent
-  // modal already provides Close + Esc-to-close, so we don't add a
-  // button (the "Close this tab" pattern is misleading inside an iframe
-  // where window.close() is a no-op).
+  // Page renders inside the in-app <PdfModal>'s iframe. Strong visual
+  // treatment so it's unmistakably a TERMINAL state ("there is no PDF
+  // for this invoice") rather than something the user is meant to wait
+  // through. Big icon, clear heading, no spinner-like patterns.
   const html = `<!DOCTYPE html><html lang="en"><head>
   <meta charset="utf-8"><title>No PDF · Invoice ${invoiceNumber}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background: #f8f9fa; color: #1a1a1a; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-    .card { max-width: 480px; background: #fff; border: 0.5px solid #e5e5e5; border-radius: 12px; padding: 32px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
-    h1 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
-    .label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 4px; }
-    .number { font-size: 14px; font-weight: 500; margin-bottom: 16px; font-variant-numeric: tabular-nums; }
-    p { font-size: 13px; line-height: 1.55; color: #444; margin: 0; }
+    :root { --lav-fill: #ece8f8; --lav-mid: #c4b8ec; --lav-deep: #7d6cc9; --ink1: #1a1a1a; --ink3: #6e6e6e; --ink4: #999; --border: #e5e5e5; }
+    body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background: #fafafa; color: var(--ink1); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .card { max-width: 520px; background: #fff; border: 0.5px solid var(--border); border-radius: 12px; padding: 32px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); text-align: center; }
+    .icon { width: 56px; height: 56px; margin: 0 auto 16px; border-radius: 50%; background: var(--lav-fill); display: flex; align-items: center; justify-content: center; color: var(--lav-deep); font-size: 28px; line-height: 1; font-weight: 600; }
+    h1 { font-size: 18px; font-weight: 600; margin: 0 0 6px; color: var(--ink1); }
+    .sub { font-size: 11px; color: var(--ink4); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 18px; }
+    .meta { background: var(--lav-fill); border-radius: 6px; padding: 10px 14px; margin: 0 0 18px; text-align: left; }
+    .meta-row { font-size: 11px; color: var(--ink3); margin-bottom: 2px; }
+    .meta-row strong { color: var(--ink1); font-weight: 600; }
+    p { font-size: 13px; line-height: 1.55; color: var(--ink3); margin: 0; text-align: left; }
   </style></head><body>
   <div class="card">
-    <h1>PDF not available</h1>
-    <div class="label">Invoice from ${escapeHtml(supplier)}</div>
-    <div class="number">${escapeHtml(invoiceNumber)}</div>
+    <div class="icon" aria-hidden="true">!</div>
+    <h1>This invoice has no PDF</h1>
+    <div class="sub">Final state — nothing more will load</div>
+    <div class="meta">
+      <div class="meta-row"><strong>Supplier:</strong> ${escapeHtml(supplier)}</div>
+      <div class="meta-row"><strong>Invoice number:</strong> ${escapeHtml(invoiceNumber)}</div>
+    </div>
     <p>${escapeHtml(message)}</p>
   </div>
   </body></html>`
