@@ -90,6 +90,28 @@ export async function GET(req: NextRequest) {
     fileId = j?.SupplierInvoice?.SupplierInvoiceFileConnections?.[0]?.FileId
           ?? j?.SupplierInvoiceFileConnections?.[0]?.FileId
           ?? null
+    // Fortnox detail endpoint INCONSISTENTLY embeds FileConnections (often
+    // returns empty even when a file exists). Authoritative source is the
+    // dedicated /supplierinvoicefileconnections/ endpoint — call it when
+    // the detail endpoint says no file. Mirrors lib/inventory/
+    // pdf-extraction-worker.ts. Without this, ~99% of supplier-sync rows
+    // get logged as "no PDF" because we never actually asked Fortnox right.
+    if (!fileId) {
+      try {
+        const fcRes = await fortnoxFetch(
+          `https://api.fortnox.se/3/supplierinvoicefileconnections/?supplierinvoicenumber=${encodeURIComponent(invoiceNumber)}`,
+          accessToken,
+          { accept: 'application/json' },
+        )
+        if (fcRes.ok) {
+          const fcJson = await fcRes.json().catch(() => ({}))
+          const conns = fcJson?.SupplierInvoiceFileConnections ?? []
+          if (Array.isArray(conns) && conns.length > 0 && conns[0]?.FileId) {
+            fileId = String(conns[0].FileId)
+          }
+        }
+      } catch { /* swallow — non-fatal, just means we'll show no_pdf */ }
+    }
     // Write back to the local cache so the next click reflects the latest
     // Fortnox truth without a second API hop. has_pdf = (fileId != null).
     if (cached) {
