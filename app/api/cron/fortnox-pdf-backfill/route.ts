@@ -79,13 +79,44 @@ async function run(req: NextRequest): Promise<NextResponse> {
   for (const integ of integs ?? []) {
     if (Date.now() - startedAt > DEADLINE_MS) {
       // Self-chain so the next chunk continues without waiting for the next scheduled tick.
-      void fetch(`${req.nextUrl.origin}/api/cron/fortnox-pdf-backfill?resume=${resumes + 1}`, {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${process.env.CRON_SECRET ?? ''}` },
-      })
-      log.info('fortnox_pdf_backfill self-chained', { route: 'cron/fortnox-pdf-backfill', resumes: resumes + 1, processed: totalProcessed })
+      //
+      // CRITICAL: do NOT `void fetch(...)` fire-and-forget here. Vercel
+      // freezes the originating lambda the moment this handler returns,
+      // and the outbound TCP handshake may not complete before freeze —
+      // so the destination lambda never receives the request and the
+      // chain dies after one hop. Pattern surfaced 2026-06-06: every
+      // manual trigger reported `resumes: 1`, never higher.
+      //
+      // Instead: AWAIT a fetch with a short AbortSignal.timeout. Vercel
+      // keeps the lambda alive for the await. The destination lambda
+      // takes ~50-200ms to accept the connection and start running, then
+      // continues independently of whether we abort. We treat AbortError
+      // as success — the destination is already running by the time
+      // 3 seconds have elapsed.
+      const chainUrl = `${req.nextUrl.origin}/api/cron/fortnox-pdf-backfill?resume=${resumes + 1}`
+      let chainDispatched = false
+      try {
+        await fetch(chainUrl, {
+          method:  'GET',
+          headers: { 'Authorization': `Bearer ${process.env.CRON_SECRET ?? ''}` },
+          signal:  AbortSignal.timeout(3000),
+        })
+        chainDispatched = true
+      } catch (e: any) {
+        // AbortError is expected — the destination lambda is running, we
+        // just hung up early to free the source. Other errors (DNS,
+        // connection refused) are real failures; chain dies and the
+        // next scheduled tick will pick it up.
+        chainDispatched = e?.name === 'AbortError' || e?.name === 'TimeoutError'
+        if (!chainDispatched) {
+          log.warn('fortnox_pdf_backfill self-chain dispatch failed', {
+            route: 'cron/fortnox-pdf-backfill', resumes: resumes + 1, error: e?.message ?? String(e),
+          })
+        }
+      }
+      log.info('fortnox_pdf_backfill self-chained', { route: 'cron/fortnox-pdf-backfill', resumes: resumes + 1, processed: totalProcessed, chain_dispatched: chainDispatched })
       return NextResponse.json({
-        ok: true, self_chained: true, resumes: resumes + 1,
+        ok: true, self_chained: chainDispatched, resumes: resumes + 1,
         processed: totalProcessed, resolved: totalResolved, no_pdf: totalNoPdf, failed: totalFailed, results,
       })
     }
