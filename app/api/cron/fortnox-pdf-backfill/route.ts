@@ -90,35 +90,42 @@ async function run(req: NextRequest): Promise<NextResponse> {
       })
     }
 
-    // Pull this customer's next batch of header_only rows.
-    const { data: pending } = await db
-      .from('fortnox_supplier_invoices')
-      .select('given_number, invoice_date, supplier_name')
-      .eq('business_id', integ.business_id)
-      .eq('ingestion_status', 'header_only')
-      .order('invoice_date', { ascending: false })   // newest first — owner cares about recent invoices more
-      .limit(BATCH_SIZE)
-    if (!pending || pending.length === 0) continue
-
     let accessToken: string | null
     try {
       accessToken = await getFreshFortnoxAccessToken(db, integ.org_id, integ.business_id)
     } catch (err: any) {
       log.warn('fortnox_pdf_backfill token refresh failed', { route: 'cron/fortnox-pdf-backfill', business_id: integ.business_id, error: err?.message })
-      results.push({ business_id: integ.business_id, error: 'token_refresh_failed', skipped: pending.length })
+      results.push({ business_id: integ.business_id, error: 'token_refresh_failed', skipped: 0 })
       continue
     }
     if (!accessToken) {
-      results.push({ business_id: integ.business_id, error: 'no_access_token', skipped: pending.length })
+      results.push({ business_id: integ.business_id, error: 'no_access_token', skipped: 0 })
       continue
     }
 
     let processed = 0, resolved = 0, noPdf = 0, failed = 0
+    let drainedThisCustomer = false
 
-    for (const row of pending) {
-      if (Date.now() - startedAt > DEADLINE_MS) break
+    // Keep pulling BATCH_SIZE-sized pages from this customer until either
+    // (a) no more header_only rows, or (b) we're past the deadline.
+    // Without this inner page-loop, a single tick processes only
+    // BATCH_SIZE per customer — at 6h cadence that's ~4 days to drain
+    // a 1,500-row backlog. With it, a single tick drains as many as
+    // wall-clock permits (~500-1000 invoices in 270s wall budget).
+    while (!drainedThisCustomer && Date.now() - startedAt <= DEADLINE_MS) {
+      const { data: pending } = await db
+        .from('fortnox_supplier_invoices')
+        .select('given_number, invoice_date, supplier_name')
+        .eq('business_id', integ.business_id)
+        .eq('ingestion_status', 'header_only')
+        .order('invoice_date', { ascending: false })   // newest first — owner cares about recent invoices more
+        .limit(BATCH_SIZE)
+      if (!pending || pending.length === 0) { drainedThisCustomer = true; break }
 
-      const ledger = await openLedger({
+      for (const row of pending) {
+        if (Date.now() - startedAt > DEADLINE_MS) break
+
+        const ledger = await openLedger({
         db,
         source:          'fortnox',
         resource:        'supplier_invoices',
@@ -177,13 +184,14 @@ async function run(req: NextRequest): Promise<NextResponse> {
         failed++
         await closeLedger({ db, handle: ledger, populated_fields: [], error: (result as any).reason, rows_processed: 1 })
       }
-    }
+      }   // end for(row of pending)
+    }     // end while(!drainedThisCustomer)
 
     totalProcessed += processed
     totalResolved  += resolved
     totalNoPdf     += noPdf
     totalFailed    += failed
-    results.push({ business_id: integ.business_id, processed, resolved, no_pdf: noPdf, failed })
+    results.push({ business_id: integ.business_id, processed, resolved, no_pdf: noPdf, failed, drained: drainedThisCustomer })
   }
 
   log.info('fortnox_pdf_backfill done', {
