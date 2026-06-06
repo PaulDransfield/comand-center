@@ -1247,6 +1247,32 @@ Verification queries included at the bottom of the SQL file (commented out — u
 
 ---
 
+## M135 — Ingestion ledger + row-level completeness (2026-06-06)
+
+**Status**: PENDING — file written, awaiting owner SQL editor apply
+**File**: `sql/M135-INGESTION-LEDGER.sql`
+**Plan**: `docs/INGESTION-PIPELINE-RELIABILITY-PLAN.md`
+
+Phase 1 of the ingestion-pipeline reliability work. Triggered by the 2026-06-06 file_id incident — 99% of `fortnox_supplier_invoices` had `file_id=null` because the sync skipped the file-connections endpoint and nothing alarmed because there was no completeness contract.
+
+Changes:
+1. Creates `ingestion_log` global audit table — one row per external API call (source, resource, business_id, operation, started_at, finished_at, expected_fields jsonb, populated_fields jsonb, rows_processed, status, error, context).
+2. Adds `fortnox_supplier_invoices.ingestion_status text` (CHECK in {complete, partial, header_only, failed}) + `ingestion_meta jsonb` for per-row completeness. Default `header_only` — every existing row is truthfully tagged as "we only fetched the header" since the sync never asked for file_id.
+3. Truthful backfill: existing rows where `file_id IS NOT NULL` (Vero PDF extraction worker output) flip to `complete` with `ingestion_meta.source_path='pdf_extraction_worker'`.
+
+Companion code:
+- `lib/ingestion/ledger.ts` — helper API (`openLedger / closeLedger / computeRowStatus / buildIngestionMeta`). Defensive — ledger write failures don't break the actual sync.
+- `app/api/cron/fortnox-supplier-sync/route.ts` — first user. Every page-fetch + upsert opens/closes a ledger row; every upserted invoice carries `ingestion_status + ingestion_meta`.
+- `app/api/inventory/invoice-pdf/route.ts` — reads `ingestion_status`; when previously `header_only` and the live Fortnox re-check still finds no PDF, message confirms "we just checked" rather than the old "no PDF on Fortnox" claim.
+
+Idempotent (IF NOT EXISTS on table/columns/indexes; DO $$ pg_constraint guard on CHECK). Safe to re-run.
+
+Verification queries at the bottom of the SQL file (commented out).
+
+Phase 2 (next session, parked): fix supplier-sync to also call /3/supplierinvoicefileconnections during sync + backfill existing rows. With the M135 completeness flag in place, the fix can be verified by watching `ingestion_status` flip from `header_only` to `complete` across the ~1,800 historical rows.
+
+---
+
 ## Next Steps
 
 1. **Run M007 SQL** — required for Enhanced API Discovery to work

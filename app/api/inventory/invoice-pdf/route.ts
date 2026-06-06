@@ -46,13 +46,18 @@ export async function GET(req: NextRequest) {
 
   // Cache-first: look up the local fortnox_supplier_invoices row.
   const { data: cached } = await db.from('fortnox_supplier_invoices')
-    .select('file_id, has_pdf, supplier_name')
+    .select('file_id, has_pdf, supplier_name, ingestion_status')
     .eq('business_id', businessId)
     .eq('given_number', invoiceNumber)
     .maybeSingle()
 
   let fileId: string | null = cached?.file_id ?? null
   let supplierName: string | null = cached?.supplier_name ?? null
+  // M135 — when the cached row is honestly `header_only`, we have
+  // never actually asked Fortnox for the PDF. Don't lie about it
+  // to the user. The re-check below will resolve it; the no-PDF
+  // page (if we still don't find one) gets a different message.
+  const wasHeaderOnly = cached?.ingestion_status === 'header_only'
 
   // Re-check Fortnox whenever we don't have a confirmed file_id. Previously
   // we trusted has_pdf=false from the cache, but customers were stuck on a
@@ -124,8 +129,15 @@ export async function GET(req: NextRequest) {
   }
 
   if (!fileId) {
-    return noPdfResponse(invoiceNumber, supplierName,
-      'This invoice has no PDF attached on Fortnox. Many suppliers (Spendrups, Carlsberg etc.) only book the invoice metadata without uploading the PDF — your supplier portal is the fastest place to verify the price.')
+    // The re-check above hit BOTH endpoints (detail + file-connections).
+    // If we still don't have a file_id, Fortnox really doesn't have a PDF.
+    // The message differs if the cache row was 'header_only' before this
+    // call vs. genuinely confirmed-no-pdf, but at this point we've done
+    // the work either way. Truthful end state for both: Fortnox has nothing.
+    const msg = wasHeaderOnly
+      ? 'We just checked Fortnox for this invoice (both the detail and file-connections endpoints) and confirmed no PDF is attached. Many suppliers (Spendrups, Carlsberg etc.) book the invoice metadata without uploading the PDF — your supplier portal is the fastest place to verify the price.'
+      : 'This invoice has no PDF attached on Fortnox. Many suppliers (Spendrups, Carlsberg etc.) only book the invoice metadata without uploading the PDF — your supplier portal is the fastest place to verify the price.'
+    return noPdfResponse(invoiceNumber, supplierName, msg)
   }
 
   // No article-highlight requested → fast path. Redirect to the existing

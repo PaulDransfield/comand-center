@@ -23,6 +23,19 @@ import { log }                          from '@/lib/log/structured'
 import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
 import { getFreshFortnoxAccessToken }   from '@/lib/fortnox/api/auth'
 import { extractSupplierInvoiceVoucher } from '@/lib/fortnox/extract-voucher-ref'
+import { openLedger, closeLedger, computeRowStatus, buildIngestionMeta } from '@/lib/ingestion/ledger'
+
+// Field-level contract for one supplier-invoice row (M135 Phase 1).
+// HEADER fields are what the list endpoint returns; DETAIL fields are
+// what only the detail / file-connections endpoints add. A row that
+// has all HEADER but no DETAIL is honestly 'header_only', not 'partial'.
+const EXPECTED_FIELDS = [
+  'given_number', 'invoice_date', 'supplier_name', 'total', 'currency',
+  'file_id', 'has_pdf',
+]
+const HEADER_FIELDS = [
+  'given_number', 'invoice_date', 'supplier_name', 'total', 'currency',
+]
 
 export const runtime         = 'nodejs'
 export const preferredRegion = 'fra1'
@@ -91,6 +104,21 @@ export async function POST(req: NextRequest) {
       let rowsUpserted = 0
       let page = 1
       while (true) {
+        // Ledger open — one row per page fetch + upsert (M135 Phase 1).
+        // The list endpoint NEVER returns file_id, so we mark file_id
+        // as expected-but-missing. computeRowStatus will tag rows as
+        // 'header_only' (the truthful state until Phase 2 fixes the gap).
+        const ledger = await openLedger({
+          db,
+          source:          'fortnox',
+          resource:        'supplier_invoices',
+          operation:       'list',
+          business_id:     integ.business_id,
+          org_id:          integ.org_id,
+          expected_fields: EXPECTED_FIELDS,
+          context:         { page, fromIso, toIso, endpoint: 'list' },
+        })
+
         // No `filter=` param — Fortnox returns all non-cancelled invoices
         // by default. `filter=all` is NOT a valid value (valid options:
         // cancelled, fullypaid, unpaid, unpaidoverdue, unbooked, bookkept).
@@ -100,40 +128,72 @@ export async function POST(req: NextRequest) {
         const res = await fortnoxFetch(url, accessToken, { accept: 'application/json' })
         if (!res.ok) {
           const t = await res.text().catch(() => '')
+          await closeLedger({ db, handle: ledger, populated_fields: [], error: `HTTP ${res.status}: ${t.slice(0, 200)}` })
           throw new Error(`HTTP ${res.status}: ${t.slice(0, 200)}`)
         }
         const data = await res.json()
         const invoices = (data.SupplierInvoices ?? []) as any[]
-        if (invoices.length === 0) break
+        if (invoices.length === 0) {
+          await closeLedger({ db, handle: ledger, populated_fields: HEADER_FIELDS, rows_processed: 0 })
+          break
+        }
 
-        const upsertRows = invoices.map(inv => ({
-          org_id:           integ.org_id,
-          business_id:      integ.business_id,
-          given_number:     String(inv.GivenNumber ?? inv.InvoiceNumber ?? ''),
-          invoice_number:   inv.InvoiceNumber ? String(inv.InvoiceNumber) : null,
-          supplier_name:    inv.SupplierName ?? '(unknown)',
-          supplier_number:  inv.SupplierNumber ? String(inv.SupplierNumber) : null,
-          supplier_normalised: String(inv.SupplierName ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ''),
-          invoice_date:     inv.InvoiceDate     ?? inv.BookKeepingDate ?? null,
-          bookkeeping_date: inv.BookKeepingDate ?? null,
-          due_date:         inv.DueDate         ?? null,
-          total:            inv.Total          != null ? Number(inv.Total)         : null,
-          currency:         inv.Currency         ?? null,
-          vat:              inv.VAT             != null ? Number(inv.VAT)            : null,
-          balance:          inv.Balance         != null ? Number(inv.Balance)        : null,
-          final_pay_date:   inv.FinalPayDate     ?? null,
-          // Fortnox's supplier-invoice payload doesn't expose VoucherSeries /
-          // VoucherNumber as top-level fields. The booking voucher ref lives
-          // nested in `inv.Vouchers[]` with `ReferenceType='SUPPLIERINVOICE'`
-          // (alongside SUPPLIERPAYMENT and other refs). Shared extractor in
-          // lib/fortnox/extract-voucher-ref.ts; sql/p20-paydown-ticket1-
-          // backfill-APPLY.sql mirrors the same filter for the one-time backfill.
-          ...extractSupplierInvoiceVoucher(inv),
-          comments:         inv.Comments         ?? null,
-          cancelled:        Boolean(inv.Cancelled),
-          raw_data:         inv,
-          last_synced_at:   new Date().toISOString(),
-        })).filter(r => r.given_number && r.invoice_date)
+        // Per-row population check — derive which fields actually came
+        // through for THIS row. The list endpoint reliably returns the
+        // HEADER set; file_id stays missing here by design.
+        const upsertRows = invoices.map(inv => {
+          const populated: string[] = []
+          const gn = String(inv.GivenNumber ?? inv.InvoiceNumber ?? '')
+          if (gn) populated.push('given_number')
+          const d = inv.InvoiceDate ?? inv.BookKeepingDate ?? null
+          if (d) populated.push('invoice_date')
+          if (inv.SupplierName) populated.push('supplier_name')
+          if (inv.Total != null) populated.push('total')
+          if (inv.Currency) populated.push('currency')
+          // file_id + has_pdf — DELIBERATELY missing from list endpoint.
+          // Phase 2 will add the file-connections call to populate them.
+
+          const rowStatus = computeRowStatus(EXPECTED_FIELDS, populated, HEADER_FIELDS)
+          const ingestionMeta = buildIngestionMeta({
+            ledgerId:         ledger.id,
+            source_path:      'fortnox_supplier_sync',
+            expected_fields:  EXPECTED_FIELDS,
+            populated_fields: populated,
+            extra:            { endpoint: 'list', page },
+          })
+
+          return {
+            org_id:           integ.org_id,
+            business_id:      integ.business_id,
+            given_number:     gn,
+            invoice_number:   inv.InvoiceNumber ? String(inv.InvoiceNumber) : null,
+            supplier_name:    inv.SupplierName ?? '(unknown)',
+            supplier_number:  inv.SupplierNumber ? String(inv.SupplierNumber) : null,
+            supplier_normalised: String(inv.SupplierName ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ''),
+            invoice_date:     d,
+            bookkeeping_date: inv.BookKeepingDate ?? null,
+            due_date:         inv.DueDate         ?? null,
+            total:            inv.Total          != null ? Number(inv.Total)         : null,
+            currency:         inv.Currency         ?? null,
+            vat:              inv.VAT             != null ? Number(inv.VAT)            : null,
+            balance:          inv.Balance         != null ? Number(inv.Balance)        : null,
+            final_pay_date:   inv.FinalPayDate     ?? null,
+            // Fortnox's supplier-invoice payload doesn't expose VoucherSeries /
+            // VoucherNumber as top-level fields. The booking voucher ref lives
+            // nested in `inv.Vouchers[]` with `ReferenceType='SUPPLIERINVOICE'`
+            // (alongside SUPPLIERPAYMENT and other refs). Shared extractor in
+            // lib/fortnox/extract-voucher-ref.ts; sql/p20-paydown-ticket1-
+            // backfill-APPLY.sql mirrors the same filter for the one-time backfill.
+            ...extractSupplierInvoiceVoucher(inv),
+            comments:         inv.Comments         ?? null,
+            cancelled:        Boolean(inv.Cancelled),
+            raw_data:         inv,
+            last_synced_at:   new Date().toISOString(),
+            // M135 Phase 1 — row-level completeness contract.
+            ingestion_status: rowStatus,
+            ingestion_meta:   ingestionMeta,
+          }
+        }).filter(r => r.given_number && r.invoice_date)
 
         if (upsertRows.length > 0) {
           // unique constraint (business_id, given_number) — full unique
@@ -141,9 +201,13 @@ export async function POST(req: NextRequest) {
           const { error: upErr } = await db
             .from('fortnox_supplier_invoices')
             .upsert(upsertRows, { onConflict: 'business_id,given_number' })
-          if (upErr) throw new Error(`upsert failed: ${upErr.message}`)
+          if (upErr) {
+            await closeLedger({ db, handle: ledger, populated_fields: HEADER_FIELDS, error: `upsert failed: ${upErr.message}`, rows_processed: upsertRows.length })
+            throw new Error(`upsert failed: ${upErr.message}`)
+          }
           rowsUpserted += upsertRows.length
         }
+        await closeLedger({ db, handle: ledger, populated_fields: HEADER_FIELDS, rows_processed: invoices.length })
 
         if (invoices.length < 500) break
         page++
