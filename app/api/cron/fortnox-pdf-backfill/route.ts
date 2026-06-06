@@ -20,6 +20,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
+import { waitUntil } from '@vercel/functions'
 import { createAdminClient } from '@/lib/supabase/server'
 import { checkCronSecret } from '@/lib/admin/check-secret'
 import { log } from '@/lib/log/structured'
@@ -80,43 +81,31 @@ async function run(req: NextRequest): Promise<NextResponse> {
     if (Date.now() - startedAt > DEADLINE_MS) {
       // Self-chain so the next chunk continues without waiting for the next scheduled tick.
       //
-      // CRITICAL: do NOT `void fetch(...)` fire-and-forget here. Vercel
-      // freezes the originating lambda the moment this handler returns,
-      // and the outbound TCP handshake may not complete before freeze —
-      // so the destination lambda never receives the request and the
-      // chain dies after one hop. Pattern surfaced 2026-06-06: every
-      // manual trigger reported `resumes: 1`, never higher.
+      // CRITICAL: Vercel freezes the originating lambda the moment this
+      // handler returns. Fire-and-forget (`void fetch(...)`) gives the
+      // outbound TCP handshake too little time to reach the destination,
+      // and even `await fetch(..., AbortSignal.timeout(3000))` raced the
+      // freeze unreliably (observed 2026-06-06: only 1 hop completed out
+      // of an expected 5 in a 25-min window).
       //
-      // Instead: AWAIT a fetch with a short AbortSignal.timeout. Vercel
-      // keeps the lambda alive for the await. The destination lambda
-      // takes ~50-200ms to accept the connection and start running, then
-      // continues independently of whether we abort. We treat AbortError
-      // as success — the destination is already running by the time
-      // 3 seconds have elapsed.
+      // The canonical pattern (mirrors app/api/inventory/lines/rematch):
+      // pass the outbound fetch to `waitUntil`. Vercel keeps the lambda
+      // alive until the fetch promise settles, even though the HTTP
+      // response has already gone back to the caller.
       const chainUrl = `${req.nextUrl.origin}/api/cron/fortnox-pdf-backfill?resume=${resumes + 1}`
-      let chainDispatched = false
-      try {
-        await fetch(chainUrl, {
+      waitUntil(
+        fetch(chainUrl, {
           method:  'GET',
           headers: { 'Authorization': `Bearer ${process.env.CRON_SECRET ?? ''}` },
-          signal:  AbortSignal.timeout(3000),
-        })
-        chainDispatched = true
-      } catch (e: any) {
-        // AbortError is expected — the destination lambda is running, we
-        // just hung up early to free the source. Other errors (DNS,
-        // connection refused) are real failures; chain dies and the
-        // next scheduled tick will pick it up.
-        chainDispatched = e?.name === 'AbortError' || e?.name === 'TimeoutError'
-        if (!chainDispatched) {
+        }).catch(err => {
           log.warn('fortnox_pdf_backfill self-chain dispatch failed', {
-            route: 'cron/fortnox-pdf-backfill', resumes: resumes + 1, error: e?.message ?? String(e),
+            route: 'cron/fortnox-pdf-backfill', resumes: resumes + 1, error: err?.message ?? String(err),
           })
-        }
-      }
-      log.info('fortnox_pdf_backfill self-chained', { route: 'cron/fortnox-pdf-backfill', resumes: resumes + 1, processed: totalProcessed, chain_dispatched: chainDispatched })
+        })
+      )
+      log.info('fortnox_pdf_backfill self-chained', { route: 'cron/fortnox-pdf-backfill', resumes: resumes + 1, processed: totalProcessed })
       return NextResponse.json({
-        ok: true, self_chained: chainDispatched, resumes: resumes + 1,
+        ok: true, self_chained: true, resumes: resumes + 1,
         processed: totalProcessed, resolved: totalResolved, no_pdf: totalNoPdf, failed: totalFailed, results,
       })
     }
