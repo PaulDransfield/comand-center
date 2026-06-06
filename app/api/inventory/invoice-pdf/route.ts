@@ -38,46 +38,55 @@ export async function GET(req: NextRequest) {
 
   const db = createAdminClient()
 
-  let accessToken: string | null
-  try {
-    accessToken = await getFreshFortnoxAccessToken(db, auth.orgId, businessId)
-  } catch (err: any) {
-    return NextResponse.json({
-      error:   'fortnox_token_refresh_failed',
-      message: err?.message === 'FORTNOX_NEEDS_REAUTH'
-        ? 'Your Fortnox connection was disconnected. Reconnect at /integrations.'
-        : (err?.message ?? 'Failed to obtain Fortnox token.'),
-    }, { status: 401 })
-  }
-  if (!accessToken) {
-    return NextResponse.json({ error: 'No connected Fortnox integration for this business' }, { status: 404 })
+  // Cache-first: look up the local fortnox_supplier_invoices row. The cron
+  // syncs this table including file_id + has_pdf, so we usually know the
+  // FileId (or its absence) without calling Fortnox.
+  const { data: cached } = await db.from('fortnox_supplier_invoices')
+    .select('file_id, has_pdf, supplier_name')
+    .eq('business_id', businessId)
+    .eq('given_number', invoiceNumber)
+    .maybeSingle()
+
+  let fileId: string | null = cached?.file_id ?? null
+  let supplierName: string | null = cached?.supplier_name ?? null
+
+  // Cache miss OR file_id never fetched — call Fortnox to resolve.
+  if (cached == null || (cached.has_pdf !== false && !fileId)) {
+    let accessToken: string | null
+    try {
+      accessToken = await getFreshFortnoxAccessToken(db, auth.orgId, businessId)
+    } catch (err: any) {
+      return noPdfResponse(invoiceNumber, supplierName,
+        err?.message === 'FORTNOX_NEEDS_REAUTH'
+          ? 'Your Fortnox connection was disconnected. Reconnect at /integrations and try again.'
+          : (err?.message ?? 'Failed to obtain Fortnox token.'),
+      )
+    }
+    if (!accessToken) {
+      return noPdfResponse(invoiceNumber, supplierName, 'No connected Fortnox integration for this business.')
+    }
+    const fnRes = await fortnoxFetch(
+      `https://api.fortnox.se/3/supplierinvoices/${encodeURIComponent(invoiceNumber)}`,
+      accessToken,
+      { accept: 'application/json' },
+    )
+    if (fnRes.status === 404) {
+      return noPdfResponse(invoiceNumber, supplierName, `Invoice ${invoiceNumber} not found in Fortnox.`)
+    }
+    if (!fnRes.ok) {
+      const body = await fnRes.text().catch(() => '')
+      return noPdfResponse(invoiceNumber, supplierName,
+        `Fortnox returned error ${fnRes.status}. ${body.slice(0, 200)}`)
+    }
+    const j = await fnRes.json().catch(() => ({}))
+    fileId = j?.SupplierInvoice?.SupplierInvoiceFileConnections?.[0]?.FileId
+          ?? j?.SupplierInvoiceFileConnections?.[0]?.FileId
+          ?? null
   }
 
-  // Fetch the supplier invoice by GivenNumber. Fortnox 3 API path:
-  //   /3/supplierinvoices/{GivenNumber}
-  // Response carries SupplierInvoiceFileConnections — usually one entry
-  // pointing at the inbox FileId for the attached PDF.
-  const fnRes = await fortnoxFetch(
-    `https://api.fortnox.se/3/supplierinvoices/${encodeURIComponent(invoiceNumber)}`,
-    accessToken,
-    { accept: 'application/json' },
-  )
-  if (fnRes.status === 404) {
-    return NextResponse.json({ error: `Invoice ${invoiceNumber} not found in Fortnox` }, { status: 404 })
-  }
-  if (!fnRes.ok) {
-    const body = await fnRes.text().catch(() => '')
-    return NextResponse.json({ error: 'fortnox_error', status: fnRes.status, body: body.slice(0, 500) }, { status: 502 })
-  }
-  const j = await fnRes.json().catch(() => ({}))
-  const fileId = j?.SupplierInvoice?.SupplierInvoiceFileConnections?.[0]?.FileId
-              ?? j?.SupplierInvoiceFileConnections?.[0]?.FileId
-              ?? null
   if (!fileId) {
-    return NextResponse.json({
-      error: 'no_pdf_attached',
-      message: `Invoice ${invoiceNumber} has no PDF attached in Fortnox.`,
-    }, { status: 404 })
+    return noPdfResponse(invoiceNumber, supplierName,
+      'This invoice has no PDF attached on Fortnox. Many suppliers (Spendrups, Carlsberg etc.) only book the invoice metadata without uploading the PDF — your supplier portal is the fastest place to verify the price.')
   }
 
   const target = new URL('/api/integrations/fortnox/file', req.nextUrl.origin)
@@ -85,4 +94,38 @@ export async function GET(req: NextRequest) {
   target.searchParams.set('file_id',     String(fileId))
   target.searchParams.set('filename',    `${invoiceNumber}.pdf`)
   return NextResponse.redirect(target, 307)
+}
+
+// Friendly HTML response when there's no PDF — the link is opened in a
+// new tab so we don't want to dump JSON in the user's face.
+function noPdfResponse(invoiceNumber: string, supplierName: string | null, message: string): NextResponse {
+  const supplier = supplierName ? supplierName : 'supplier'
+  const html = `<!DOCTYPE html><html lang="en"><head>
+  <meta charset="utf-8"><title>No PDF · Invoice ${invoiceNumber}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background: #f8f9fa; color: #1a1a1a; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .card { max-width: 480px; background: #fff; border: 0.5px solid #e5e5e5; border-radius: 12px; padding: 32px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+    h1 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
+    .label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 4px; }
+    .number { font-size: 14px; font-weight: 500; margin-bottom: 16px; font-variant-numeric: tabular-nums; }
+    p { font-size: 13px; line-height: 1.5; color: #444; margin: 0 0 16px; }
+    .close { background: #6e5cf7; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; }
+  </style></head><body>
+  <div class="card">
+    <h1>PDF not available</h1>
+    <div class="label">Invoice from ${escapeHtml(supplier)}</div>
+    <div class="number">${escapeHtml(invoiceNumber)}</div>
+    <p>${escapeHtml(message)}</p>
+    <button class="close" onclick="window.close()">Close this tab</button>
+  </div>
+  </body></html>`
+  return new NextResponse(html, {
+    status: 200,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+  })
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
 }
