@@ -195,6 +195,11 @@ function PrepListPageInner() {
   // reviewed once doesn't see it again.
   const [seedBannerDismissed, setSeedBannerDismissed] = useState(false)
 
+  // Mobile prep-mode: which line row has its inline panel expanded. Single-
+  // line accordion (open one → close the previous). Desktop still uses the
+  // modal so this state is mobile-only — desktop ignores it entirely.
+  const [expandedLineId, setExpandedLineId] = useState<string | null>(null)
+
   // selected = recipe_id → qty (covers/portions). 0 / missing = not in the list.
   const [selected, setSelected] = useState<Record<string, number>>({})
   // M117 — expected covers for auto-fill. Empty string when not in use.
@@ -683,8 +688,10 @@ function PrepListPageInner() {
             )}
           </div>
           {/* Header right-side actions differ by mode. Prep-mode: complete + discard.
-              Create-mode (no active session): "Clear all" when something is picked. */}
-          {activeSession ? (
+              Create-mode (no active session): "Clear all" when something is picked.
+              On mobile, prep-mode hides these — Complete moves to a sticky bottom
+              bar and Discard is demoted to a quiet link inside the progress hero. */}
+          {activeSession && !isMobile ? (
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={discardSession} style={secondaryBtn}>Discard</button>
               <button
@@ -698,7 +705,7 @@ function PrepListPageInner() {
                 Complete prep
               </button>
             </div>
-          ) : selectedItems.length > 0 ? (
+          ) : !activeSession && selectedItems.length > 0 ? (
             <button
               onClick={() => { setSelected({}); setResult(null) }}
               style={secondaryBtn}
@@ -812,8 +819,9 @@ function PrepListPageInner() {
             PREP MODE — an active session exists. Show progress + checkable
             rows; hide the dish picker (session is frozen). Owner uses the
             Complete / Discard buttons in the header to leave this mode.
+            Tablet / desktop only — mobile has a separate block below.
             ────────────────────────────────────────────────────────────── */}
-        {bizId && activeSession && (
+        {bizId && activeSession && !isMobile && (
           <>
             <div style={{
               background: UXP.lavFill, border: `0.5px solid ${UXP.lavMid}`,
@@ -971,6 +979,406 @@ function PrepListPageInner() {
             </Section>
           </>
         )}
+
+        {/* ──────────────────────────────────────────────────────────────
+            PREP MODE — mobile re-lay. Same handlers (toggleLine,
+            completeSession, discardSession), same engine, same writes;
+            only the visual treatment + inline-expand differ. The frozen
+            qty is rendered verbatim — total_qty / unit display only,
+            never recomputed. method / notes / ingredients / uses /
+            archived_at are read LIVE via the existing enrichment on
+            /api/inventory/prep-sessions/[id] (same source as the
+            modal), so owner edits surface immediately.
+            ────────────────────────────────────────────────────────────── */}
+        {bizId && activeSession && isMobile && (() => {
+          const sessionPct = totalLines > 0 ? (doneLines / totalLines) * 100 : 0
+          const currentLines = tab === 'components' ? sessionComponents : sessionProducts
+          return (
+            <>
+              {/* (1) PROGRESS HERO */}
+              <div style={{
+                background: UXP.lavFill, border: `0.5px solid ${UXP.lavMid}`,
+                borderRadius: UXP.r_lg, padding: 16, marginBottom: 14,
+                boxShadow: UXP.shadowSoft,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: UXP.fsMicro, color: UXP.lavText, fontWeight: 700,
+                      letterSpacing: '0.06em', textTransform: 'uppercase' as const,
+                      marginBottom: 4,
+                    }}>
+                      Active prep session
+                    </div>
+                    <div style={{
+                      fontSize: 16, fontWeight: 600, color: UXP.ink1,
+                      overflowWrap: 'break-word' as const,
+                    }}>
+                      {activeSession.name || 'Today’s prep'}
+                    </div>
+                    <div style={{
+                      fontSize: 12, color: UXP.ink3, marginTop: 6, lineHeight: 1.4,
+                      overflowWrap: 'break-word' as const,
+                    }}>
+                      {activeSession.inputs.map(it => {
+                        const d = dishById.get(it.recipe_id)
+                        return `${it.qty}× ${d?.name ?? it.recipe_id.slice(0, 8)}`
+                      }).join(' · ')}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' as const, flexShrink: 0 }}>
+                    <div style={{
+                      fontSize: 28, fontWeight: 700,
+                      color: allDone ? UXP.greenDeep : UXP.ink1,
+                      fontVariantNumeric: 'tabular-nums' as const,
+                      lineHeight: 1,
+                    }}>
+                      {doneLines}
+                      <span style={{ color: UXP.ink3, fontSize: 16, fontWeight: 500 }}>
+                        {' '}/ {totalLines}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 4 }}>lines done</div>
+                  </div>
+                </div>
+                {/* Thick progress bar — fills lavender, turns green at 100%. */}
+                <div style={{
+                  marginTop: 12, height: 10,
+                  background: UXP.cardBg, borderRadius: 5, overflow: 'hidden' as const,
+                  border: `0.5px solid ${UXP.border}`,
+                }}>
+                  <div style={{
+                    height: '100%', width: `${sessionPct}%`,
+                    background: allDone ? UXP.greenDeep : UXP.lavDeep,
+                    transition: 'width 200ms ease, background-color 200ms ease',
+                  }} />
+                </div>
+                {/* Discard demoted to a quiet link inside the hero. Same
+                    DELETE handler; behaviour unchanged. */}
+                <div style={{ marginTop: 10, textAlign: 'right' as const }}>
+                  <button
+                    onClick={discardSession}
+                    style={{
+                      background: 'transparent', border: 'none', padding: 0,
+                      fontFamily: 'inherit', cursor: 'pointer',
+                      fontSize: 12, color: UXP.ink3, textDecoration: 'underline' as const,
+                    }}
+                  >
+                    Discard session
+                  </button>
+                </div>
+              </div>
+
+              {/* (2) SEGMENTED TABS — "To prepare" / "To pull" with count chips. */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                {([
+                  { key: 'components',  label: 'To prepare', count: sessionComponents.length },
+                  { key: 'ingredients', label: 'To pull',    count: sessionProducts.length   },
+                ] as const).map(t => {
+                  const active = tab === t.key
+                  return (
+                    <button
+                      key={t.key}
+                      onClick={() => { setTab(t.key); setExpandedLineId(null) }}
+                      style={{
+                        flex: 1,
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        padding: '10px 12px', minHeight: 44,
+                        background: active ? UXP.lavDeep : UXP.cardBg,
+                        color:      active ? '#fff'       : UXP.ink2,
+                        border:     `0.5px solid ${active ? UXP.lavDeep : UXP.border}`,
+                        borderRadius: 999,
+                        fontSize: 13, fontWeight: 600,
+                        cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >
+                      <span>{t.label}</span>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        minWidth: 22, height: 22, padding: '0 6px',
+                        background: active ? 'rgba(255,255,255,0.22)' : UXP.subtleBg,
+                        color:      active ? '#fff'                    : UXP.ink3,
+                        fontSize: 11, fontWeight: 700, borderRadius: 999,
+                        fontVariantNumeric: 'tabular-nums' as const,
+                      }}>
+                        {t.count}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* (3) LINE ROWS — 52px+ checkbox, big right-aligned qty,
+                  inline expand on body tap. */}
+              {currentLines.length === 0 && (
+                <Empty label={tab === 'components'
+                  ? 'No sub-recipe components in this session.'
+                  : 'No raw ingredients in this session.'} />
+              )}
+              {currentLines.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
+                  {currentLines.map(line => {
+                    const f = formatPrepQty(line.total_qty, line.unit)
+                    const checked = line.checked_at != null
+                    const disabled = !!activeSession.completed_at
+                    const expanded = expandedLineId === line.id
+                    return (
+                      <div key={line.id}>
+                        {/* Row */}
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: '64px 1fr auto',
+                          alignItems: 'center', gap: 0,
+                          background: checked ? UXP.lavFill : UXP.cardBg,
+                          border: `0.5px solid ${checked ? UXP.lavMid : UXP.border}`,
+                          borderRadius: expanded ? `${UXP.r_md}px ${UXP.r_md}px 0 0` : UXP.r_md,
+                          boxShadow: UXP.shadowSoft,
+                          transition: 'background 150ms ease',
+                        }}>
+                          {/* 52px+ checkbox column — wide tap area. */}
+                          <button
+                            onClick={() => toggleLine(line)}
+                            disabled={disabled}
+                            aria-label={checked ? 'Uncheck' : 'Check'}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              height: 64, width: 64, padding: 0,
+                              background: 'transparent', border: 'none', cursor: 'pointer',
+                            }}
+                          >
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              width: 28, height: 28, borderRadius: 6,
+                              border: `2px solid ${checked ? UXP.lavDeep : UXP.border}`,
+                              background: checked ? UXP.lavDeep : 'transparent',
+                              color: '#fff', fontSize: 16, fontWeight: 700, lineHeight: 1,
+                              transition: 'background 120ms ease, border-color 120ms ease',
+                            }}>
+                              {checked ? '✓' : ''}
+                            </span>
+                          </button>
+                          {/* Body — taps expand inline. */}
+                          <button
+                            onClick={() => setExpandedLineId(expanded ? null : line.id)}
+                            disabled={disabled}
+                            style={{
+                              display: 'block', textAlign: 'left' as const,
+                              width: '100%', minWidth: 0,
+                              padding: '12px 8px 12px 0',
+                              background: 'transparent', border: 'none',
+                              cursor: 'pointer', fontFamily: 'inherit',
+                            }}
+                          >
+                            <div style={{
+                              fontSize: 15, color: checked ? UXP.ink3 : UXP.ink1, fontWeight: 500,
+                              textDecoration: checked ? 'line-through' as const : 'none' as const,
+                              overflowWrap: 'break-word' as const,
+                              wordBreak: 'break-word' as const,
+                              lineHeight: 1.3,
+                            }}>
+                              {line.name_snapshot}
+                            </div>
+                            {line.uncertain && (
+                              <div style={{ fontSize: 11, color: UXP.coral, marginTop: 4 }}>
+                                {line.uncertain_reason ?? 'Set yield to roll up'}
+                              </div>
+                            )}
+                            {line.source_recipe_ids.length >= 2 && (
+                              <div style={{ fontSize: 11, color: UXP.ink4, marginTop: 4 }}>
+                                shared across {line.source_recipe_ids.length} dishes
+                              </div>
+                            )}
+                            <div style={{ fontSize: 11, color: UXP.lavText, marginTop: 4, fontWeight: 600 }}>
+                              {expanded ? 'Hide details ▴' : 'Method & ingredients ▾'}
+                            </div>
+                          </button>
+                          {/* Qty — the heaviest element on the row, right-aligned. */}
+                          <div style={{
+                            padding: '12px 14px',
+                            textAlign: 'right' as const,
+                            fontVariantNumeric: 'tabular-nums' as const,
+                            lineHeight: 1.1,
+                          }}>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: checked ? UXP.ink3 : UXP.ink1 }}>
+                              {line.uncertain ? '—' : f.qty}
+                            </div>
+                            {!line.uncertain && (
+                              <div style={{ fontSize: 12, color: UXP.ink4, fontWeight: 500, marginTop: 2 }}>
+                                {f.unit}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {/* (4) INLINE EXPANDED PANEL — read-only. Live-read fields
+                            (method/notes/ingredients/uses/archived_at) ride the
+                            same enrichment that powers LinePrepModal. */}
+                        {expanded && (
+                          <div style={{
+                            background: UXP.subtleBg,
+                            border: `0.5px solid ${UXP.border}`,
+                            borderTopWidth: 0,
+                            borderRadius: `0 0 ${UXP.r_md}px ${UXP.r_md}px`,
+                            padding: 14,
+                            marginTop: -1,
+                          }}>
+                            {/* H3 archived banner — sub-recipe archived AFTER the
+                                session was saved. Surface clearly so the chef
+                                knows the qty is the committed snapshot. */}
+                            {line.kind === 'component' && line.meta?.archived_at && (
+                              <div style={{
+                                padding: '8px 10px', marginBottom: 12,
+                                background: '#fef3e0',
+                                border: `0.5px solid ${UXP.coral}`,
+                                borderRadius: UXP.r_sm,
+                                fontSize: 11, color: UXP.coral, lineHeight: 1.4,
+                              }}>
+                                This sub-recipe was archived after the session was saved.
+                                The frozen qty above is what the kitchen committed to.
+                              </div>
+                            )}
+                            {line.kind === 'component' && (
+                              <>
+                                {line.meta?.method && (
+                                  <div style={{ marginBottom: 12 }}>
+                                    <div style={{
+                                      fontSize: 9, color: UXP.ink4, fontWeight: 700,
+                                      letterSpacing: '0.06em', textTransform: 'uppercase' as const,
+                                      marginBottom: 4,
+                                    }}>
+                                      Method
+                                    </div>
+                                    <div style={{
+                                      fontSize: 13, color: UXP.ink2, lineHeight: 1.5,
+                                      whiteSpace: 'pre-wrap' as const,
+                                    }}>
+                                      {line.meta.method}
+                                    </div>
+                                  </div>
+                                )}
+                                {!line.meta?.method && line.meta?.notes && (
+                                  <div style={{ marginBottom: 12 }}>
+                                    <div style={{
+                                      fontSize: 9, color: UXP.ink4, fontWeight: 700,
+                                      letterSpacing: '0.06em', textTransform: 'uppercase' as const,
+                                      marginBottom: 4,
+                                    }}>
+                                      Notes
+                                    </div>
+                                    <div style={{
+                                      fontSize: 13, color: UXP.ink2, lineHeight: 1.5,
+                                      whiteSpace: 'pre-wrap' as const,
+                                    }}>
+                                      {line.meta.notes}
+                                    </div>
+                                  </div>
+                                )}
+                                {line.meta?.ingredients && line.meta.ingredients.length > 0 && (
+                                  <div style={{ marginBottom: 12 }}>
+                                    <div style={{
+                                      fontSize: 9, color: UXP.ink4, fontWeight: 700,
+                                      letterSpacing: '0.06em', textTransform: 'uppercase' as const,
+                                      marginBottom: 4,
+                                    }}>
+                                      Ingredients
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+                                      {line.meta.ingredients.map(ing => (
+                                        <div key={ing.ingredient_id} style={{
+                                          display: 'flex', justifyContent: 'space-between', gap: 10,
+                                          fontSize: 13, color: UXP.ink2,
+                                        }}>
+                                          <span style={{ overflowWrap: 'break-word' as const, wordBreak: 'break-word' as const }}>
+                                            {ing.product_name ?? '—'}
+                                            {ing.notes && (
+                                              <span style={{ display: 'block', fontSize: 11, color: UXP.ink4, marginTop: 1 }}>
+                                                {ing.notes}
+                                              </span>
+                                            )}
+                                          </span>
+                                          <span style={{
+                                            flexShrink: 0,
+                                            fontVariantNumeric: 'tabular-nums' as const,
+                                            whiteSpace: 'nowrap' as const,
+                                            fontWeight: 500,
+                                          }}>
+                                            {ing.quantity != null ? `${ing.quantity} ${ing.unit ?? ''}`.trim() : ''}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                <a
+                                  href={`/inventory/recipes/${line.entity_id}`}
+                                  style={{
+                                    display: 'inline-block',
+                                    fontSize: 12, fontWeight: 600, color: UXP.lavText,
+                                    textDecoration: 'none' as const,
+                                  }}
+                                >
+                                  Open full recipe →
+                                </a>
+                              </>
+                            )}
+                            {line.kind === 'product' && line.meta?.uses && line.meta.uses.length > 0 && (
+                              <div>
+                                <div style={{
+                                  fontSize: 9, color: UXP.ink4, fontWeight: 700,
+                                  letterSpacing: '0.06em', textTransform: 'uppercase' as const,
+                                  marginBottom: 4,
+                                }}>
+                                  Used in
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+                                  {line.meta.uses.map(u => (
+                                    <div key={u.ingredient_id} style={{
+                                      display: 'flex', justifyContent: 'space-between', gap: 10,
+                                      fontSize: 13, color: UXP.ink2,
+                                    }}>
+                                      <span style={{ overflowWrap: 'break-word' as const, wordBreak: 'break-word' as const }}>
+                                        {u.recipe_name ?? '—'}
+                                        {u.notes && (
+                                          <span style={{ display: 'block', fontSize: 11, color: UXP.ink4, marginTop: 1 }}>
+                                            {u.notes}
+                                          </span>
+                                        )}
+                                      </span>
+                                      <span style={{
+                                        flexShrink: 0,
+                                        fontVariantNumeric: 'tabular-nums' as const,
+                                        whiteSpace: 'nowrap' as const,
+                                        fontWeight: 500,
+                                      }}>
+                                        {u.quantity != null ? `${u.quantity} ${u.unit ?? ''}`.trim() : ''}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {line.kind === 'product' && (!line.meta?.uses || line.meta.uses.length === 0) && (
+                              <div style={{ fontSize: 12, color: UXP.ink4 }}>
+                                No per-recipe prep notes attached to this ingredient.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Bottom spacer — clears the sticky Complete bar. Same math as
+                  create-mode (Phase 1.2 lesson): 60px nav + 14px gap + ~70px
+                  bar + breathing room + safe-area. */}
+              <div
+                aria-hidden="true"
+                style={{ height: 'calc(160px + env(safe-area-inset-bottom, 0px))' }}
+              />
+            </>
+          )
+        })()}
 
         {/* ──────────────────────────────────────────────────────────────
             CREATE MODE — no active session. Pick dishes, preview the
@@ -2143,6 +2551,63 @@ function PrepListPageInner() {
           </div>
         )}
       </PageContainer>
+
+      {/* ──────────────────────────────────────────────────────────────
+          STICKY COMPLETE BAR — mobile + prep-mode (active session) only.
+          Same completeSession() handler as the desktop top-right button:
+          PATCH /api/inventory/prep-sessions/[id] with { complete: 'now' }.
+          Bar turns green at 100 % done. Same MobileNav-clearance math as
+          the create-mode send bar (Phase 1.2): bottom = calc(60px +
+          safe-area + 14px).
+          ────────────────────────────────────────────────────────────── */}
+      {bizId && activeSession && isMobile && (
+        <div
+          style={{
+            position:   'fixed' as const,
+            left:       0,
+            right:      0,
+            bottom:     'calc(60px + env(safe-area-inset-bottom, 0px) + 14px)',
+            zIndex:     Z.banner,
+            background: UXP.cardBg,
+            borderTop:  `0.5px solid ${UXP.border}`,
+            boxShadow:  '0 -2px 10px rgba(58,53,80,0.06)',
+            paddingTop:    10,
+            paddingBottom: 10,
+            paddingLeft:   12,
+            paddingRight:  12,
+            display: 'flex', alignItems: 'center', gap: 10,
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: 12, color: allDone ? UXP.greenDeep : UXP.ink2,
+              fontWeight: 700, lineHeight: 1.35,
+            }}>
+              {totalLines === 0
+                ? 'No lines in this session'
+                : `${doneLines} / ${totalLines} lines done`}
+            </div>
+            <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2, lineHeight: 1.3 }}>
+              {allDone ? 'Everything ticked — tap to close the session.' : 'Tap when service is done (you can complete with unchecked lines).'}
+            </div>
+          </div>
+          <button
+            onClick={completeSession}
+            style={{
+              ...primaryBtn,
+              padding: '12px 18px', fontSize: 14, fontWeight: 700,
+              minHeight: 48,
+              background: allDone ? UXP.greenDeep : UXP.lavDeep,
+              color: '#fff', border: 'none',
+              whiteSpace: 'nowrap' as const,
+              cursor: 'pointer',
+              transition: 'background-color 200ms ease',
+            }}
+          >
+            {allDone ? 'Complete ✓' : 'Complete prep'}
+          </button>
+        </div>
+      )}
 
       {/* ──────────────────────────────────────────────────────────────
           STICKY SEND BAR — mobile + create-mode only.
