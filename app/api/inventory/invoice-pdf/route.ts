@@ -100,6 +100,10 @@ export async function GET(req: NextRequest) {
 // new tab so we don't want to dump JSON in the user's face.
 function noPdfResponse(invoiceNumber: string, supplierName: string | null, message: string): NextResponse {
   const supplier = supplierName ? supplierName : 'supplier'
+  // Page renders inside the in-app <PdfModal>'s iframe. The parent
+  // modal already provides Close + Esc-to-close, so we don't add a
+  // button (the "Close this tab" pattern is misleading inside an iframe
+  // where window.close() is a no-op).
   const html = `<!DOCTYPE html><html lang="en"><head>
   <meta charset="utf-8"><title>No PDF · Invoice ${invoiceNumber}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -109,15 +113,13 @@ function noPdfResponse(invoiceNumber: string, supplierName: string | null, messa
     h1 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     .label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 4px; }
     .number { font-size: 14px; font-weight: 500; margin-bottom: 16px; font-variant-numeric: tabular-nums; }
-    p { font-size: 13px; line-height: 1.5; color: #444; margin: 0 0 16px; }
-    .close { background: #6e5cf7; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; }
+    p { font-size: 13px; line-height: 1.55; color: #444; margin: 0; }
   </style></head><body>
   <div class="card">
     <h1>PDF not available</h1>
     <div class="label">Invoice from ${escapeHtml(supplier)}</div>
     <div class="number">${escapeHtml(invoiceNumber)}</div>
     <p>${escapeHtml(message)}</p>
-    <button class="close" onclick="window.close()">Close this tab</button>
   </div>
   </body></html>`
   return new NextResponse(html, {
