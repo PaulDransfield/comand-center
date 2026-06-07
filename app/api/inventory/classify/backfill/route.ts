@@ -120,15 +120,29 @@ export async function POST(req: NextRequest) {
   // ── Source 1: supplier_articles direct lookup ───────────────────────
   // Pull aliases for these products + join to supplier_articles for the
   // category_path + storage_type signal.
+  //
+  // CRITICAL — supabase-js .in() with >~300 UUIDs blows the 16KB URL
+  // header cap (UND_ERR_HEADERS_OVERFLOW) and surfaces as a Bad Request
+  // 500. Chicce has ~800 candidates; we MUST batch. Canonical 100 per
+  // batch from the no-silent-null memory.
   const productIds = candidates.map(p => p.id)
-  const { data: aliases, error: aErr } = await db
-    .from('product_aliases')
-    .select('product_id, supplier_fortnox_number, article_number, last_seen_at')
-    .eq('business_id', businessId)
-    .eq('is_active', true)
-    .in('product_id', productIds)
-    .not('article_number', 'is', null)
-  if (aErr) return NextResponse.json({ error: aErr.message }, { status: 500 })
+  const aliases: any[] = []
+  const ALIAS_BATCH = 100
+  for (let i = 0; i < productIds.length; i += ALIAS_BATCH) {
+    const slice = productIds.slice(i, i + ALIAS_BATCH)
+    const { data, error: aErr } = await db
+      .from('product_aliases')
+      .select('product_id, supplier_fortnox_number, article_number, last_seen_at')
+      .eq('business_id', businessId)
+      .eq('is_active', true)
+      .in('product_id', slice)
+      .not('article_number', 'is', null)
+    if (aErr) {
+      console.error('[classify] aliases batch failed:', aErr)
+      return NextResponse.json({ error: `aliases lookup failed: ${aErr.message}`, batch_start: i, batch_size: slice.length }, { status: 500 })
+    }
+    if (data) aliases.push(...data)
+  }
 
   // Pick the most-recent alias per product (best supplier signal).
   const aliasByProduct = new Map<string, { supplier: string; article: string; last_seen: string | null }>()
