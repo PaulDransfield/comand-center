@@ -339,6 +339,16 @@ export default function InventoryItemsPage() {
       const remainingNote = remaining > 0
         ? `\n\n${remaining} more product${remaining === 1 ? '' : 's'} still need classifying — click "Classify catalogue" again to process the next batch.`
         : '\n\nAll items processed.'
+      const errNote = j.update_errors > 0
+        ? `\n\nWARNING: ${j.update_errors} updates failed. First error: ${j.first_update_error}`
+        : ''
+      const dbg = j.debug ?? {}
+      const diagNote = `\n\n[Diagnostics]\n` +
+        `Candidates loaded: ${dbg.candidates_count ?? '?'}\n` +
+        `Aliases for these products: ${dbg.aliases_count ?? '?'}\n` +
+        `Supplier-article keys needed: ${dbg.supplier_keys_needed ?? '?'}\n` +
+        `Supplier-articles cache hits: ${dbg.supplier_articles_hits ?? '?'}\n` +
+        `Writable results before save: ${dbg.writable_results ?? '?'}`
       alert(
         `Classified ${j.updated}/${j.processed_this_run} products this run.\n\n` +
         `From supplier data: ${by.supplier_articles ?? 0}\n` +
@@ -346,7 +356,9 @@ export default function InventoryItemsPage() {
         `From OpenFoodFacts (GTIN): ${by.openfoodfacts ?? 0}\n` +
         `From AI (name only): ${by.name_llm ?? 0}\n` +
         `Couldn't classify: ${by.unclassified ?? 0}` +
-        remainingNote,
+        errNote +
+        remainingNote +
+        diagNote,
       )
       load()
     } catch (e: any) {
