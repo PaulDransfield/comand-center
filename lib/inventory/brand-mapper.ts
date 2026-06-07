@@ -94,6 +94,41 @@ const BRAND_TO_SUB: Record<string, SubCategory> = {
   'mer':                      'bev_juice',            // MER (Coca-Cola SE — juices/cordials)
   'rio':                      'bev_soft_drinks',
   'trocadero':                'bev_soft_drinks',
+  'mathieu teisseire':        'bev_mixers',           // French syrup brand
+  'teisseire':                'bev_mixers',
+
+  // ── Additional cheese brands ─────────────────────────────────────
+  'soignon':                  'dairy_cheese',         // French goat cheese
+  'rosenborg':                'dairy_cheese',
+  'st agur':                  'dairy_cheese',
+  'roquefort société':        'dairy_cheese',
+  'président':                'dairy_cheese',
+
+  // ── Eggs / dairy ─────────────────────────────────────────────────
+  'stjärnägg':                'dairy_eggs',           // "Star Eggs" — Swedish egg co
+  'cb ägg':                   'dairy_eggs',
+  'kronägg':                  'dairy_eggs',
+
+  // ── Salt / sugar / pantry ────────────────────────────────────────
+  'falksalt':                 'salt_sugar',
+  'jozo':                     'salt_sugar',
+  'saltå kvarn':               'grain_flour',          // Organic Swedish flour mill
+  'kungsörnen':               'grain_flour',
+  'wasa':                     'bakery_bread',         // crispbread
+
+  // ── Jams / conserves ─────────────────────────────────────────────
+  'hälsingesylt':             'sauces_condiments',    // Hälsinge jam
+  'fellbergs':                'sauces_condiments',
+  'önos':                     'sauces_condiments',    // Önos jam/marmalade
+
+  // ── Frozen produce / convenience ─────────────────────────────────
+  'magnihill':                'produce_vegetables',   // Frozen Swedish veg
+
+  // ── Snellman (Finnish meat processor — mostly pork/charcuterie) ─
+  'snellman':                 'meat_charcuterie',
+
+  // ── Disposables (Schades = Danish single-use packaging) ──────────
+  'schades':                  'paper_general',
 
   // ── Beverages — energy / mixers ───────────────────────────────────
   'red bull':                 'bev_energy',
@@ -187,14 +222,28 @@ export function brandToSubCategory(brand: string | null | undefined): SubCategor
   if (!brand) return null
   const key = String(brand).toLowerCase().trim()
   if (!key) return null
-  // Direct hit
+  // 1. Direct hit
   if (BRAND_TO_SUB[key]) return BRAND_TO_SUB[key]
-  // Try removing common corporate suffixes
+  // 2. Strip common corporate suffixes (AB, AS, GmbH, Inc., etc.)
   const stripped = key
     .replace(/\b(ab|aps|gmbh|inc|ltd|s\.r\.l\.?|s\.p\.a\.?|sl|llc|oy|asa)\b\.?/gi, '')
     .replace(/\s+/g, ' ')
     .trim()
   if (stripped && stripped !== key && BRAND_TO_SUB[stripped]) return BRAND_TO_SUB[stripped]
+  // 3. Prefix match — supplier brand strings frequently include a
+  // product-line suffix (e.g. "Tanqueray Gordon", "Absolut Citron",
+  // "Coca-Cola Zero"). Walk the dictionary checking if any key is a
+  // word-bounded prefix of the input. First match wins; we rank
+  // multi-word keys before single-word so "marchesi frescobaldi" beats
+  // a hypothetical "marchesi" entry.
+  const candidateKeys = Object.keys(BRAND_TO_SUB)
+    .sort((a, b) => b.length - a.length)
+  for (const k of candidateKeys) {
+    if (key === k) continue                          // already handled above
+    if (key.startsWith(k + ' ') || key.startsWith(k + '-')) {
+      return BRAND_TO_SUB[k]
+    }
+  }
   return null
 }
 
