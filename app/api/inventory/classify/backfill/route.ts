@@ -77,12 +77,18 @@ export async function POST(req: NextRequest) {
   // is 0.5, web_llm is 0.7). Owner rows have source='owner' → never touched.
   const products: ProductRow[] = []
   for (let from = 0; ; from += 1000) {
+    // Three-valued-logic gotcha: `.neq('classification_source', 'owner')`
+    // EXCLUDES rows where the column IS NULL because in SQL, NULL != 'x'
+    // evaluates to NULL (not TRUE), and PostgREST inherits that. Every
+    // freshly-loaded product has NULL classification_source, so the bare
+    // .neq() filtered out the entire catalogue and the cascade saw 0
+    // candidates. Use .or() with an explicit `is.null` arm.
     const { data, error } = await db
       .from('products')
       .select('id, name, category, sub_category, storage_type, brand, gtin, classification_source, classification_confidence, archived_at')
       .eq('business_id', businessId)
       .is('archived_at', null)
-      .neq('classification_source', 'owner')
+      .or('classification_source.is.null,classification_source.neq.owner')
       .order('id', { ascending: true })
       .range(from, from + 999)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -556,7 +562,10 @@ Tips:
           classification_last_at:    new Date().toISOString(),
         })
         .eq('id', r.product_id)
-        .neq('classification_source', 'owner')  // safeguard: never overwrite owner
+        // Same NULL-aware safeguard as the SELECT — `.neq('owner')` alone
+        // would skip rows where classification_source IS NULL (every
+        // never-classified product), making the UPDATE a no-op.
+        .or('classification_source.is.null,classification_source.neq.owner')
       if (!uErr) updated++
     }
   }
