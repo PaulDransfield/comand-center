@@ -183,5 +183,6 @@ export function mapStorageType(s: string | null | undefined): StorageType | null
   if (v === 'fryst' || v === 'frozen' || v === 'djupfryst') return 'frozen'
   if (v === 'kyl' || v === 'kyld' || v === 'kylvara' || v === 'chilled' || v === 'refrigerated') return 'refrigerated'
   if (v === 'rum' || v === 'rumstemp' || v === 'torrt' || v === 'ambient' || v === 'kolonial') return 'ambient'
+  if (v === 'non food' || v === 'non-food' || v === 'nonfood') return 'ambient'  // disposables/cleaning are ambient
   return null
 }
