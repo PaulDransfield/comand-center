@@ -77,18 +77,18 @@ export async function POST(req: NextRequest) {
   // is 0.5, web_llm is 0.7). Owner rows have source='owner' → never touched.
   const products: ProductRow[] = []
   for (let from = 0; ; from += 1000) {
-    // Three-valued-logic gotcha: `.neq('classification_source', 'owner')`
-    // EXCLUDES rows where the column IS NULL because in SQL, NULL != 'x'
-    // evaluates to NULL (not TRUE), and PostgREST inherits that. Every
-    // freshly-loaded product has NULL classification_source, so the bare
-    // .neq() filtered out the entire catalogue and the cascade saw 0
-    // candidates. Use .or() with an explicit `is.null` arm.
+    // Owner-source filter is applied JS-side below. Doing it at the DB
+    // layer hits two PostgREST gotchas:
+    //   - `.neq('classification_source', 'owner')` excludes NULL rows
+    //     (three-valued logic), so a fresh catalogue returns 0 candidates.
+    //   - `.or('classification_source.is.null,classification_source.neq.owner')`
+    //     trips a PostgREST 400 on some syntaxes.
+    // Loading all rows and JS-filtering is simpler and safe.
     const { data, error } = await db
       .from('products')
       .select('id, name, category, sub_category, storage_type, brand, gtin, classification_source, classification_confidence, archived_at')
       .eq('business_id', businessId)
       .is('archived_at', null)
-      .or('classification_source.is.null,classification_source.neq.owner')
       .order('id', { ascending: true })
       .range(from, from + 999)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -97,9 +97,13 @@ export async function POST(req: NextRequest) {
     if (products.length > 20_000) break
   }
 
-  // Filter to those needing classification (null OR low confidence)
+  // Filter to those needing classification (null OR low confidence) AND
+  // never overwrite owner-source rows (manual overrides win permanently).
+  // JS-side handles NULL correctly without PostgREST three-valued-logic
+  // surprises.
   const candidates = products.filter(p =>
-    p.sub_category == null || (p.classification_confidence ?? 0) < 0.7,
+    p.classification_source !== 'owner' &&
+    (p.sub_category == null || (p.classification_confidence ?? 0) < 0.7),
   )
 
   if (candidates.length === 0) {
@@ -548,10 +552,15 @@ Tips:
   }
 
   // ── Apply writes ────────────────────────────────────────────────────
+  // The owner-skip safeguard is enforced at the candidate-filter step
+  // (results never contain owner-source rows), so the UPDATE doesn't
+  // need a DB-level guard. Keeping the UPDATE filter-free avoids the
+  // PostgREST OR-syntax gotcha.
   let updated = 0
   if (!dryRun) {
     for (const r of results) {
       if (!r.after) continue
+      if (r.before.source === 'owner') continue   // double-belt safeguard
       const { error: uErr } = await db
         .from('products')
         .update({
@@ -562,10 +571,6 @@ Tips:
           classification_last_at:    new Date().toISOString(),
         })
         .eq('id', r.product_id)
-        // Same NULL-aware safeguard as the SELECT — `.neq('owner')` alone
-        // would skip rows where classification_source IS NULL (every
-        // never-classified product), making the UPDATE a no-op.
-        .or('classification_source.is.null,classification_source.neq.owner')
       if (!uErr) updated++
     }
   }
