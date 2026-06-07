@@ -18,6 +18,7 @@ import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
 import { Modal, overlayBtn } from '@/components/ui/Overlay'
 import { PageContainer } from '@/components/ui/Layout'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { DataTable, type DataTableColumn } from '@/components/ui/DataTable'
 import { fmtKr } from '@/lib/format'
 import { FOOD_TYPES, DRINK_TYPES, categoryToken } from '@/lib/categoryColors'
@@ -308,7 +309,16 @@ export default function InventoryRecipesPage() {
           </div>
         )}
         {bizId && loading && <Empty label={t('loading')} />}
-        {bizId && !loading && rows.length === 0 && !error && <Empty label={t('empty')} />}
+        {bizId && !loading && rows.length === 0 && !error && (
+          <EmptyState
+            badge="No recipes yet"
+            title="Start by creating your first dish."
+            description="Add recipes one-by-one in the editor, or paste your whole menu PDF/Word/image and the importer will draft them all in one go. You'll get live food cost and GP% per dish."
+            action={{ label: 'Create a recipe', href: '/inventory/recipes/new' }}
+            secondary={{ label: 'Bulk import a menu', href: '/inventory/recipes?import=1' }}
+            style={{ marginTop: 16 }}
+          />
+        )}
 
         {!loading && rows.length > 0 && (() => {
           const incomplete = (r: RecipeRow) => r.missing_prices > 0 || r.unit_mismatches > 0
