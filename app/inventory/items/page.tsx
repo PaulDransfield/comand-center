@@ -375,6 +375,14 @@ export default function InventoryItemsPage() {
     lines.push(`Supplier-article keys needed: ${dbg.supplier_keys_needed ?? '?'}`)
     lines.push(`Supplier-articles cache hits: ${dbg.supplier_articles_hits ?? '?'}`)
     lines.push(`Writable results before save: ${dbg.writable_results ?? '?'}`)
+    const unmapped = dbg.unmapped_paths_sample ?? []
+    if (unmapped.length > 0) {
+      lines.push('')
+      lines.push(`[Unmapped category_paths — supplier said this but mapper didn't recognise]`)
+      for (const u of unmapped) {
+        lines.push(`  path: ${JSON.stringify(u.category_path)} brand: ${JSON.stringify(u.brand)} storage: ${JSON.stringify(u.storage)}`)
+      }
+    }
     return lines.join('\n')
   }
   async function copyClassifyResult() {
