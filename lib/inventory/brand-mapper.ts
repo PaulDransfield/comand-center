@@ -62,6 +62,38 @@ const BRAND_TO_SUB: Record<string, SubCategory> = {
   'kronfågel':                'meat_poultry',
   'guldfågeln':               'meat_poultry',
   'scan':                     'meat_charcuterie',     // big Swedish processor — mostly charcuterie/sausage
+  'moek prästorp':            'meat_beef',            // MOEK Prästorp — Swedish meat farm
+  'moek':                     'meat_beef',
+
+  // ── Produce / fresh brands ───────────────────────────────────────
+  // F&G M/S = "Frukt & Grönsaker Martin & Servera" (MS in-house fresh
+  // produce). All storage=kyl. Mostly vegetables + some fruit;
+  // produce_vegetables is the safer default.
+  'f&g m/s':                  'produce_vegetables',
+  'f&g ms':                   'produce_vegetables',
+  'frukt & grönsaker':        'produce_vegetables',
+  'odlarna.se':               'produce_vegetables',   // "The Growers" coop
+  'odlarna':                  'produce_vegetables',
+  'smålandssvamp':            'produce_mushrooms',
+  'svampbolaget':             'produce_mushrooms',
+
+  // ── Fish suppliers ───────────────────────────────────────────────
+  'skags':                    'fish_fresh',
+  'kg paulsson':              'fish_fresh',
+  'paulssons':                'fish_fresh',
+  'falkenbergs fågel':        'meat_poultry',
+  'leröy':                    'fish_fresh',           // Norwegian fish/seafood giant
+
+  // ── Frozen prepared meals + ready-foods ──────────────────────────
+  'dafgårds':                 'prepared_meals',       // huge SE frozen-food brand (pizza, ready-meals)
+  'dafgard':                  'prepared_meals',
+  'findus':                   'prepared_meals',
+  'orkla':                    'prepared_meals',
+
+  // ── Additional drinks / juices ───────────────────────────────────
+  'mer':                      'bev_juice',            // MER (Coca-Cola SE — juices/cordials)
+  'rio':                      'bev_soft_drinks',
+  'trocadero':                'bev_soft_drinks',
 
   // ── Beverages — energy / mixers ───────────────────────────────────
   'red bull':                 'bev_energy',

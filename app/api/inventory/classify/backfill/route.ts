@@ -653,6 +653,19 @@ Tips:
           })
           continue
         }
+        // Confidence cap depends on context richness:
+        //   - name only            → cap 0.55 (treat as low-confidence "review me")
+        //   - brand OR storage     → cap 0.65
+        //   - brand AND storage    → cap 0.75 (real signal, not pure guesswork)
+        // The cap is on top of the LLM's self-reported confidence,
+        // which we already clamped to [0.1, 1.0] above.
+        const alias = aliasByProduct.get(p.id)
+        const sa = alias ? supplierArticleByKey.get(`${alias.supplier}|${alias.article}`) : null
+        const hasBrand   = !!sa?.brand
+        const hasStorage = !!sa?.storage_type
+        const cap = (hasBrand && hasStorage) ? 0.75
+                  : (hasBrand || hasStorage) ? 0.65
+                  : 0.55
         const conf = Math.max(0.1, Math.min(1.0, Number(r.confidence ?? 0.5)))
         results.push({
           product_id: p.id, product_name: p.name,
@@ -661,9 +674,9 @@ Tips:
             sub_category: r.sub_category,
             storage_type: (r.storage_type === 'frozen' || r.storage_type === 'refrigerated' || r.storage_type === 'ambient') ? r.storage_type : null,
             source:       'name_llm',
-            confidence:   Math.min(0.55, conf),  // cap at 0.55 — LLM-from-name is best treated as low-confidence
+            confidence:   Math.min(cap, conf),
           },
-          reason: `LLM from name (Haiku)`,
+          reason: `LLM (Haiku) — context: ${hasBrand ? 'brand' : ''}${hasBrand && hasStorage ? '+' : ''}${hasStorage ? 'storage' : ''}${!hasBrand && !hasStorage ? 'name only' : ''}`,
         })
       }
     }
