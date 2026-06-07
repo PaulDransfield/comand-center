@@ -13,14 +13,15 @@ import { usePathname, useRouter } from 'next/navigation'
 import { clearAdminSecret } from '@/lib/admin/v2/api-client'
 
 const TABS = [
-  { href: '/admin/v2/overview',     label: 'Overview' },
-  { href: '/admin/v2/customers',    label: 'Customers' },
-  { href: '/admin/v2/setup-health', label: 'Setup health' },
-  { href: '/admin/v2/agents',       label: 'Agents' },
-  { href: '/admin/v2/health',       label: 'Health' },
-  { href: '/admin/v2/forecasting',  label: 'Forecasting' },
-  { href: '/admin/v2/audit',        label: 'Audit' },
-  { href: '/admin/v2/tools',        label: 'Tools' },
+  { href: '/admin/v2/overview',         label: 'Overview' },
+  { href: '/admin/v2/customers',        label: 'Customers' },
+  { href: '/admin/v2/setup-health',     label: 'Setup health' },
+  { href: '/admin/v2/backfill-health',  label: 'Backfill health' },
+  { href: '/admin/v2/agents',           label: 'Agents' },
+  { href: '/admin/v2/health',           label: 'Health' },
+  { href: '/admin/v2/forecasting',      label: 'Forecasting' },
+  { href: '/admin/v2/audit',            label: 'Audit' },
+  { href: '/admin/v2/tools',            label: 'Tools' },
 ]
 
 export function AdminNavV2() {
