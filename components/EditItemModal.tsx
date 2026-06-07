@@ -221,7 +221,7 @@ export function EditItemModal({ productId, onClose, onSaved, onChange }: {
     } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
   }
   async function repointSupplierAlias(aliasId: string, fromProductName: string | null) {
-    if (!confirm(`Move this supplier article from "${fromProductName ?? 'the other product'}" to this product?\n\nThe other product will lose this article's cost history. (You can repoint it back any time.)`)) return
+    if (!confirm(`Move this supplier article from "${fromProductName ?? 'the other product'}" to this product?\n\nIf "${fromProductName ?? 'the other product'}" has no other articles or recipes left after this, it will be auto-archived (cleared from your items list). You can restore archived items if needed.`)) return
     setBusy(true); setErr(null)
     try {
       const r = await fetch(`/api/inventory/product-aliases/${aliasId}/repoint`, {
@@ -233,7 +233,19 @@ export function EditItemModal({ productId, onClose, onSaved, onChange }: {
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
       setLinking(false)
       await load()
-      flashLinkSuccess('Article repointed — cost history moved over.')
+      // Compose a message that tells the owner what happened to the OLD
+      // product too — auto-archived, still-used-by-recipes, or still has
+      // other aliases. Owner kept seeing the empty ghost row otherwise.
+      const oldName = fromProductName ?? 'the previous product'
+      let msg = 'Article repointed — cost history moved over.'
+      if (j.old_product_archived) {
+        msg += ` "${oldName}" had no remaining articles or recipes — auto-archived from your items list.`
+      } else if (j.old_product_archive_blocked_reason === 'used_by_recipes' && (j.old_product_recipe_count ?? 0) > 0) {
+        msg += ` "${oldName}" is still used by ${j.old_product_recipe_count} recipe${j.old_product_recipe_count === 1 ? '' : 's'} — repoint those before it can be archived.`
+      } else if (j.old_product_archive_blocked_reason === 'still_has_aliases' && (j.old_product_remaining_aliases_count ?? 0) > 0) {
+        msg += ` "${oldName}" still has ${j.old_product_remaining_aliases_count} other article${j.old_product_remaining_aliases_count === 1 ? '' : 's'} attached — left in place.`
+      }
+      flashLinkSuccess(msg)
       // onChange (NOT onSaved) — same reason as linkSupplierLine: owner
       // needs to verify the article moved over and the cost updated.
       onChange?.()

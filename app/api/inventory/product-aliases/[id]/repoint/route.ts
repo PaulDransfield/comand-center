@@ -104,6 +104,60 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .eq('id', alias.id)
   if (uErr) return NextResponse.json({ error: uErr.message }, { status: 500 })
 
+  // ── Orphan cleanup of the previous product ──────────────────────────
+  // A product whose last alias just moved away is now a ghost row:
+  // appears in /inventory/items with no article + no price + no supplier.
+  // Owner reported this surfaced as visual noise after consolidating
+  // duplicates. Auto-archive the previous product when ALL of:
+  //   - It has zero remaining active aliases.
+  //   - No active recipe_ingredient references it (would break recipes).
+  //   - It's not already archived (idempotent).
+  // Otherwise leave it alone and report WHY so the UI can guide the owner.
+  let oldProductArchived       = false
+  let oldProductRecipeCount    = 0
+  let oldProductRemainingAliases = 0
+  let oldProductArchiveBlockedReason: string | null = null
+  if (alias.product_id) {
+    const [{ count: remainingAliases }, { count: recipeRefs }, { data: oldProduct }] = await Promise.all([
+      db.from('product_aliases')
+        .select('id', { count: 'exact', head: true })
+        .eq('product_id', alias.product_id)
+        .eq('is_active', true),
+      db.from('recipe_ingredients')
+        .select('id', { count: 'exact', head: true })
+        .eq('product_id', alias.product_id),
+      db.from('products')
+        .select('id, name, archived_at')
+        .eq('id', alias.product_id)
+        .maybeSingle(),
+    ])
+    oldProductRemainingAliases = remainingAliases ?? 0
+    oldProductRecipeCount      = recipeRefs ?? 0
+
+    const alreadyArchived = !!oldProduct?.archived_at
+    if (alreadyArchived) {
+      oldProductArchiveBlockedReason = 'already_archived'
+    } else if (oldProductRemainingAliases > 0) {
+      oldProductArchiveBlockedReason = 'still_has_aliases'
+    } else if (oldProductRecipeCount > 0) {
+      oldProductArchiveBlockedReason = 'used_by_recipes'
+    } else {
+      const { error: archErr } = await db
+        .from('products')
+        .update({ archived_at: new Date().toISOString() })
+        .eq('id', alias.product_id)
+        .is('archived_at', null)
+      if (archErr) {
+        // Auto-archive is best-effort — don't fail the whole repoint if it
+        // trips on a RLS quirk or constraint. Surface the reason in the
+        // response so the owner can archive manually.
+        oldProductArchiveBlockedReason = `auto_archive_failed: ${archErr.message}`
+      } else {
+        oldProductArchived = true
+      }
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     alias_id:              alias.id,
@@ -111,6 +165,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     new_product_id:        newProductId,
     no_op:                 false,
     dependent_lines_count: depCount ?? null,
+    old_product_archived:                 oldProductArchived,
+    old_product_remaining_aliases_count:  oldProductRemainingAliases,
+    old_product_recipe_count:             oldProductRecipeCount,
+    old_product_archive_blocked_reason:   oldProductArchiveBlockedReason,
     propagation:           'live-on-read: dependent cost reads now resolve to the new product on next render',
   }, { headers: { 'Cache-Control': 'no-store' } })
 }
