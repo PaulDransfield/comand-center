@@ -28,6 +28,7 @@ import { fmtKr } from '@/lib/format'
 import { PdfModal } from '@/components/ui/PdfModal'
 import { PdfButton } from '@/components/ui/PdfButton'
 import { CategoryPill } from '@/components/ui/CategoryPill'
+import { SUB_CATEGORIES, subCategoriesForTop } from '@/lib/inventory/taxonomy'
 
 interface EditContextResponse {
   product: {
@@ -46,6 +47,11 @@ interface EditContextResponse {
     weight_per_piece_source: string | null   // M122 — manual / supplier_article / name_parsed
     volume_per_piece_ml:     number | null   // M136
     volume_per_piece_source: string | null   // M136 — manual / supplier_article / name_parsed / ai_inferred
+    sub_category:            string | null   // M137
+    storage_type:            string | null   // M137
+    brand:                   string | null   // M137
+    classification_source:     string | null // M137
+    classification_confidence: number | null // M137
     archived_at: string | null
   }
   latest_cost: {
@@ -368,6 +374,39 @@ export function EditItemModal({ productId, onClose, onSaved, onChange }: {
                       </div>
                     </Field>
                   )}
+                  {/* M137 — Sub-category + storage owner override.
+                      Setting sub_category flips classification_source
+                      to 'owner' and confidence to 1.0; the cascade
+                      will never re-touch this row. Clear (set to
+                      empty) to re-open it for the next cascade run. */}
+                  <Field label="Sub-category">
+                    <SubCategorySelect
+                      topCategory={current.category ?? null}
+                      value={(current as any).sub_category ?? null}
+                      onChange={v => setEdits(p => ({ ...p, sub_category: v }))}
+                    />
+                    <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 3, lineHeight: 1.4 }}>
+                      {current.classification_source === 'owner'
+                        ? <>Owner-set — never overwritten by AI cascade.</>
+                        : current.classification_source
+                          ? <>Source: <strong>{current.classification_source}</strong>
+                            {current.classification_confidence != null && <> · {Math.round(current.classification_confidence * 100)}% confidence</>}.
+                            {' '}Saving here locks it as owner-set.</>
+                          : <>Not yet classified.</>}
+                    </div>
+                  </Field>
+                  <Field label="Storage zone">
+                    <select
+                      value={(current as any).storage_type ?? ''}
+                      onChange={e => setEdits(p => ({ ...p, storage_type: e.target.value === '' ? null : e.target.value }))}
+                      style={inputStyle}
+                    >
+                      <option value="">— Unknown —</option>
+                      <option value="frozen">Frozen</option>
+                      <option value="refrigerated">Refrigerated</option>
+                      <option value="ambient">Ambient (dry / room temp)</option>
+                    </select>
+                  </Field>
                   <Field label="Default waste %">
                     <input type="number" step="1" min="0" max="95"
                       value={current.default_waste_pct ?? 0}
@@ -599,6 +638,42 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 function Empty({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 11, color: UXP.ink4, padding: '8px 10px', background: UXP.subtleBg, borderRadius: 6, fontStyle: 'italic' as const }}>{children}</div>
+}
+
+// M137 — Sub-category picker grouped by top-level category. When the
+// product's top-level is known (food / beverage / alcohol / etc.) we
+// preselect that top-section but still let owner pick from anywhere
+// in case the top-level is wrong (e.g. AI thought "Coke Zero" was food).
+function SubCategorySelect({ topCategory, value, onChange }: {
+  topCategory: string | null
+  value:       string | null
+  onChange:    (v: string | null) => void
+}) {
+  // Group SUB_CATEGORIES by their top, sorted with current top first.
+  const TOPS = ['food', 'beverage', 'alcohol', 'cleaning', 'takeaway_material', 'disposables', 'other'] as const
+  const orderedTops = topCategory && (TOPS as readonly string[]).includes(topCategory)
+    ? [topCategory, ...TOPS.filter(t => t !== topCategory)]
+    : TOPS
+  return (
+    <select
+      value={value ?? ''}
+      onChange={e => onChange(e.target.value === '' ? null : e.target.value)}
+      style={inputStyle}
+    >
+      <option value="">— Pick sub-category —</option>
+      {orderedTops.map(top => {
+        const subs = subCategoriesForTop(top)
+        if (subs.length === 0) return null
+        return (
+          <optgroup key={top} label={top.replace(/_/g, ' ').toUpperCase()}>
+            {subs.map(s => (
+              <option key={s.key} value={s.key}>{s.label}</option>
+            ))}
+          </optgroup>
+        )
+      })}
+    </select>
+  )
 }
 
 // ── AiFillButton ─────────────────────────────────────────────────────

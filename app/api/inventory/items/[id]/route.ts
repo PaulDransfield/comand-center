@@ -313,6 +313,43 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       patch.volume_per_piece_source = 'manual'
     }
   }
+
+  // M137 — owner override of sub_category + storage_type. When owner
+  // sets either, classification_source flips to 'owner' and confidence
+  // to 1.0 so the cascade NEVER touches the row again. Owner clears
+  // via empty-string / null and source goes back to NULL so the next
+  // cascade run can re-classify.
+  if (body.sub_category !== undefined) {
+    if (body.sub_category === null || body.sub_category === '') {
+      patch.sub_category              = null
+      patch.classification_source     = null
+      patch.classification_confidence = null
+    } else {
+      const v = String(body.sub_category).trim()
+      // Light validation — accept any non-empty key; full enum check
+      // happens server-side via the products_sub_category_chk constraint
+      // when we add one. For now, accept what the client sends.
+      patch.sub_category              = v
+      patch.classification_source     = 'owner'
+      patch.classification_confidence = 1.0
+      patch.classification_last_at    = new Date().toISOString()
+    }
+  }
+  if (body.storage_type !== undefined) {
+    if (body.storage_type === null || body.storage_type === '') {
+      patch.storage_type = null
+    } else {
+      const v = String(body.storage_type).trim()
+      if (v !== 'frozen' && v !== 'refrigerated' && v !== 'ambient') {
+        return NextResponse.json({ error: 'storage_type must be frozen | refrigerated | ambient' }, { status: 400 })
+      }
+      patch.storage_type = v
+      // Setting storage_type alone doesn't lock classification_source
+      // — that's only for sub_category. Storage is a separate
+      // independent field.
+    }
+  }
+
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'no editable fields supplied' }, { status: 400 })
   }
