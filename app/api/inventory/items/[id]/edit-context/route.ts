@@ -49,19 +49,29 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   let weight_per_piece_source: string | null = null
   let volume_per_piece_ml:     number | null = null
   let volume_per_piece_source: string | null = null
+  let sub_category:              string | null = null
+  let storage_type:              string | null = null
+  let brand:                     string | null = null
+  let classification_source:     string | null = null
+  let classification_confidence: number | null = null
   {
     const { data: row, error: rErr } = await db
       .from('products')
-      .select('weight_per_piece_g, weight_per_piece_source, volume_per_piece_ml, volume_per_piece_source')
+      .select('weight_per_piece_g, weight_per_piece_source, volume_per_piece_ml, volume_per_piece_source, sub_category, storage_type, brand, classification_source, classification_confidence')
       .eq('id', params.id)
       .maybeSingle()
     if (!rErr && row) {
-      weight_per_piece_g      = (row as any).weight_per_piece_g != null ? Number((row as any).weight_per_piece_g) : null
-      weight_per_piece_source = (row as any).weight_per_piece_source ?? null
-      volume_per_piece_ml     = (row as any).volume_per_piece_ml != null ? Number((row as any).volume_per_piece_ml) : null
-      volume_per_piece_source = (row as any).volume_per_piece_source ?? null
+      weight_per_piece_g        = (row as any).weight_per_piece_g != null ? Number((row as any).weight_per_piece_g) : null
+      weight_per_piece_source   = (row as any).weight_per_piece_source ?? null
+      volume_per_piece_ml       = (row as any).volume_per_piece_ml != null ? Number((row as any).volume_per_piece_ml) : null
+      volume_per_piece_source   = (row as any).volume_per_piece_source ?? null
+      sub_category              = (row as any).sub_category ?? null
+      storage_type              = (row as any).storage_type ?? null
+      brand                     = (row as any).brand ?? null
+      classification_source     = (row as any).classification_source ?? null
+      classification_confidence = (row as any).classification_confidence != null ? Number((row as any).classification_confidence) : null
     } else if (rErr) {
-      // M136 not applied yet — fall back to the M122-only shape.
+      // M136 / M137 not applied yet — fall back to the M122-only shape.
       const { data: wRow } = await db
         .from('products')
         .select('weight_per_piece_g, weight_per_piece_source')
@@ -211,6 +221,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       weight_per_piece_source,
       volume_per_piece_ml,
       volume_per_piece_source,
+      sub_category,
+      storage_type,
+      brand,
+      classification_source,
+      classification_confidence,
     },
     latest_cost: latest ? {
       unit_price:       latest.latest_price,
