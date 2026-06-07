@@ -28,6 +28,7 @@ import { SCOPE_NOTE } from '@/lib/ai/scope'
 import { SUB_CATEGORIES, type SubCategory } from '@/lib/inventory/taxonomy'
 import { mapCategoryPath, mapStorageType } from '@/lib/inventory/category-mapper'
 import { brandToSubCategory, isNavigationMenuPath } from '@/lib/inventory/brand-mapper'
+import { lookupLearnedBrands } from '@/lib/inventory/brand-learner'
 import { lookupGtin, mapOffCategories, mapOffAllergens } from '@/lib/inventory/openfoodfacts'
 import { searchTavily, buildClassificationQuery } from '@/lib/web/tavily'
 
@@ -293,6 +294,26 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── Source 2.5: brand_classifications_learned (M138) ────────────────
+  // Global brand → sub_category map populated reactively from every
+  // owner sub_category override. Sits BETWEEN cross-customer and the
+  // hand-curated brand dictionary because:
+  //   - owner signal > my code-time guesses (their domain knowledge wins)
+  //   - learned brands grow organically; the dictionary doesn't
+  //   - ≥3 samples + 80% agreement gate keeps noise out
+  //
+  // Lookup is a single round-trip on the union of brands we know about
+  // from products.brand AND supplier_articles.brand for the candidates.
+  const learnedBrandSet = new Set<string>()
+  for (const p of candidates) if (p.brand) learnedBrandSet.add(p.brand)
+  for (const sa of supplierArticleByKey.values()) if (sa.brand) learnedBrandSet.add(sa.brand)
+  const learnedBrandMap = await lookupLearnedBrands(db, Array.from(learnedBrandSet))
+  const learnedBrandLookup = (brand: string | null | undefined) => {
+    if (!brand) return null
+    return learnedBrandMap.get(String(brand).toLowerCase().trim()) ?? null
+  }
+  console.log(`[classify] learned brands hits: ${learnedBrandMap.size}/${learnedBrandSet.size}`)
+
   // ── Pass 1: deterministic sources (supplier_articles + cross_customer) ─
   const results: ClassifyResult[] = []
   const remainingForLlm: ProductRow[] = []
@@ -334,8 +355,28 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 1B. Brand-based — covers the case where the path is bogus but
-      // the brand field is meaningful ("San Pellegrino" → bev_water).
+      // 1B. Learned brand (owner-driven, cross-customer). Wins over the
+      // hand-curated dictionary because owners know their inventory
+      // better than my code does.
+      const learnedFromSa = learnedBrandLookup(sa.brand)
+      if (learnedFromSa) {
+        results.push({
+          product_id: p.id,
+          product_name: p.name,
+          before: { sub_category: p.sub_category, source: p.classification_source, confidence: p.classification_confidence },
+          after: {
+            sub_category: learnedFromSa.sub_category as SubCategory,
+            storage_type: storage,
+            source:       'brand_learned',
+            confidence:   0.85,
+          },
+          reason: `Learned brand "${sa.brand}" → ${learnedFromSa.sub_category} (n=${learnedFromSa.sample_count}, agreement=${Math.round(learnedFromSa.confidence * 100)}%)`,
+        })
+        continue
+      }
+
+      // 1C. Brand-based dictionary — covers the case where the path is
+      // bogus but the brand field is meaningful ("San Pellegrino" → bev_water).
       const fromBrand = brandToSubCategory(sa.brand)
       if (fromBrand) {
         results.push({
@@ -373,6 +414,25 @@ export async function POST(req: NextRequest) {
           confidence:   0.90,
         },
         reason: `Cross-customer match: same (supplier ${alias.supplier}, article ${alias.article}) classified at another business`,
+      })
+      continue
+    }
+
+    // Last deterministic chance: learned brand from products.brand
+    // (covers products with no SA row, or SA row with no brand field).
+    const learnedFromProduct = learnedBrandLookup(p.brand)
+    if (learnedFromProduct) {
+      results.push({
+        product_id: p.id,
+        product_name: p.name,
+        before: { sub_category: p.sub_category, source: p.classification_source, confidence: p.classification_confidence },
+        after: {
+          sub_category: learnedFromProduct.sub_category as SubCategory,
+          storage_type: p.storage_type as any,
+          source:       'brand_learned',
+          confidence:   0.85,
+        },
+        reason: `Learned brand "${p.brand}" → ${learnedFromProduct.sub_category} (n=${learnedFromProduct.sample_count}, agreement=${Math.round(learnedFromProduct.confidence * 100)}%)`,
       })
       continue
     }
@@ -559,12 +619,49 @@ Confidence 0.7+ when the web context clearly identifies the product. 0.5-0.6 whe
     const usage = await checkAndIncrementAiLimit(db, auth.orgId)
     if (!usage.ok) return NextResponse.json(usage.body, { status: usage.status })
 
+    // M138 (B) — few-shot examples from owner classifications at THIS
+    // business. Pull recent owner-source products grouped by top
+    // category; inject 3-5 per batch as worked examples so the LLM
+    // learns the owner's particular shorthand (Chicce calls "Pinsa
+    // Margherita" food_other, Vero might call it prepared_meals, etc.).
+    // Cheap one-shot fetch — no cap concerns.
+    const fewShotByCategory = new Map<string, Array<{ name: string; brand: string | null; storage: string | null; sub_category: string }>>()
+    try {
+      const { data: ownerEx } = await db
+        .from('products')
+        .select('name, category, brand, storage_type, sub_category, classification_last_at')
+        .eq('business_id', businessId)
+        .eq('classification_source', 'owner')
+        .not('sub_category', 'is', null)
+        .order('classification_last_at', { ascending: false })
+        .limit(60)
+      for (const r of ownerEx ?? []) {
+        const cat = String((r as any).category ?? 'other')
+        if (!fewShotByCategory.has(cat)) fewShotByCategory.set(cat, [])
+        const bucket = fewShotByCategory.get(cat)!
+        if (bucket.length < 5) {
+          bucket.push({
+            name:         (r as any).name,
+            brand:        (r as any).brand,
+            storage:      (r as any).storage_type,
+            sub_category: (r as any).sub_category,
+          })
+        }
+      }
+      const total = Array.from(fewShotByCategory.values()).reduce((s, a) => s + a.length, 0)
+      console.log(`[classify] few-shot examples: ${total} across ${fewShotByCategory.size} categories`)
+    } catch (e: any) {
+      console.warn(`[classify] few-shot fetch failed: ${e?.message}`)
+    }
+
     const SUB_KEYS = Object.keys(SUB_CATEGORIES).join(', ')
     const SYSTEM_PROMPT = `You classify Swedish restaurant products into a fixed taxonomy.
 
 ${SCOPE_NOTE}
 
-You will receive a JSON array of products. For EACH product, return the best-fit sub_category key from the list. If you genuinely cannot tell, return null.
+You will receive a JSON object with two arrays:
+  - "examples"  — products this restaurant's owner has ALREADY classified. These are GROUND TRUTH; mirror their style and grain (if the owner sorts "Pinsa Margherita" as food_other, classify similar dishes as food_other too).
+  - "products"  — the products you must classify now. For EACH product, return the best-fit sub_category key. If you genuinely cannot tell, return null.
 
 Products MAY include supplier-provided context fields:
   - "brand"          — known brand name (e.g. "San Pellegrino", "Fanta")
@@ -578,33 +675,50 @@ ${SUB_KEYS}
 Storage type values for OUTPUT: "frozen" | "refrigerated" | "ambient" | null.
 Map supplier hints: "fryst"/"djupfryst" → "frozen"; "kyl"/"kyld"/"kylvara" → "refrigerated"; "Torrt"/"rum"/"rumstemp"/"kolonial"/"Non food" → "ambient".
 
-Output JSON ONLY:
+Output JSON ONLY (an array, one entry per product in "products" — do NOT echo examples):
 [{ "id": "<product_id>", "sub_category": "<key or null>", "storage_type": "<value or null>", "brand": "<brand name or null>", "confidence": 0.0-1.0 }]
 
 Tips:
 - Swedish words: "mjölk" = milk, "ost" = cheese, "kött" = meat, "kyckling" = chicken, "fisk" = fish, "vin" = wine, "öl" = beer
 - "HGN" / "JNK" / "MEG" etc. suffixes are MS brand codes, ignore for classification
 - Wine without colour info → default alc_wine_red (most common in Swedish restaurants)
-- Confidence: 0.8+ when brand + name unambiguous; 0.65 when name alone is clear; 0.5 when guessing.`
+- Confidence: 0.8+ when brand + name unambiguous OR matches an owner example tightly; 0.65 when name alone is clear; 0.5 when guessing.`
 
     const BATCH = 25
     for (let i = 0; i < remainingForLlm.length; i += BATCH) {
       const slice = remainingForLlm.slice(i, i + BATCH)
+      // Collect top-level categories present in this batch — used to
+      // pick which few-shot examples to include.
+      const catsInBatch = new Set<string>()
+      for (const p of slice) catsInBatch.add(String(p.category ?? 'other'))
+      const shotsForBatch: Array<{ name: string; brand: string | null; storage: string | null; sub_category: string }> = []
+      for (const cat of catsInBatch) {
+        const bucket = fewShotByCategory.get(cat) ?? []
+        for (const ex of bucket) shotsForBatch.push(ex)
+      }
+
       // Augment each row with supplier metadata when we have it.
       // brand + storage from supplier_articles meaningfully sharpen the
       // LLM's call vs the bare product name.
-      const userMsg = JSON.stringify(slice.map(p => {
-        const alias = aliasByProduct.get(p.id)
-        const sa = alias ? supplierArticleByKey.get(`${alias.supplier}|${alias.article}`) : null
-        return {
-          id:       p.id,
-          name:     p.name,
-          category: p.category,
-          brand:    sa?.brand           ?? null,
-          storage:  sa?.storage_type    ?? null,
-          official_name: sa?.official_name ?? null,
-        }
-      }))
+      const userMsg = JSON.stringify({
+        // M138 (B) — recent owner-classified products from this
+        // business in the same top categories as the products below.
+        // Tells the LLM "this owner has already classified things this
+        // way; mirror that style".
+        examples: shotsForBatch.slice(0, 12),
+        products: slice.map(p => {
+          const alias = aliasByProduct.get(p.id)
+          const sa = alias ? supplierArticleByKey.get(`${alias.supplier}|${alias.article}`) : null
+          return {
+            id:       p.id,
+            name:     p.name,
+            category: p.category,
+            brand:    sa?.brand           ?? null,
+            storage:  sa?.storage_type    ?? null,
+            official_name: sa?.official_name ?? null,
+          }
+        }),
+      })
 
       const aiRes = await anthropicFetch({
         body: {
@@ -738,6 +852,7 @@ Tips:
     by_source: {
       supplier_articles: results.filter(r => r.after?.source === 'supplier_articles').length,
       cross_customer:    results.filter(r => r.after?.source === 'cross_customer').length,
+      brand_learned:     results.filter(r => r.after?.source === 'brand_learned').length,
       openfoodfacts:     results.filter(r => r.after?.source === 'openfoodfacts').length,
       web_llm:           results.filter(r => r.after?.source === 'web_llm').length,
       name_llm:          results.filter(r => r.after?.source === 'name_llm').length,

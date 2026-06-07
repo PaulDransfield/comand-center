@@ -168,6 +168,7 @@ export const CLASSIFICATION_SOURCES = [
   'owner',              // manual override — highest priority
   'supplier_articles',  // from supplier_articles.category_path via mapper
   'cross_customer',     // copied from another customer with same supplier+article
+  'brand_learned',      // M138 — auto-learned global brand → sub_category
   'openfoodfacts',      // GTIN lookup
   'web_llm',            // Brave/Tavily search + LLM
   'name_llm',           // last-resort LLM from product name only

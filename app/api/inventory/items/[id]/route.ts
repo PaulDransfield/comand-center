@@ -314,6 +314,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
+  // Track whether sub_category was touched so we can recompute the
+  // brand_classifications_learned row after the UPDATE lands. (M138)
+  let touchedSubCategory = false
   // M137 — owner override of sub_category + storage_type. When owner
   // sets either, classification_source flips to 'owner' and confidence
   // to 1.0 so the cascade NEVER touches the row again. Owner clears
@@ -334,6 +337,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       patch.classification_confidence = 1.0
       patch.classification_last_at    = new Date().toISOString()
     }
+    touchedSubCategory = true
   }
   if (body.storage_type !== undefined) {
     if (body.storage_type === null || body.storage_type === '') {
@@ -381,6 +385,26 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }, { status: 409 })
     }
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  // M138 — owner just changed sub_category. Recompute the brand_*_learned
+  // row for THIS product's brand so the cascade can use the new signal
+  // immediately on the next click. Best-effort; never blocks the response.
+  if (touchedSubCategory) {
+    try {
+      const { data: row } = await db
+        .from('products')
+        .select('brand')
+        .eq('id', id)
+        .maybeSingle()
+      const brand = (row as any)?.brand ?? null
+      if (brand) {
+        const { relearnBrand } = await import('@/lib/inventory/brand-learner')
+        await relearnBrand(db, brand)
+      }
+    } catch (e: any) {
+      console.warn(`[items PATCH] brand relearn failed for ${id}: ${e?.message ?? e}`)
+    }
   }
 
   return NextResponse.json({ ok: true, product: data }, { headers: { 'Cache-Control': 'no-store' } })
