@@ -143,24 +143,38 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Batch-fetch supplier_articles for every (supplier, article) we need
+  // Batch-fetch supplier_articles for every (supplier, article) we need.
+  // PRIOR BUG: built a PostgREST OR clause with raw article_numbers
+  // concatenated. Article numbers can contain `.`, `,`, `(`, `)` etc.
+  // (e.g. "BX-08.05"). Those characters are PostgREST reserved syntax,
+  // so the OR query was rejected with 400 "Bad Request" the moment any
+  // such article was in the batch.
+  //
+  // Fix: group by supplier, then use `.in('article_number', [...])`
+  // per supplier. PostgREST escapes `.in()` values properly; no manual
+  // string assembly. JS-side filter rebuilds the exact (sup, art) pairs.
   const keysNeeded = Array.from(new Set(Array.from(aliasByProduct.values()).map(v => `${v.supplier}|${v.article}`)))
   const supplierArticleByKey = new Map<string, any>()
   if (keysNeeded.length > 0) {
-    const BATCH = 200
-    for (let i = 0; i < keysNeeded.length; i += BATCH) {
-      const slice = keysNeeded.slice(i, i + BATCH)
-      // Build a single OR query — supplier_articles is small (cross-customer table)
-      const orClauses = slice.map(k => {
-        const [sup, art] = k.split('|')
-        return `and(supplier_fortnox_number.eq.${sup},article_number.eq.${art})`
-      })
-      const { data: sa } = await db
-        .from('supplier_articles')
-        .select('supplier_fortnox_number, article_number, category_path, storage_type, brand, gtin, official_name')
-        .or(orClauses.join(','))
-      for (const row of sa ?? []) {
-        supplierArticleByKey.set(`${row.supplier_fortnox_number}|${row.article_number}`, row)
+    const articlesBySupplier = new Map<string, Set<string>>()
+    for (const k of keysNeeded) {
+      const [sup, art] = k.split('|')
+      if (!articlesBySupplier.has(sup)) articlesBySupplier.set(sup, new Set())
+      articlesBySupplier.get(sup)!.add(art)
+    }
+    for (const [sup, articleSet] of articlesBySupplier) {
+      const articles = Array.from(articleSet)
+      const BATCH = 300
+      for (let i = 0; i < articles.length; i += BATCH) {
+        const slice = articles.slice(i, i + BATCH)
+        const { data: sa } = await db
+          .from('supplier_articles')
+          .select('supplier_fortnox_number, article_number, category_path, storage_type, brand, gtin, official_name')
+          .eq('supplier_fortnox_number', sup)
+          .in('article_number', slice)
+        for (const row of sa ?? []) {
+          supplierArticleByKey.set(`${row.supplier_fortnox_number}|${row.article_number}`, row)
+        }
       }
     }
   }
@@ -175,42 +189,50 @@ export async function POST(req: NextRequest) {
   const keysNotInSa = keysNeeded.filter(k => !supplierArticleByKey.has(k))
   const crossCustomerByKey = new Map<string, { sub_category: string | null; storage_type: string | null; brand: string | null }>()
   if (keysNotInSa.length > 0) {
-    const BATCH = 200
-    for (let i = 0; i < keysNotInSa.length; i += BATCH) {
-      const slice = keysNotInSa.slice(i, i + BATCH)
-      const orClauses = slice.map(k => {
-        const [sup, art] = k.split('|')
-        return `and(supplier_fortnox_number.eq.${sup},article_number.eq.${art})`
-      })
-      // Get every alias matching, then join product_id to products
-      const { data: matchingAliases } = await db
-        .from('product_aliases')
-        .select('product_id, supplier_fortnox_number, article_number')
-        .or(orClauses.join(','))
-        .eq('is_active', true)
-      if (!matchingAliases || matchingAliases.length === 0) continue
+    // Same fix as supplier_articles above — group by supplier, use .in()
+    // on article_number, then JS-side filter back to the exact (sup, art)
+    // pairs we asked for. Avoids the OR-syntax 400 on special chars.
+    const articlesBySupplier = new Map<string, Set<string>>()
+    for (const k of keysNotInSa) {
+      const [sup, art] = k.split('|')
+      if (!articlesBySupplier.has(sup)) articlesBySupplier.set(sup, new Set())
+      articlesBySupplier.get(sup)!.add(art)
+    }
+    for (const [sup, articleSet] of articlesBySupplier) {
+      const articles = Array.from(articleSet)
+      const BATCH = 300
+      for (let i = 0; i < articles.length; i += BATCH) {
+        const slice = articles.slice(i, i + BATCH)
+        const { data: matchingAliases } = await db
+          .from('product_aliases')
+          .select('product_id, supplier_fortnox_number, article_number')
+          .eq('supplier_fortnox_number', sup)
+          .in('article_number', slice)
+          .eq('is_active', true)
+        if (!matchingAliases || matchingAliases.length === 0) continue
 
-      const otherProductIds = Array.from(new Set(matchingAliases.map(a => a.product_id)))
-      const { data: otherProducts } = await db
-        .from('products')
-        .select('id, sub_category, storage_type, brand, classification_confidence')
-        .in('id', otherProductIds)
-        .not('sub_category', 'is', null)
-        .gte('classification_confidence', 0.7)
-      if (!otherProducts) continue
+        const otherProductIds = Array.from(new Set(matchingAliases.map(a => a.product_id)))
+        const { data: otherProducts } = await db
+          .from('products')
+          .select('id, sub_category, storage_type, brand, classification_confidence')
+          .in('id', otherProductIds)
+          .not('sub_category', 'is', null)
+          .gte('classification_confidence', 0.7)
+        if (!otherProducts) continue
 
-      const productSubBy = new Map<string, any>()
-      for (const p of otherProducts) productSubBy.set(p.id, p)
-      for (const a of matchingAliases) {
-        const p = productSubBy.get(a.product_id)
-        if (!p) continue
-        const key = `${a.supplier_fortnox_number}|${a.article_number}`
-        if (!crossCustomerByKey.has(key)) {
-          crossCustomerByKey.set(key, {
-            sub_category: p.sub_category,
-            storage_type: p.storage_type,
-            brand:        p.brand,
-          })
+        const productSubBy = new Map<string, any>()
+        for (const p of otherProducts) productSubBy.set(p.id, p)
+        for (const a of matchingAliases) {
+          const p = productSubBy.get(a.product_id)
+          if (!p) continue
+          const key = `${a.supplier_fortnox_number}|${a.article_number}`
+          if (!crossCustomerByKey.has(key)) {
+            crossCustomerByKey.set(key, {
+              sub_category: p.sub_category,
+              storage_type: p.storage_type,
+              brand:        p.brand,
+            })
+          }
         }
       }
     }
