@@ -27,6 +27,7 @@ import { AI_MODELS } from '@/lib/ai/models'
 import { SCOPE_NOTE } from '@/lib/ai/scope'
 import { SUB_CATEGORIES, type SubCategory } from '@/lib/inventory/taxonomy'
 import { mapCategoryPath, mapStorageType } from '@/lib/inventory/category-mapper'
+import { brandToSubCategory, isNavigationMenuPath } from '@/lib/inventory/brand-mapper'
 import { lookupGtin, mapOffCategories, mapOffAllergens } from '@/lib/inventory/openfoodfacts'
 import { searchTavily, buildClassificationQuery } from '@/lib/web/tavily'
 
@@ -302,35 +303,55 @@ export async function POST(req: NextRequest) {
 
     const sa = supplierArticleByKey.get(key)
     if (sa) {
-      // Source 1: supplier_articles
-      const mapped = mapCategoryPath(sa.category_path, sa.storage_type)
-      const storage = mapStorageType(sa.storage_type) ?? mapped?.storage ?? null
-      if (mapped) {
+      // Storage is always usable (kyl/fryst/Torrt are reliable).
+      const storage = mapStorageType(sa.storage_type) ?? null
+
+      // 1A. Try category_path — but ONLY if it isn't the bogus MS
+      // sidebar nav string. The scraper bug grabbed the sister-supplier
+      // menu rail; every product has the same useless 6-segment path.
+      // Skip it cleanly when detected.
+      const pathUsable = !isNavigationMenuPath(sa.category_path)
+      if (pathUsable) {
+        const mapped = mapCategoryPath(sa.category_path, sa.storage_type)
+        if (mapped) {
+          results.push({
+            product_id: p.id,
+            product_name: p.name,
+            before: { sub_category: p.sub_category, source: p.classification_source, confidence: p.classification_confidence },
+            after: {
+              sub_category: mapped.sub,
+              storage_type: storage ?? mapped.storage ?? null,
+              source:       'supplier_articles',
+              confidence:   0.95,
+            },
+            reason: `Mapped from MS category_path "${sa.category_path}"`,
+          })
+          continue
+        }
+      }
+
+      // 1B. Brand-based — covers the case where the path is bogus but
+      // the brand field is meaningful ("San Pellegrino" → bev_water).
+      const fromBrand = brandToSubCategory(sa.brand)
+      if (fromBrand) {
         results.push({
           product_id: p.id,
           product_name: p.name,
           before: { sub_category: p.sub_category, source: p.classification_source, confidence: p.classification_confidence },
           after: {
-            sub_category: mapped.sub,
+            sub_category: fromBrand,
             storage_type: storage,
             source:       'supplier_articles',
-            confidence:   0.95,
+            confidence:   0.90,
           },
-          reason: `Mapped from MS category_path "${sa.category_path}"`,
+          reason: `Brand "${sa.brand}" maps to ${fromBrand}`,
         })
         continue
       }
-      // Have supplier_articles row but path didn't map cleanly — still
-      // get storage + brand + gtin from it.
-      if (storage || sa.brand || sa.gtin) {
-        results.push({
-          product_id: p.id,
-          product_name: p.name,
-          before: { sub_category: p.sub_category, source: p.classification_source, confidence: p.classification_confidence },
-          after: null,                       // sub_category still unknown
-          reason: `supplier_articles row exists but category_path "${sa.category_path}" did not map — passing to LLM`,
-        })
-      }
+
+      // 1C. Still no match — fall through to LLM, but with supplier
+      // metadata (brand + storage) attached as enrichment so the LLM
+      // gets richer context than name alone.
       remainingForLlm.push(p)
       continue
     }
@@ -539,12 +560,19 @@ Confidence 0.7+ when the web context clearly identifies the product. 0.5-0.6 whe
 
 ${SCOPE_NOTE}
 
-You will receive a JSON array of products. For EACH product, return the best-fit sub_category key from the list. If you genuinely cannot tell from the name, return null.
+You will receive a JSON array of products. For EACH product, return the best-fit sub_category key from the list. If you genuinely cannot tell, return null.
+
+Products MAY include supplier-provided context fields:
+  - "brand"          — known brand name (e.g. "San Pellegrino", "Fanta")
+  - "storage"        — supplier storage type: "kyl" (refrigerated), "fryst" (frozen), "Torrt" / "rum" (ambient/dry), "Non food" (non-food disposable)
+  - "official_name"  — supplier's canonical product name (usually clearer than the invoice line)
+USE these signals heavily. A "brand: Fanta" with "storage: Torrt" is unambiguously bev_soft_drinks.
 
 Available sub_category keys (use these EXACT strings):
 ${SUB_KEYS}
 
-Storage type values: "frozen" | "refrigerated" | "ambient" | null (only set if confident — frozen products usually have "fryst" / "djupfryst" in the name; refrigerated products are dairy/meat/fish/produce; everything else is ambient).
+Storage type values for OUTPUT: "frozen" | "refrigerated" | "ambient" | null.
+Map supplier hints: "fryst"/"djupfryst" → "frozen"; "kyl"/"kyld"/"kylvara" → "refrigerated"; "Torrt"/"rum"/"rumstemp"/"kolonial"/"Non food" → "ambient".
 
 Output JSON ONLY:
 [{ "id": "<product_id>", "sub_category": "<key or null>", "storage_type": "<value or null>", "brand": "<brand name or null>", "confidence": 0.0-1.0 }]
@@ -552,13 +580,27 @@ Output JSON ONLY:
 Tips:
 - Swedish words: "mjölk" = milk, "ost" = cheese, "kött" = meat, "kyckling" = chicken, "fisk" = fish, "vin" = wine, "öl" = beer
 - "HGN" / "JNK" / "MEG" etc. suffixes are MS brand codes, ignore for classification
-- Wine without colour info → default alc_wine_red (most common)
-- Confidence: 0.7+ when name is unambiguous, 0.5 when guessing from partial info.`
+- Wine without colour info → default alc_wine_red (most common in Swedish restaurants)
+- Confidence: 0.8+ when brand + name unambiguous; 0.65 when name alone is clear; 0.5 when guessing.`
 
     const BATCH = 25
     for (let i = 0; i < remainingForLlm.length; i += BATCH) {
       const slice = remainingForLlm.slice(i, i + BATCH)
-      const userMsg = JSON.stringify(slice.map(p => ({ id: p.id, name: p.name, category: p.category })))
+      // Augment each row with supplier metadata when we have it.
+      // brand + storage from supplier_articles meaningfully sharpen the
+      // LLM's call vs the bare product name.
+      const userMsg = JSON.stringify(slice.map(p => {
+        const alias = aliasByProduct.get(p.id)
+        const sa = alias ? supplierArticleByKey.get(`${alias.supplier}|${alias.article}`) : null
+        return {
+          id:       p.id,
+          name:     p.name,
+          category: p.category,
+          brand:    sa?.brand           ?? null,
+          storage:  sa?.storage_type    ?? null,
+          official_name: sa?.official_name ?? null,
+        }
+      }))
 
       const aiRes = await anthropicFetch({
         body: {
