@@ -107,14 +107,18 @@ export async function POST(req: NextRequest) {
     if (products.length > 20_000) break
   }
 
-  // Filter to those needing classification (null OR low confidence) AND
-  // never overwrite owner-source rows (manual overrides win permanently).
-  // JS-side handles NULL correctly without PostgREST three-valued-logic
-  // surprises. Hard cap at MAX_CANDIDATES so the request completes
-  // before Vercel's 300s function cap.
+  // Candidate filter: ONLY truly unclassified items (sub_category IS
+  // NULL). Items already classified by name_llm at confidence 0.55 do
+  // NOT re-enter the cascade — re-running the LLM on the same name
+  // produces the same answer, so we'd just chew the same 250 every
+  // click and never make progress. Owner reviews low-confidence rows
+  // via the "Needs classification" filter on the items page (sets
+  // source='owner' which permanently locks the value).
+  //
+  // Hard cap at MAX_CANDIDATES so the request completes before Vercel's
+  // 300s function cap.
   const allCandidates = products.filter(p =>
-    p.classification_source !== 'owner' &&
-    (p.sub_category == null || (p.classification_confidence ?? 0) < 0.7),
+    p.classification_source !== 'owner' && p.sub_category == null,
   )
   const totalUnprocessed = allCandidates.length
   const candidates = allCandidates.slice(0, MAX_CANDIDATES)
