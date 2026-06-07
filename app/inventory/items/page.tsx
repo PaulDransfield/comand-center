@@ -20,6 +20,7 @@ import { fmtKr } from '@/lib/format'
 import { EditItemModal } from '@/components/EditItemModal'
 import { ProductThumb } from '@/components/ui/ProductThumb'
 import { PageContainer, MetricCardRow } from '@/components/ui/Layout'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { useViewport } from '@/lib/hooks/useViewport'
 
 interface CatalogueItem {
@@ -511,13 +512,14 @@ export default function InventoryItemsPage() {
         )}
 
         {!loading && data && items.length === 0 && (
-          <div style={{
-            padding: 30, textAlign: 'center' as const, color: UXP.ink3,
-            fontSize: 13, background: UXP.cardBg,
-            border: `0.5px solid ${UXP.border}`, borderRadius: 8,
-          }}>
-            {data.message ?? t('empty')}
-          </div>
+          <EmptyState
+            badge="No articles yet"
+            title="Your article catalogue will appear here."
+            description="Articles are built automatically as Fortnox supplier invoices arrive and the matcher links each line to a product. If you've just connected Fortnox, give the first sync a few minutes."
+            action={{ label: 'Connect Fortnox', href: '/integrations' }}
+            secondary={{ label: 'Open review queue', href: '/inventory/review' }}
+            style={{ marginTop: 16 }}
+          />
         )}
 
         {!loading && items.length > 0 && isMobile && (

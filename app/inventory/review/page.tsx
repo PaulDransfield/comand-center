@@ -15,6 +15,7 @@ export const dynamic = 'force-dynamic'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 
@@ -546,13 +547,23 @@ export default function InventoryReviewPage() {
         )}
 
         {!loading && data && visible.length === 0 && (
-          <div style={{
-            padding: 30, textAlign: 'center' as const, color: UXP.ink3,
-            fontSize: 13, background: UXP.cardBg,
-            border: `0.5px solid ${UXP.border}`, borderRadius: 8,
-          }}>
-            {data.total_groups === 0 ? t('emptyAll') : t('emptyFiltered')}
-          </div>
+          data.total_groups === 0 ? (
+            <EmptyState
+              badge="All caught up"
+              tone="success"
+              title="No supplier lines need your review."
+              description="The matcher has classified every recent invoice line. New lines that don't match a known article will appear here automatically."
+              secondary={{ label: 'Open articles', href: '/inventory/items' }}
+              style={{ marginTop: 16 }}
+            />
+          ) : (
+            <EmptyState
+              badge="No matches"
+              title="No lines match the current filters."
+              description="Try clearing a filter or switching to a different supplier."
+              style={{ marginTop: 16 }}
+            />
+          )
         )}
 
         {/* Bulk selection toolbar — only shown when there ARE selectable rows */}
