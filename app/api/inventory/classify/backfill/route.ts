@@ -27,6 +27,8 @@ import { AI_MODELS } from '@/lib/ai/models'
 import { SCOPE_NOTE } from '@/lib/ai/scope'
 import { SUB_CATEGORIES, type SubCategory } from '@/lib/inventory/taxonomy'
 import { mapCategoryPath, mapStorageType } from '@/lib/inventory/category-mapper'
+import { lookupGtin, mapOffCategories, mapOffAllergens } from '@/lib/inventory/openfoodfacts'
+import { searchTavily, buildClassificationQuery } from '@/lib/web/tavily'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -271,6 +273,178 @@ export async function POST(req: NextRequest) {
     remainingForLlm.push(p)
   }
 
+  // ── Source 3: OpenFoodFacts GTIN lookup ─────────────────────────────
+  // For products whose supplier_articles row has a GTIN, hit the free
+  // OFF API. ~60-80% hit rate on branded packaged goods. Allergens come
+  // along for free.
+  const stillUnclassified: ProductRow[] = []
+  if (onlySources.size === 0 || onlySources.has('openfoodfacts')) {
+    // Build (product → gtin) map from the supplier_articles cache loaded
+    // earlier in the function.
+    const gtinByProduct = new Map<string, string>()
+    for (const p of remainingForLlm) {
+      const alias = aliasByProduct.get(p.id)
+      if (!alias) continue
+      const sa = supplierArticleByKey.get(`${alias.supplier}|${alias.article}`)
+      if (sa?.gtin && /^[0-9]{8,14}$/.test(String(sa.gtin))) {
+        gtinByProduct.set(p.id, String(sa.gtin))
+      }
+    }
+
+    // Lookup in parallel chunks of 10 to respect OFF's rate limits.
+    const productsWithGtin = remainingForLlm.filter(p => gtinByProduct.has(p.id))
+    const offResults = new Map<string, any>()
+    const CONCURRENCY = 10
+    for (let i = 0; i < productsWithGtin.length; i += CONCURRENCY) {
+      const chunk = productsWithGtin.slice(i, i + CONCURRENCY)
+      await Promise.all(chunk.map(async p => {
+        const off = await lookupGtin(gtinByProduct.get(p.id))
+        if (off.found) offResults.set(p.id, off)
+      }))
+    }
+
+    for (const p of remainingForLlm) {
+      const off = offResults.get(p.id)
+      if (off && off.found) {
+        const mappedSub = mapOffCategories(off.categories)
+        if (mappedSub) {
+          results.push({
+            product_id:   p.id,
+            product_name: p.name,
+            before: { sub_category: p.sub_category, source: p.classification_source, confidence: p.classification_confidence },
+            after: {
+              sub_category: mappedSub,
+              storage_type: null,                       // OFF doesn't carry storage_type
+              source:       'openfoodfacts',
+              confidence:   0.85,
+            },
+            reason: `OpenFoodFacts hit (GTIN ${gtinByProduct.get(p.id)}): brand=${off.brand ?? '-'}, categories=${off.categories.slice(0, 3).join(',')}`,
+          })
+          continue
+        }
+      }
+      stillUnclassified.push(p)
+    }
+  } else {
+    stillUnclassified.push(...remainingForLlm)
+  }
+
+  // ── Source 4: Tavily web search + LLM (Sonnet for richer context) ───
+  // Soft-fails to name_llm when TAVILY_API_KEY missing or API errors.
+  const afterTavily: ProductRow[] = []
+  if (stillUnclassified.length > 0 && process.env.TAVILY_API_KEY && (onlySources.size === 0 || onlySources.has('web_llm'))) {
+    // Quota check before kicking off potentially many LLM calls.
+    const usage = await checkAndIncrementAiLimit(db, auth.orgId)
+    if (!usage.ok) return NextResponse.json(usage.body, { status: usage.status })
+
+    // Tavily searches in parallel chunks of 8 — cheaper tier limit is 5/sec.
+    const TAVILY_CONC = 8
+    const tavilyByProduct = new Map<string, { answer: string; brand: string | null }>()
+    for (let i = 0; i < stillUnclassified.length; i += TAVILY_CONC) {
+      const chunk = stillUnclassified.slice(i, i + TAVILY_CONC)
+      await Promise.all(chunk.map(async p => {
+        const q = buildClassificationQuery(p.name, null)
+        const tv = await searchTavily(q, { search_depth: 'basic', max_results: 3, include_answer: true })
+        if (tv && (tv.answer || tv.results.length > 0)) {
+          const ctx = tv.answer || tv.results.slice(0, 3).map(r => `${r.title}: ${r.content}`).join('\n')
+          tavilyByProduct.set(p.id, { answer: ctx.slice(0, 600), brand: null })
+        }
+      }))
+    }
+
+    // Batch LLM classification with Tavily context appended per product.
+    // Sonnet for the better reasoning over fuzzy snippets — cost still
+    // bounded because we only reach this path for the long tail.
+    const SUB_KEYS = Object.keys(SUB_CATEGORIES).join(', ')
+    const WEB_SYSTEM_PROMPT = `You classify Swedish restaurant products into a fixed taxonomy using web-search context.
+
+${SCOPE_NOTE}
+
+For each product you'll see its raw name and a short web-search summary. Pick the best-fit sub_category key. If the summary is irrelevant or contradicts the name, treat the summary as low-quality and rely on the name.
+
+Available sub_category keys (use these EXACT strings):
+${SUB_KEYS}
+
+Storage type: "frozen" | "refrigerated" | "ambient" | null.
+
+Output JSON ONLY:
+[{ "id": "<product_id>", "sub_category": "<key or null>", "storage_type": "<value or null>", "brand": "<brand or null>", "confidence": 0.0-1.0 }]
+
+Confidence 0.7+ when the web context clearly identifies the product. 0.5-0.6 when relying mostly on the name with thin web support.`
+
+    const BATCH = 10
+    const withContext = stillUnclassified.filter(p => tavilyByProduct.has(p.id))
+    for (let i = 0; i < withContext.length; i += BATCH) {
+      const slice = withContext.slice(i, i + BATCH)
+      const userMsg = JSON.stringify(slice.map(p => ({
+        id:      p.id,
+        name:    p.name,
+        web_context: tavilyByProduct.get(p.id)?.answer ?? '',
+      })))
+
+      const aiRes = await anthropicFetch({
+        body: {
+          model:       AI_MODELS.ANALYSIS,             // Sonnet — better at noisy context
+          max_tokens:  1500,
+          system:      [
+            { type: 'text', text: WEB_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+          ],
+          messages:    [{ role: 'user', content: userMsg }],
+        },
+      })
+
+      if (!aiRes.ok) {
+        afterTavily.push(...slice)
+        continue
+      }
+      await logAiRequest(db, {
+        org_id:        auth.orgId,
+        request_type:  'classify_backfill_web',
+        model:         AI_MODELS.ANALYSIS,
+        input_tokens:  aiRes.tokensIn ?? 0,
+        output_tokens: aiRes.tokensOut ?? 0,
+      })
+
+      const text = (aiRes.json as any)?.content?.[0]?.text?.trim() ?? '[]'
+      let parsed: any[] = []
+      try { parsed = JSON.parse(text.replace(/^```json\n?|\n?```$/g, '')) } catch { parsed = [] }
+      const byId = new Map<string, any>()
+      for (const r of parsed) if (r && r.id) byId.set(String(r.id), r)
+
+      for (const p of slice) {
+        const r = byId.get(p.id)
+        if (!r || !r.sub_category || !(r.sub_category in SUB_CATEGORIES)) {
+          afterTavily.push(p)
+          continue
+        }
+        const conf = Math.max(0.3, Math.min(1.0, Number(r.confidence ?? 0.7)))
+        results.push({
+          product_id:   p.id,
+          product_name: p.name,
+          before: { sub_category: p.sub_category, source: p.classification_source, confidence: p.classification_confidence },
+          after: {
+            sub_category: r.sub_category,
+            storage_type: (r.storage_type === 'frozen' || r.storage_type === 'refrigerated' || r.storage_type === 'ambient') ? r.storage_type : null,
+            source:       'web_llm',
+            confidence:   Math.min(0.75, conf),
+          },
+          reason: 'Tavily web search + Sonnet',
+        })
+      }
+    }
+
+    // Products that had NO Tavily context at all (or Tavily returned
+    // nothing useful) fall through to name_llm.
+    afterTavily.push(...stillUnclassified.filter(p => !tavilyByProduct.has(p.id)))
+  } else {
+    afterTavily.push(...stillUnclassified)
+  }
+
+  // Replace remainingForLlm with the post-Tavily set so the LLM-from-name
+  // pass below operates on the genuinely last-resort remainder.
+  remainingForLlm.length = 0
+  remainingForLlm.push(...afterTavily)
+
   // ── Source 5: LLM-from-name fallback ────────────────────────────────
   // For products we couldn't deterministically classify. Batch in groups
   // of 25 to keep prompt small + cacheable. Haiku 4.5.
@@ -396,6 +570,8 @@ Tips:
     by_source: {
       supplier_articles: results.filter(r => r.after?.source === 'supplier_articles').length,
       cross_customer:    results.filter(r => r.after?.source === 'cross_customer').length,
+      openfoodfacts:     results.filter(r => r.after?.source === 'openfoodfacts').length,
+      web_llm:           results.filter(r => r.after?.source === 'web_llm').length,
       name_llm:          results.filter(r => r.after?.source === 'name_llm').length,
       unclassified:      results.filter(r => !r.after).length,
     },
