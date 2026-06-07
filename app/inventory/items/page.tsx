@@ -335,14 +335,18 @@ export default function InventoryItemsPage() {
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
       const by = j.by_source ?? {}
+      const remaining = j.remaining_after_run ?? 0
+      const remainingNote = remaining > 0
+        ? `\n\n${remaining} more product${remaining === 1 ? '' : 's'} still need classifying — click "Classify catalogue" again to process the next batch.`
+        : '\n\nAll items processed.'
       alert(
-        `Classified ${j.updated}/${j.total_candidates} products.\n\n` +
+        `Classified ${j.updated}/${j.processed_this_run} products this run.\n\n` +
         `From supplier data: ${by.supplier_articles ?? 0}\n` +
         `From other customers: ${by.cross_customer ?? 0}\n` +
         `From OpenFoodFacts (GTIN): ${by.openfoodfacts ?? 0}\n` +
-        `From web search + AI: ${by.web_llm ?? 0}\n` +
         `From AI (name only): ${by.name_llm ?? 0}\n` +
-        `Couldn't classify: ${by.unclassified ?? 0}`,
+        `Couldn't classify: ${by.unclassified ?? 0}` +
+        remainingNote,
       )
       load()
     } catch (e: any) {
