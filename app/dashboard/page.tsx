@@ -214,6 +214,7 @@ function DashboardInner() {
   const [cashFlow,      setCashFlow]      = useState<any>(null)
   const [recentInv,     setRecentInv]     = useState<any>(null)
   const [reviewThemes,  setReviewThemes]  = useState<any>(null)
+  const [dataQuality,   setDataQuality]   = useState<any>(null)
   const [loading,       setLoading]       = useState(true)
   const [showUpgrade,   setShowUpgrade]   = useState(false)
   const [upgradePlan,   setUpgradePlan]   = useState('')
@@ -330,7 +331,8 @@ function DashboardInner() {
       fetch(`/api/finance/cash-flow-projection?business_id=${bizId}&days=30`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
       fetch(`/api/integrations/fortnox/recent-invoices?business_id=${bizId}&days=14`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
       fetch(`/api/reviews/themes?business_id=${bizId}&window=90`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([ov, dm, bp, cf, ri, rt]) => {
+      fetch(`/api/data-quality/score?business_id=${bizId}`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([ov, dm, bp, cf, ri, rt, dq]) => {
       if (cancelled) return
       setOverheadProj(ov && !ov.error ? ov : null)
       setDemand(dm && !dm.error ? dm : null)
@@ -338,6 +340,7 @@ function DashboardInner() {
       setCashFlow(cf && !cf.error ? cf : null)
       setRecentInv(ri && !ri.error ? ri : null)
       setReviewThemes(rt && !rt.error ? rt : null)
+      setDataQuality(dq && !dq.error ? dq : null)
     })
     return () => { cancelled = true }
   }, [bizId])
@@ -481,6 +484,11 @@ function DashboardInner() {
         {/* ── Attention panel ───────────────────────────────────── */}
         {attentionItems.length > 0 && (
           <AttentionCard items={attentionItems} />
+        )}
+
+        {/* ── Data trust ────────────────────────────────────────── */}
+        {dataQuality && (
+          <DataTrustTile dq={dataQuality} />
         )}
 
         {/* ── Money flow row ────────────────────────────────────── */}
@@ -909,6 +917,109 @@ function AttentionCard({ items }: { items: AttentionItem[] }) {
 }
 
 // ── Money flow row ──────────────────────────────────────────────────
+// ── Data trust tile (A1.9) ──────────────────────────────────────────
+// Owner-facing "can I trust the numbers" signal. Overall 0-100 score on
+// the left, dimension chips on the right. Click → /data-quality drilldown.
+// Score colour follows the standard tone scale: green ≥ 80, coral 50-79,
+// rose < 50. When overall_score is null (zero applicable dimensions —
+// brand-new business), render a "Get started" prompt instead.
+function DataTrustTile({ dq }: { dq: any }) {
+  const score = dq?.overall_score
+  const dims  = (dq?.dimensions ?? []) as Array<any>
+  const tone =
+    score == null      ? UXP.ink3
+    : score >= 80      ? UXP.green
+    : score >= 50      ? UXP.coral
+    :                    UXP.rose
+  const toneBg =
+    score == null      ? UXP.subtleBg
+    : score >= 80      ? UXP.greenFill
+    : score >= 50      ? UXP.lavFill
+    :                    UXP.roseFill
+
+  const subtitle = score == null
+    ? 'Get started to start scoring'
+    : `${dq.applicable} of ${dims.length} dimensions applicable`
+
+  return (
+    <Card title="Data trust" subtitle={subtitle}>
+      <a href="/data-quality" style={{
+        display:        'grid',
+        gridTemplateColumns: 'auto 1fr',
+        gap:            16,
+        alignItems:     'center',
+        textDecoration: 'none',
+        color:          'inherit',
+      }}>
+        {/* Score circle */}
+        <div style={{
+          width:        72,
+          height:       72,
+          borderRadius: '50%',
+          background:   toneBg,
+          border:       `0.5px solid ${tone}33`,
+          display:      'inline-flex',
+          alignItems:   'center',
+          justifyContent: 'center',
+          flexDirection: 'column' as const,
+        }}>
+          <div style={{
+            fontSize:        22,
+            fontWeight:      600,
+            color:           tone,
+            letterSpacing:   '-0.02em',
+            fontVariantNumeric: 'tabular-nums' as const,
+            lineHeight:      1,
+          }}>
+            {score == null ? '—' : score}
+          </div>
+          <div style={{ fontSize: 8, color: UXP.ink4, marginTop: 3, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>
+            {score == null ? 'n/a' : 'of 100'}
+          </div>
+        </div>
+
+        {/* Dimension chips */}
+        <div style={{ display: 'grid', gap: 4 }}>
+          {dims.map((d: any) => {
+            const isApplicable = d.total > 0 && d.score !== null
+            const dTone =
+              !isApplicable     ? UXP.ink4
+              : d.score >= 80   ? UXP.green
+              : d.score >= 50   ? UXP.coral
+              :                   UXP.rose
+            return (
+              <div key={d.key} style={{
+                display:        'grid',
+                gridTemplateColumns: '1fr auto auto',
+                gap:            10,
+                alignItems:     'center',
+                padding:        '4px 0',
+              }}>
+                <div style={{ fontSize: 11, color: UXP.ink2, minWidth: 0, overflow: 'hidden' as const, textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                  {d.label}
+                </div>
+                <div style={{ fontSize: 10, color: UXP.ink4, fontVariantNumeric: 'tabular-nums' as const }}>
+                  {isApplicable ? `${d.count}/${d.total}` : 'n/a'}
+                </div>
+                <div style={{
+                  fontSize:           11,
+                  fontWeight:         500,
+                  color:              dTone,
+                  fontVariantNumeric: 'tabular-nums' as const,
+                  minWidth:           32,
+                  textAlign:          'right' as const,
+                }}>
+                  {isApplicable ? `${d.score}%` : '—'}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </a>
+    </Card>
+  )
+}
+
 function MoneyFlowRow({ bankPos, cashFlow, recentInv, bizId }: any) {
   const locale = useLocale()
   const [pdfModal, setPdfModal] = useState<{ url: string; title: string } | null>(null)
