@@ -283,13 +283,38 @@ export async function GET(req: NextRequest) {
   //    aggregation. Pre-fix this query was `.eq('category', filter)`
   //    when filter !== 'all', which made tab counts collapse to 0 for
   //    every category other than the active one.
-  const { data: allProducts, error: pErr } = await db
-    .from('products')
-    .select('id, name, category, default_supplier_fortnox_number, default_supplier_name, source_recipe_id, price_override, created_via')
-    .eq('business_id', businessId)
-    .is('archived_at', null)
-    .order('name')
-  if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 })
+  // M137 — try with sub_category + classification fields first. If the
+  // SQL hasn't been applied yet (column-doesn't-exist 42703), fall back
+  // to the legacy SELECT so the page keeps rendering.
+  let allProducts: any[] | null = null
+  let m137Available = true
+  {
+    const { data, error } = await db
+      .from('products')
+      .select('id, name, category, sub_category, storage_type, brand, gtin, allergens, classification_source, classification_confidence, default_supplier_fortnox_number, default_supplier_name, source_recipe_id, price_override, created_via')
+      .eq('business_id', businessId)
+      .is('archived_at', null)
+      .order('name')
+    if (error) {
+      if ((error as any).code === '42703' || /sub_category.*does not exist/i.test(error.message)) {
+        m137Available = false
+      } else {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+    } else {
+      allProducts = data
+    }
+  }
+  if (!m137Available) {
+    const { data, error } = await db
+      .from('products')
+      .select('id, name, category, default_supplier_fortnox_number, default_supplier_name, source_recipe_id, price_override, created_via')
+      .eq('business_id', businessId)
+      .is('archived_at', null)
+      .order('name')
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    allProducts = data
+  }
 
   if (!allProducts || allProducts.length === 0) {
     return NextResponse.json({
@@ -445,6 +470,11 @@ export async function GET(req: NextRequest) {
         product_id:         p.id,
         name:               p.name,
         category:           p.category,
+        sub_category:       p.sub_category ?? null,
+        storage_type:       p.storage_type ?? null,
+        brand:              p.brand ?? null,
+        classification_source:     p.classification_source ?? null,
+        classification_confidence: p.classification_confidence ?? null,
         default_supplier:   p.default_supplier_name,
         latest_price:       null,
         latest_unit:        null,
@@ -498,6 +528,11 @@ export async function GET(req: NextRequest) {
       product_id:         p.id,
       name:               p.name,
       category:           p.category,
+      sub_category:       p.sub_category ?? null,
+      storage_type:       p.storage_type ?? null,
+      brand:              p.brand ?? null,
+      classification_source:     p.classification_source ?? null,
+      classification_confidence: p.classification_confidence ?? null,
       default_supplier:   p.default_supplier_name,
       latest_price:       latest.price_per_unit != null ? Number(latest.price_per_unit) : null,
       latest_unit:        latest.unit,
