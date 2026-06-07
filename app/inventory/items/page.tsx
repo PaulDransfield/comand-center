@@ -322,10 +322,13 @@ export default function InventoryItemsPage() {
   // Reads supplier_articles + cross-customer + LLM-from-name in priority
   // order and fills products.sub_category / storage_type / classification_*.
   const [classifyBusy, setClassifyBusy] = useState(false)
+  // Result banner — visible on the page so the owner can read and copy
+  // the diagnostics (alert dialogs aren't copyable).
+  const [classifyResult, setClassifyResult] = useState<any | null>(null)
   async function runClassify() {
     if (!bizId || classifyBusy) return
     if (!confirm('Classify catalogue into sub-categories (dairy / meat / wine etc.)?\n\nUses supplier data first, then cross-customer matches, then AI from product names. Already-classified products are skipped.')) return
-    setClassifyBusy(true)
+    setClassifyBusy(true); setClassifyResult(null)
     try {
       const r = await fetch('/api/inventory/classify/backfill', {
         method: 'POST', cache: 'no-store',
@@ -333,38 +336,53 @@ export default function InventoryItemsPage() {
         body: JSON.stringify({ business_id: bizId }),
       })
       const j = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
-      const by = j.by_source ?? {}
-      const remaining = j.remaining_after_run ?? 0
-      const remainingNote = remaining > 0
-        ? `\n\n${remaining} more product${remaining === 1 ? '' : 's'} still need classifying — click "Classify catalogue" again to process the next batch.`
-        : '\n\nAll items processed.'
-      const errNote = j.update_errors > 0
-        ? `\n\nWARNING: ${j.update_errors} updates failed. First error: ${j.first_update_error}`
-        : ''
-      const dbg = j.debug ?? {}
-      const diagNote = `\n\n[Diagnostics]\n` +
-        `Candidates loaded: ${dbg.candidates_count ?? '?'}\n` +
-        `Aliases for these products: ${dbg.aliases_count ?? '?'}\n` +
-        `Supplier-article keys needed: ${dbg.supplier_keys_needed ?? '?'}\n` +
-        `Supplier-articles cache hits: ${dbg.supplier_articles_hits ?? '?'}\n` +
-        `Writable results before save: ${dbg.writable_results ?? '?'}`
-      alert(
-        `Classified ${j.updated}/${j.processed_this_run} products this run.\n\n` +
-        `From supplier data: ${by.supplier_articles ?? 0}\n` +
-        `From other customers: ${by.cross_customer ?? 0}\n` +
-        `From OpenFoodFacts (GTIN): ${by.openfoodfacts ?? 0}\n` +
-        `From AI (name only): ${by.name_llm ?? 0}\n` +
-        `Couldn't classify: ${by.unclassified ?? 0}` +
-        errNote +
-        remainingNote +
-        diagNote,
-      )
+      setClassifyResult({ http_status: r.status, ok: r.ok, ...j })
       load()
     } catch (e: any) {
-      alert(e.message)
+      setClassifyResult({ error: e.message })
     } finally {
       setClassifyBusy(false)
+    }
+  }
+  // Build the human-readable + copyable text for the result banner.
+  function formatClassifyResult(j: any): string {
+    if (!j) return ''
+    if (j.error)  return `Error: ${j.error}`
+    if (!j.ok)    return `HTTP ${j.http_status}\n${JSON.stringify(j, null, 2)}`
+    const by  = j.by_source ?? {}
+    const dbg = j.debug ?? {}
+    const remaining = j.remaining_after_run ?? 0
+    const lines: string[] = []
+    lines.push(`Classified ${j.updated ?? 0}/${j.processed_this_run ?? 0} products this run.`)
+    lines.push('')
+    lines.push(`From supplier data: ${by.supplier_articles ?? 0}`)
+    lines.push(`From other customers: ${by.cross_customer ?? 0}`)
+    lines.push(`From OpenFoodFacts (GTIN): ${by.openfoodfacts ?? 0}`)
+    lines.push(`From AI (name only): ${by.name_llm ?? 0}`)
+    lines.push(`Couldn't classify: ${by.unclassified ?? 0}`)
+    if ((j.update_errors ?? 0) > 0) {
+      lines.push('')
+      lines.push(`WARNING: ${j.update_errors} updates failed. First error: ${j.first_update_error}`)
+    }
+    lines.push('')
+    lines.push(remaining > 0
+      ? `${remaining} more product${remaining === 1 ? '' : 's'} still need classifying — click again to process the next batch.`
+      : 'All items processed.')
+    lines.push('')
+    lines.push('[Diagnostics]')
+    lines.push(`Candidates loaded: ${dbg.candidates_count ?? '?'}`)
+    lines.push(`Aliases for these products: ${dbg.aliases_count ?? '?'}`)
+    lines.push(`Supplier-article keys needed: ${dbg.supplier_keys_needed ?? '?'}`)
+    lines.push(`Supplier-articles cache hits: ${dbg.supplier_articles_hits ?? '?'}`)
+    lines.push(`Writable results before save: ${dbg.writable_results ?? '?'}`)
+    return lines.join('\n')
+  }
+  async function copyClassifyResult() {
+    if (!classifyResult) return
+    try {
+      await navigator.clipboard.writeText(formatClassifyResult(classifyResult))
+    } catch {
+      // ignore — the textarea is selectable as a fallback
     }
   }
 
@@ -684,6 +702,47 @@ export default function InventoryItemsPage() {
                         border: `0.5px solid ${UXP.rose}`, borderRadius: 8,
                         color: UXP.roseText, fontSize: 12, marginBottom: 12 }}>
             {error}
+          </div>
+        )}
+
+        {classifyResult && (
+          <div style={{
+            padding: 12, marginBottom: 14,
+            background: UXP.cardBg,
+            border: `0.5px solid ${UXP.lavMid}`,
+            borderRadius: 8,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em',
+                            color: UXP.lavText, textTransform: 'uppercase' as const }}>
+                Classify result
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={copyClassifyResult} style={{
+                  padding: '4px 10px', fontSize: 11, fontWeight: 500,
+                  background: UXP.lavFill, color: UXP.lavText,
+                  border: `0.5px solid ${UXP.lavMid}`, borderRadius: 5,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}>Copy</button>
+                <button onClick={() => setClassifyResult(null)} style={{
+                  padding: '4px 10px', fontSize: 11, fontWeight: 500,
+                  background: 'transparent', color: UXP.ink3,
+                  border: `0.5px solid ${UXP.border}`, borderRadius: 5,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}>Dismiss</button>
+              </div>
+            </div>
+            <textarea
+              readOnly
+              value={formatClassifyResult(classifyResult)}
+              style={{
+                width: '100%', minHeight: 220, padding: '8px 10px',
+                background: UXP.subtleBg, border: `0.5px solid ${UXP.border}`,
+                borderRadius: 5, color: UXP.ink2,
+                fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 11,
+                lineHeight: 1.5, resize: 'vertical' as const, whiteSpace: 'pre' as const,
+              }}
+            />
           </div>
         )}
         {loading && (
