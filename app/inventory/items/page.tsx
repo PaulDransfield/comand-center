@@ -354,6 +354,19 @@ export default function InventoryItemsPage() {
               }}>
               {t('backfillPack')}
             </button>
+            <a href="/inventory/duplicates"
+              title="Find products that share a supplier article code — same SKU per the supplier"
+              style={{
+                padding: '6px 12px', fontSize: 11, fontWeight: 500,
+                background: 'transparent', color: UXP.ink2,
+                border: `0.5px solid ${UXP.border}`, borderRadius: 5,
+                cursor: 'pointer', fontFamily: 'inherit',
+                whiteSpace: 'nowrap' as const,
+                textDecoration: 'none' as const,
+                display: 'inline-flex', alignItems: 'center',
+              }}>
+              Find duplicates
+            </a>
           </div>
         </div>
 
