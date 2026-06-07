@@ -66,6 +66,15 @@ export async function POST(req: NextRequest) {
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
   const dryRun = !!body.dry_run
   const onlySources: Set<string> = new Set(Array.isArray(body.only_sources) ? body.only_sources : [])
+  // Tavily web-search is opt-in — it's the slowest source (8x concurrent
+  // 10s timeouts) and at 800 long-tail items blows past Vercel's 300s
+  // function cap. Cascade defaults to: supplier_articles -> cross_customer
+  // -> OpenFoodFacts -> name_llm. Owner re-clicks with include_tavily=true
+  // for the final long-tail pass.
+  const includeTavily = !!body.include_tavily
+  // Hard cap on candidates per request so even a fresh 1000-item catalogue
+  // completes in one shot. User re-clicks to process the next batch.
+  const MAX_CANDIDATES = 250
 
   const forbidden = requireBusinessAccess(auth, businessId)
   if (forbidden) return forbidden
@@ -100,11 +109,14 @@ export async function POST(req: NextRequest) {
   // Filter to those needing classification (null OR low confidence) AND
   // never overwrite owner-source rows (manual overrides win permanently).
   // JS-side handles NULL correctly without PostgREST three-valued-logic
-  // surprises.
-  const candidates = products.filter(p =>
+  // surprises. Hard cap at MAX_CANDIDATES so the request completes
+  // before Vercel's 300s function cap.
+  const allCandidates = products.filter(p =>
     p.classification_source !== 'owner' &&
     (p.sub_category == null || (p.classification_confidence ?? 0) < 0.7),
   )
+  const totalUnprocessed = allCandidates.length
+  const candidates = allCandidates.slice(0, MAX_CANDIDATES)
 
   if (candidates.length === 0) {
     return NextResponse.json({
@@ -378,7 +390,7 @@ export async function POST(req: NextRequest) {
   // ── Source 4: Tavily web search + LLM (Sonnet for richer context) ───
   // Soft-fails to name_llm when TAVILY_API_KEY missing or API errors.
   const afterTavily: ProductRow[] = []
-  if (stillUnclassified.length > 0 && process.env.TAVILY_API_KEY && (onlySources.size === 0 || onlySources.has('web_llm'))) {
+  if (stillUnclassified.length > 0 && includeTavily && process.env.TAVILY_API_KEY && (onlySources.size === 0 || onlySources.has('web_llm'))) {
     // Quota check before kicking off potentially many LLM calls.
     const usage = await checkAndIncrementAiLimit(db, auth.orgId)
     if (!usage.ok) return NextResponse.json(usage.body, { status: usage.status })
@@ -612,11 +624,13 @@ Tips:
   }
 
   return NextResponse.json({
-    business_id:        businessId,
-    total_candidates:   candidates.length,
-    processed:          results.length,
-    updated:            dryRun ? 0 : updated,
-    dry_run:            dryRun,
+    business_id:           businessId,
+    total_unprocessed:     totalUnprocessed,                       // full backlog before cap
+    processed_this_run:    candidates.length,
+    remaining_after_run:   Math.max(0, totalUnprocessed - candidates.length),
+    updated:               dryRun ? 0 : updated,
+    dry_run:               dryRun,
+    include_tavily:        includeTavily,
     by_source: {
       supplier_articles: results.filter(r => r.after?.source === 'supplier_articles').length,
       cross_customer:    results.filter(r => r.after?.source === 'cross_customer').length,
