@@ -21,6 +21,9 @@ import { EditItemModal } from '@/components/EditItemModal'
 import { ProductThumb } from '@/components/ui/ProductThumb'
 import { PageContainer, MetricCardRow } from '@/components/ui/Layout'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { SubCategoryPill } from '@/components/ui/SubCategoryPill'
+import { StorageIcon } from '@/components/ui/StorageIcon'
+import { subCategoriesForTop } from '@/lib/inventory/taxonomy'
 import { useViewport } from '@/lib/hooks/useViewport'
 
 interface CatalogueItem {
@@ -93,6 +96,10 @@ export default function InventoryItemsPage() {
   // the items list to rows with at least one signal and sorts by
   // reason-count desc so the worst offenders surface first.
   const [needsOnly, setNeedsOnly] = useState(false)
+  // M137 Push 3 — sub-category filter (cascades from top-level category)
+  // and "Needs classification" worklist (low-confidence + unclassified).
+  const [subFilter, setSubFilter] = useState<string | null>(null)
+  const [needsClassificationOnly, setNeedsClassificationOnly] = useState(false)
   // Supplier-article thumbnails — cross-customer cached images from the
   // shared catalogue. Silent fallback when no url. Map keyed by product_id.
   const [imageByProduct, setImageByProduct] = useState<Record<string, string | null>>({})
@@ -137,6 +144,10 @@ export default function InventoryItemsPage() {
   }, [bizId, filter])
 
   useEffect(() => { if (bizId) load() }, [bizId, filter, load])
+  // M137 Push 3 — clear sub-category filter when top-level changes,
+  // otherwise an orphan sub-pill (e.g. "dairy_cheese" while filter is
+  // "alcohol") would silently hide every row.
+  useEffect(() => { setSubFilter(null) }, [filter])
 
   // Batch-fetch supplier-article thumbnails for the currently loaded
   // items. The batch endpoint caps at 500 product_ids per call to keep
@@ -183,6 +194,11 @@ export default function InventoryItemsPage() {
     .filter(i => filter !== 'sellable' || SELLABLE_CATEGORIES.has(i.category))
     .filter(i => !search || i.name.toLowerCase().includes(search.toLowerCase()))
     .filter(i => !needsOnly || i.needs_attention)
+    // M137 Push 3 — sub-category filter (when a sub-pill is selected)
+    .filter(i => !subFilter || i.sub_category === subFilter)
+    // M137 Push 3 — "Needs classification" worklist: unclassified OR
+    // low-confidence (< 0.7). Owner reviews + overrides to manual.
+    .filter(i => !needsClassificationOnly || i.sub_category == null || (i.classification_confidence ?? 0) < 0.7)
     .slice()
     .sort((a, b) => {
       // When the Needs-attention filter is ON, sort by reason-count
@@ -204,6 +220,24 @@ export default function InventoryItemsPage() {
   const totalRecent = items.reduce((s, i) => s + (i.latest_price ?? 0), 0)
   const creeping = items.filter(i => (i.change_pct ?? 0) >= 0.05).length
   const totalObservations = items.reduce((s, i) => s + i.observation_count, 0)
+  // M137 Push 3 — needs-classification count (across the full filtered
+  // category, before sub-category filter applies; otherwise the pill
+  // would disappear once you opened it).
+  const needsClassificationCount = (data?.items ?? [])
+    .filter(i => filter !== 'sellable' || SELLABLE_CATEGORIES.has(i.category))
+    .filter(i => filter === 'sellable' || filter === 'all' || i.category === filter)
+    .filter(i => i.sub_category == null || (i.classification_confidence ?? 0) < 0.7)
+    .length
+  // M137 Push 3 — which top-level category to render sub-category pills
+  // for. We render the cascade ONLY when a real top-level is picked
+  // (not 'all' or 'sellable' which span multiple tops).
+  const topForSubCascade: string | null =
+    filter === 'food' || filter === 'beverage' || filter === 'alcohol' ||
+    filter === 'cleaning' || filter === 'takeaway_material' ||
+    filter === 'disposables' || filter === 'other'
+      ? filter
+      : null
+  const subCategoriesForCurrent = topForSubCascade ? subCategoriesForTop(topForSubCascade) : []
 
   async function backfillPackSize() {
     if (!bizId) return
@@ -552,6 +586,23 @@ export default function InventoryItemsPage() {
               Needs attention <span style={{ marginLeft: 4 }}>{data?.needs_attention_count ?? 0}</span>
             </button>
           )}
+          {/* M137 Push 3 — "Needs classification" worklist chip. Same
+              tone idiom as needs-attention but for sub_category coverage. */}
+          {needsClassificationCount > 0 && (
+            <button
+              onClick={() => setNeedsClassificationOnly(v => !v)}
+              title="Products without a sub-category, or where the AI confidence is below 0.7. Open the modal to override; saved values are locked as 'owner' and never overwritten."
+              style={{
+                padding: '6px 12px', fontSize: 11, fontWeight: 600,
+                background:  needsClassificationOnly ? UXP.lavFill : 'transparent',
+                color:       UXP.lavText,
+                border:      `0.5px solid ${needsClassificationOnly ? UXP.lavDeep : UXP.lavMid}`,
+                borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              Needs classification <span style={{ marginLeft: 4 }}>{needsClassificationCount}</span>
+            </button>
+          )}
           <input
             type="text" value={search} onChange={e => setSearch(e.target.value)}
             placeholder={t('searchPlaceholder')}
@@ -563,6 +614,54 @@ export default function InventoryItemsPage() {
             }}
           />
         </div>
+
+        {/* M137 Push 3 — sub-category cascade. Shown only when a real
+            top-level category is picked. "All" sub-pill clears the
+            sub-filter. Each pill carries the row count for that sub-cat
+            within the current top-level filter. */}
+        {subCategoriesForCurrent.length > 0 && (
+          <div style={{
+            display: 'flex', gap: 5, marginBottom: 14, flexWrap: 'wrap' as const,
+            alignItems: 'center', paddingLeft: 4,
+            borderLeft: `2px solid ${UXP.lavMid}`,
+          }}>
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.07em',
+                           color: UXP.ink4, textTransform: 'uppercase' as const,
+                           marginRight: 4 }}>
+              Sub-category
+            </span>
+            <button
+              onClick={() => setSubFilter(null)}
+              style={{
+                padding: '4px 10px', fontSize: 10, fontWeight: 500,
+                background: subFilter === null ? UXP.lavFill : 'transparent',
+                color: subFilter === null ? UXP.lavText : UXP.ink3,
+                border: `0.5px solid ${subFilter === null ? UXP.lavMid : UXP.border}`,
+                borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
+              }}>
+              All
+            </button>
+            {subCategoriesForCurrent.map(s => {
+              const count = (data?.items ?? []).filter(i => i.sub_category === s.key).length
+              if (count === 0) return null
+              const active = subFilter === s.key
+              return (
+                <button
+                  key={s.key}
+                  onClick={() => setSubFilter(active ? null : s.key)}
+                  style={{
+                    padding: '4px 10px', fontSize: 10, fontWeight: 500,
+                    background: active ? UXP.lavFill : 'transparent',
+                    color: active ? UXP.lavText : UXP.ink3,
+                    border: `0.5px solid ${active ? UXP.lavMid : UXP.border}`,
+                    borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
+                  }}>
+                  {s.label} <span style={{ color: active ? UXP.lavText : UXP.ink4, marginLeft: 4 }}>{count}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         {error && (
           <div style={{ padding: '10px 14px', background: UXP.roseFill,
@@ -628,7 +727,18 @@ export default function InventoryItemsPage() {
                     <td style={{ ...td(), fontWeight: 500, color: UXP.ink1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const }}>
                         <ProductThumb url={imageByProduct[it.product_id]} size="md" />
+                        <StorageIcon storage={it.storage_type} size={14} />
                         <span>{it.name}</span>
+                        {it.brand && (
+                          <span style={{ fontSize: 10, color: UXP.ink4, fontWeight: 400 }}>
+                            · {it.brand}
+                          </span>
+                        )}
+                        <SubCategoryPill
+                          subCategory={it.sub_category}
+                          confidence={it.classification_confidence}
+                          source={it.classification_source}
+                        />
                         {it.is_recipe_sourced && (
                           <span style={{
                             fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
@@ -747,8 +857,14 @@ function ItemCard({ item, thumbUrl, onClick }: {
       <ProductThumb url={thumbUrl} size="md" />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-          <div style={{ fontWeight: 600, color: UXP.ink1, fontSize: 13, lineHeight: 1.3, wordBreak: 'break-word' }}>
-            {item.name}
+          <div style={{ fontWeight: 600, color: UXP.ink1, fontSize: 13, lineHeight: 1.3, wordBreak: 'break-word', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' as const }}>
+            <StorageIcon storage={item.storage_type} size={12} />
+            <span>{item.name}</span>
+            {item.brand && (
+              <span style={{ fontSize: 10, color: UXP.ink4, fontWeight: 400 }}>
+                · {item.brand}
+              </span>
+            )}
           </div>
           <div style={{
             fontSize: 13, fontWeight: 600,
@@ -764,6 +880,12 @@ function ItemCard({ item, thumbUrl, onClick }: {
         </div>
         <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap' as const, gap: 6, alignItems: 'center' }}>
           <CategoryTag c={item.category} />
+          <SubCategoryPill
+            subCategory={item.sub_category}
+            confidence={item.classification_confidence}
+            source={item.classification_source}
+            size="xs"
+          />
           {item.change_pct != null && (
             <span style={{
               fontSize: 10, fontWeight: 500,
