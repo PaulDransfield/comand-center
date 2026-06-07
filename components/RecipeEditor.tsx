@@ -748,6 +748,7 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
           productId={editingProductId}
           onClose={() => setEditingProductId(null)}
           onSaved={() => { setEditingProductId(null); load() }}
+          onChange={() => load()}
         />
       )}
     </div>
