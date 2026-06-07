@@ -211,6 +211,23 @@ export async function POST(req: NextRequest) {
     const sample = keysNeeded.slice(0, 5)
     console.log(`[classify] sample keys queried (none matched): ${JSON.stringify(sample)}`)
   }
+  // Capture the first 15 unmapped category_paths so the owner can paste
+  // them back. The mapper's Swedish regex rules need to match what MS
+  // actually puts in this field; without seeing real samples we're
+  // guessing.
+  const unmappedPathsSample: Array<{ category_path: string | null; brand: string | null; storage: string | null }> = []
+  for (const [key, sa] of supplierArticleByKey) {
+    if (unmappedPathsSample.length >= 15) break
+    const mapped = mapCategoryPath(sa.category_path, sa.storage_type)
+    if (!mapped) {
+      unmappedPathsSample.push({
+        category_path: sa.category_path ?? null,
+        brand:         sa.brand ?? null,
+        storage:       sa.storage_type ?? null,
+      })
+    }
+  }
+  console.log(`[classify] unmapped category_paths sample: ${JSON.stringify(unmappedPathsSample)}`)
 
   // ── Source 2: cross-customer — same supplier+article seen at ANOTHER
   // business with sub_category already set. Highest-signal cross-tenant
@@ -657,6 +674,7 @@ Tips:
       supplier_keys_needed: keysNeeded.length,
       supplier_articles_hits: supplierArticleByKey.size,
       writable_results:     writableResults.length,
+      unmapped_paths_sample: unmappedPathsSample,
     },
     by_source: {
       supplier_articles: results.filter(r => r.after?.source === 'supplier_articles').length,
