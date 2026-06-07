@@ -3,9 +3,73 @@ import './globals.css'
 import CookieConsent from '@/components/CookieConsent'
 import FragmentAuthRedirector from '@/components/FragmentAuthRedirector'
 import VersionWatcher from '@/components/VersionWatcher'
+import { SplashRemover } from '@/components/SplashRemover'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
 import { Spline_Sans, Fraunces } from 'next/font/google'
+
+// ── Cold-load brand splash ──────────────────────────────────────────────
+// Rendered as inline HTML + CSS in the body BEFORE any React component
+// so it's visible the moment the HTML lands — before the JS bundle
+// downloads, before React hydrates. <SplashRemover> mounts inside the
+// React tree and removes #cc-splash once the app is alive.
+//
+// Lives on first cold load, NOT on in-app navigation (which uses
+// loading.tsx skeletons — see app/<segment>/loading.tsx). After React
+// hydrates the splash is gone; subsequent route changes get the
+// skeleton flow.
+const SPLASH_CSS = `
+#cc-splash {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #f1eff9;
+  z-index: 99999;
+  opacity: 1;
+  transition: opacity 320ms ease;
+  font-family: var(--font-display), 'Fraunces', 'Times New Roman', serif;
+}
+#cc-splash.cc-splash-done {
+  opacity: 0;
+  pointer-events: none;
+}
+#cc-splash .cc-splash-wordmark {
+  font-size: 26px;
+  font-weight: 500;
+  color: #3a3550;
+  letter-spacing: -0.01em;
+  margin-bottom: 24px;
+}
+#cc-splash .cc-splash-bar {
+  width: 200px;
+  height: 2px;
+  background: rgba(58,53,80,0.10);
+  border-radius: 1px;
+  overflow: hidden;
+  position: relative;
+}
+#cc-splash .cc-splash-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -40%;
+  width: 40%;
+  height: 100%;
+  background: #7d6cc9;
+  border-radius: 1px;
+  animation: cc-splash-sweep 1100ms ease-in-out infinite;
+}
+@keyframes cc-splash-sweep {
+  0%   { left: -40%; }
+  100% { left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #cc-splash .cc-splash-bar::after { animation: none; left: 0; width: 100%; }
+}
+`
 
 // next/font/google bundles + self-hosts the fonts at build time and
 // exposes them as CSS variables. Phase 1 of the UI overhaul — the
@@ -88,6 +152,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           it via its own <style> block — inline style on <body> would beat
           any later CSS rule and lock the landing page to Spline Sans. */}
       <body style={{ margin: 0, padding: 0, background: '#f8f9fa' }}>
+        {/* Cold-load splash — inline so it paints with first HTML and
+            doesn't wait for the JS bundle. SplashRemover removes it
+            once React hydrates. See SPLASH_CSS above. */}
+        <style dangerouslySetInnerHTML={{ __html: SPLASH_CSS }} />
+        <div id="cc-splash" aria-hidden="true">
+          <div className="cc-splash-wordmark">CommandCenter</div>
+          <div className="cc-splash-bar" />
+        </div>
         {/*
           CookieConsent uses useTranslations() and MUST live inside the
           provider — when it was a sibling, the SSR render had no next-intl
@@ -97,6 +169,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           on every route. See the 2026-05-01 incident.
         */}
         <NextIntlClientProvider locale={locale} messages={messages}>
+          <SplashRemover />
           {/*
             Catches Supabase implicit-flow auth redirects (#access_token=...)
             that landed at the wrong path because the Site URL isn't the
