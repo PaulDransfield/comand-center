@@ -97,9 +97,13 @@ export default function InventoryItemsPage() {
   // reason-count desc so the worst offenders surface first.
   const [needsOnly, setNeedsOnly] = useState(false)
   // M137 Push 3 — sub-category filter (cascades from top-level category)
-  // and "Needs classification" worklist (low-confidence + unclassified).
+  // and "Needs classification" worklist (truly null sub_category only —
+  // see itemsForCounting for low-confidence flow).
   const [subFilter, setSubFilter] = useState<string | null>(null)
   const [needsClassificationOnly, setNeedsClassificationOnly] = useState(false)
+  // Separate worklist for items classified by AI at low confidence —
+  // owner reviews + overrides to set source='owner' permanently.
+  const [lowConfidenceOnly, setLowConfidenceOnly] = useState(false)
   // Supplier-article thumbnails — cross-customer cached images from the
   // shared catalogue. Silent fallback when no url. Map keyed by product_id.
   const [imageByProduct, setImageByProduct] = useState<Record<string, string | null>>({})
@@ -196,9 +200,13 @@ export default function InventoryItemsPage() {
     .filter(i => !needsOnly || i.needs_attention)
     // M137 Push 3 — sub-category filter (when a sub-pill is selected)
     .filter(i => !subFilter || i.sub_category === subFilter)
-    // M137 Push 3 — "Needs classification" worklist: unclassified OR
-    // low-confidence (< 0.7). Owner reviews + overrides to manual.
-    .filter(i => !needsClassificationOnly || i.sub_category == null || (i.classification_confidence ?? 0) < 0.7)
+    // M137 Push 3 — "Needs classification" worklist: items the cascade
+    // hasn't classified yet (sub_category IS NULL).
+    .filter(i => !needsClassificationOnly || i.sub_category == null)
+    // M137 Push 3 — "Review low confidence" worklist: items classified
+    // by AI-from-name where the model wasn't sure (< 0.7). Owner override
+    // flips source to 'owner' permanently.
+    .filter(i => !lowConfidenceOnly || (i.sub_category != null && (i.classification_confidence ?? 0) < 0.7))
     .slice()
     .sort((a, b) => {
       // When the Needs-attention filter is ON, sort by reason-count
@@ -220,13 +228,20 @@ export default function InventoryItemsPage() {
   const totalRecent = items.reduce((s, i) => s + (i.latest_price ?? 0), 0)
   const creeping = items.filter(i => (i.change_pct ?? 0) >= 0.05).length
   const totalObservations = items.reduce((s, i) => s + i.observation_count, 0)
-  // M137 Push 3 — needs-classification count (across the full filtered
-  // category, before sub-category filter applies; otherwise the pill
-  // would disappear once you opened it).
-  const needsClassificationCount = (data?.items ?? [])
+  // M137 Push 3 — TWO separate worklists:
+  //   - unclassified:    sub_category IS NULL (the cascade hasn't seen it)
+  //   - low-confidence:  classified but confidence < 0.7 (needs owner
+  //                      review; AI guessed from the name alone)
+  // We split them so the Classify cascade can drain unclassified items
+  // without re-chewing the same low-confidence ones every click.
+  const itemsForCounting = (data?.items ?? [])
     .filter(i => filter !== 'sellable' || SELLABLE_CATEGORIES.has(i.category))
     .filter(i => filter === 'sellable' || filter === 'all' || i.category === filter)
-    .filter(i => i.sub_category == null || (i.classification_confidence ?? 0) < 0.7)
+  const needsClassificationCount = itemsForCounting
+    .filter(i => i.sub_category == null)
+    .length
+  const lowConfidenceCount = itemsForCounting
+    .filter(i => i.sub_category != null && (i.classification_confidence ?? 0) < 0.7)
     .length
   // M137 Push 3 — which top-level category to render sub-category pills
   // for. We render the cascade ONLY when a real top-level is picked
@@ -628,12 +643,13 @@ export default function InventoryItemsPage() {
               Needs attention <span style={{ marginLeft: 4 }}>{data?.needs_attention_count ?? 0}</span>
             </button>
           )}
-          {/* M137 Push 3 — "Needs classification" worklist chip. Same
-              tone idiom as needs-attention but for sub_category coverage. */}
+          {/* M137 Push 3 — "Needs classification" worklist chip.
+              Truly unclassified items (sub_category null). The Classify
+              cascade chews these on each click. */}
           {needsClassificationCount > 0 && (
             <button
               onClick={() => setNeedsClassificationOnly(v => !v)}
-              title="Products without a sub-category, or where the AI confidence is below 0.7. Open the modal to override; saved values are locked as 'owner' and never overwritten."
+              title="Products the cascade hasn't classified yet (no sub-category set). Click 'Classify catalogue' to drain this list."
               style={{
                 padding: '6px 12px', fontSize: 11, fontWeight: 600,
                 background:  needsClassificationOnly ? UXP.lavFill : 'transparent',
@@ -643,6 +659,24 @@ export default function InventoryItemsPage() {
               }}
             >
               Needs classification <span style={{ marginLeft: 4 }}>{needsClassificationCount}</span>
+            </button>
+          )}
+          {/* M137 Push 3 — "Review low confidence" worklist chip. Items
+              the AI classified with low confidence; owner override locks
+              them as source='owner' (never re-touched by the cascade). */}
+          {lowConfidenceCount > 0 && (
+            <button
+              onClick={() => setLowConfidenceOnly(v => !v)}
+              title="Products the AI classified from name alone with low confidence. Open one, set the right sub-category in the modal — saves as 'owner' source and is never overwritten."
+              style={{
+                padding: '6px 12px', fontSize: 11, fontWeight: 600,
+                background:  lowConfidenceOnly ? '#fef3e0' : 'transparent',
+                color:       UXP.coral,
+                border:      `0.5px solid ${lowConfidenceOnly ? UXP.coral : UXP.coralLine}`,
+                borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              Review classifications <span style={{ marginLeft: 4 }}>{lowConfidenceCount}</span>
             </button>
           )}
           <input
