@@ -529,11 +529,88 @@ function PrepListPageInner() {
     }
   }, [activeSession])
 
-  // Mark the whole session done.
+  // M139 (A2.1) — waste log modal state. Opens BEFORE the session is
+  // closed so the chef can tick which prepped items went in the bin.
+  // Each row in the modal mirrors a sessionLine: kind=component →
+  // recipe waste; kind=product → product waste. Owner can leave qty
+  // empty for any row that wasn't wasted.
+  const [wasteModal, setWasteModal] = useState<null | {
+    rows: Array<{
+      line_id:    string
+      kind:       'component' | 'product'
+      entity_id:  string
+      name:       string
+      prep_qty:   number
+      unit:       string
+      wasted_qty: string                            // string so empty input doesn't read as 0
+      reason:     string
+    }>
+  }>(null)
+
+  // Mark the whole session done. Two paths:
+  //   1. Open waste modal first (default) so the chef can log waste
+  //   2. Modal "Skip & complete" → close without logging
   const completeSession = useCallback(async () => {
     if (!activeSession) return
-    if (!window.confirm('Mark this prep list as complete? It moves to history and lines become read-only.')) return
+    // Pre-fill the modal with one row per session line. Empty qty
+    // string means "nothing wasted here" — only rows with a positive
+    // qty get POSTed.
+    const rows = sessionLines
+      .filter(l => l.total_qty > 0)
+      .map(l => ({
+        line_id:    l.id,
+        kind:       l.kind,
+        entity_id:  l.entity_id,
+        name:       l.name_snapshot,
+        prep_qty:   l.total_qty,
+        unit:       l.unit,
+        wasted_qty: '',
+        reason:     'overproduction',
+      }))
+    if (rows.length === 0) {
+      // No lines to log against — fall back to a simple confirm + complete.
+      if (!window.confirm('Mark this prep list as complete? It moves to history and lines become read-only.')) return
+      await finaliseSession([])
+      return
+    }
+    setWasteModal({ rows })
+  }, [activeSession, sessionLines])
+
+  // Actually close the session + (optionally) batch-post waste events.
+  // Called from the modal's two CTAs.
+  const finaliseSession = useCallback(async (
+    wasteEvents: Array<{
+      kind:       'component' | 'product'
+      entity_id:  string
+      qty:        number
+      unit:       string
+      reason:     string
+    }>,
+  ) => {
+    if (!activeSession || !bizId) return
     try {
+      // 1. Batch-log waste (if any). Best-effort: failure here doesn't
+      // block session completion — owner can re-add via /inventory/waste.
+      if (wasteEvents.length > 0) {
+        try {
+          const events = wasteEvents.map(e => ({
+            ...(e.kind === 'component'
+              ? { recipe_id:  e.entity_id }
+              : { product_id: e.entity_id }),
+            quantity:         e.qty,
+            unit:             e.unit,
+            reason:           e.reason,
+            prep_session_id:  activeSession.id,
+          }))
+          await fetch('/api/inventory/waste', {
+            method: 'POST',
+            cache:  'no-store',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ business_id: bizId, events }),
+          })
+        } catch { /* swallow — session still completes */ }
+      }
+      // 2. Complete the session.
       const r = await fetch(`/api/inventory/prep-sessions/${activeSession.id}`, {
         method: 'PATCH',
         cache: 'no-store',
@@ -543,10 +620,11 @@ function PrepListPageInner() {
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
       setActiveSession(null)
       setSessionLines([])
+      setWasteModal(null)
     } catch (e: any) {
       setError(e.message)
     }
-  }, [activeSession])
+  }, [activeSession, bizId])
 
   // Discard — only works while not completed. Drops the session + lines.
   const discardSession = useCallback(async () => {
@@ -2538,7 +2616,221 @@ function PrepListPageInner() {
           onClose={() => setOpenModal(null)}
         />
       )}
+
+      {wasteModal && (
+        <WasteLogModal
+          rows={wasteModal.rows}
+          onChange={rows => setWasteModal({ rows })}
+          onCancel={() => setWasteModal(null)}
+          onSkip={() => finaliseSession([])}
+          onSubmit={(events) => finaliseSession(events)}
+        />
+      )}
     </AppShell>
+  )
+}
+
+// ── WasteLogModal (M139 / A2.1) ──────────────────────────────────────
+// Opens on "Complete prep" so the chef can record what went in the bin
+// before the session goes read-only. One row per session line; chef
+// fills in only the rows they want to log, leaves the rest empty.
+function WasteLogModal({
+  rows, onChange, onCancel, onSkip, onSubmit,
+}: {
+  rows: Array<{
+    line_id:    string
+    kind:       'component' | 'product'
+    entity_id:  string
+    name:       string
+    prep_qty:   number
+    unit:       string
+    wasted_qty: string
+    reason:     string
+  }>
+  onChange: (rows: any[]) => void
+  onCancel: () => void
+  onSkip:   () => void
+  onSubmit: (events: Array<{
+    kind:       'component' | 'product'
+    entity_id:  string
+    qty:        number
+    unit:       string
+    reason:     string
+  }>) => void
+}) {
+  const REASONS: Array<{ k: string; label: string }> = [
+    { k: 'overproduction',     label: 'Overproduction' },
+    { k: 'spoilage',           label: 'Spoilage' },
+    { k: 'spillage',           label: 'Spillage' },
+    { k: 'customer_complaint', label: 'Customer complaint' },
+    { k: 'training',           label: 'Training' },
+    { k: 'staff_meal',         label: 'Staff meal' },
+    { k: 'other',              label: 'Other' },
+  ]
+
+  const events = rows
+    .map(r => {
+      const qty = Number(r.wasted_qty)
+      if (!Number.isFinite(qty) || qty <= 0) return null
+      return {
+        kind:      r.kind,
+        entity_id: r.entity_id,
+        qty,
+        unit:      r.unit,
+        reason:    r.reason,
+      }
+    })
+    .filter((e): e is NonNullable<typeof e> => !!e)
+
+  return (
+    <div style={{
+      position: 'fixed' as const,
+      inset: 0,
+      background: 'rgba(58, 53, 80, 0.45)',
+      zIndex: 200,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 16,
+    }}>
+      <div style={{
+        background: UXP.cardBg,
+        border: `0.5px solid ${UXP.border}`,
+        borderRadius: UXP.r_lg,
+        boxShadow: UXP.shadowCard,
+        width: '100%',
+        maxWidth: 640,
+        maxHeight: '90vh',
+        overflowY: 'auto' as const,
+        padding: 0,
+      }}>
+        <div style={{ padding: '18px 20px 12px', borderBottom: `0.5px solid ${UXP.borderSoft}` }}>
+          <div style={{ fontSize: 11, color: UXP.ink4, letterSpacing: '0.06em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+            Before you complete
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.02em', marginBottom: 4 }}>
+            Anything go in the bin?
+          </div>
+          <div style={{ fontSize: 12, color: UXP.ink3, lineHeight: 1.5 }}>
+            Log waste for any rows below. Leave qty empty if nothing was wasted from that item. We&apos;ll snapshot the cost so reports are accurate even if prices change later.
+          </div>
+        </div>
+
+        <div style={{ padding: '8px 20px' }}>
+          {rows.map((r, i) => (
+            <div key={r.line_id} style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr auto auto',
+              gap: 10,
+              alignItems: 'center',
+              padding: '10px 0',
+              borderBottom: i < rows.length - 1 ? `0.5px solid ${UXP.borderSoft}` : 'none',
+            }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                  {r.name}
+                </div>
+                <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2 }}>
+                  Prepped {r.prep_qty} {r.unit} · {r.kind === 'component' ? 'recipe' : 'product'}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="any"
+                  min={0}
+                  value={r.wasted_qty}
+                  onChange={ev => {
+                    const next = [...rows]
+                    next[i] = { ...r, wasted_qty: ev.target.value }
+                    onChange(next)
+                  }}
+                  placeholder="0"
+                  style={{
+                    width: 64,
+                    padding: '6px 8px',
+                    border: `0.5px solid ${UXP.border}`,
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontVariantNumeric: 'tabular-nums' as const,
+                    textAlign: 'right' as const,
+                    background: UXP.cardBg,
+                    color: UXP.ink1,
+                  }}
+                />
+                <span style={{ fontSize: 10, color: UXP.ink4 }}>{r.unit}</span>
+              </div>
+              <select
+                value={r.reason}
+                onChange={ev => {
+                  const next = [...rows]
+                  next[i] = { ...r, reason: ev.target.value }
+                  onChange(next)
+                }}
+                style={{
+                  padding: '6px 8px',
+                  border: `0.5px solid ${UXP.border}`,
+                  borderRadius: 6,
+                  fontSize: 11,
+                  background: UXP.cardBg,
+                  color: UXP.ink2,
+                  minWidth: 130,
+                }}
+              >
+                {REASONS.map(r => <option key={r.k} value={r.k}>{r.label}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
+
+        <div style={{
+          padding: '14px 20px',
+          borderTop: `0.5px solid ${UXP.borderSoft}`,
+          display: 'flex',
+          justifyContent: 'space-between',
+          gap: 10,
+          flexWrap: 'wrap' as const,
+        }}>
+          <button onClick={onCancel} style={{
+            padding: '8px 14px',
+            border: `0.5px solid ${UXP.border}`,
+            borderRadius: 6,
+            background: 'transparent',
+            color: UXP.ink3,
+            fontSize: 12,
+            cursor: 'pointer',
+          }}>
+            Cancel
+          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={onSkip} style={{
+              padding: '8px 14px',
+              border: `0.5px solid ${UXP.border}`,
+              borderRadius: 6,
+              background: 'transparent',
+              color: UXP.ink2,
+              fontSize: 12,
+              cursor: 'pointer',
+            }}>
+              Skip & complete
+            </button>
+            <button onClick={() => onSubmit(events)} disabled={events.length === 0} style={{
+              padding: '8px 16px',
+              border: 'none',
+              borderRadius: 6,
+              background: events.length === 0 ? UXP.subtleBg : UXP.lavDeep,
+              color: events.length === 0 ? UXP.ink4 : '#fff',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: events.length === 0 ? 'not-allowed' : 'pointer',
+            }}>
+              Log {events.length} waste {events.length === 1 ? 'event' : 'events'} & complete
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 

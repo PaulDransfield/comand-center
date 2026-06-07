@@ -66,6 +66,10 @@ export default function InventoryRecipesPage() {
   // thumbs and use them as a fallback when recipe.image_url is null. Same pattern
   // as the recipe editor's RecipeImageEditor auto-fallback.
   const [fallbackThumb, setFallbackThumb] = useState<Record<string, string | null>>({})
+  // M139 (A2.1) — per-recipe waste totals over last 30 days. Map
+  // recipe_id → { count, qty, value_sek }. Surface as a small badge so
+  // owners spot the "this pizza wastes 8% of cost" leak.
+  const [wasteByRecipe, setWasteByRecipe] = useState<Record<string, { count: number; qty: number; value_sek: number }>>({})
 
   useEffect(() => {
     const s = localStorage.getItem('cc_selected_biz')
@@ -91,6 +95,22 @@ export default function InventoryRecipesPage() {
     if (bizId) load()
     else setLoading(false)
   }, [bizId, load])
+
+  // Fetch waste rollup whenever the business changes. Best-effort —
+  // failure leaves the badge column empty.
+  useEffect(() => {
+    if (!bizId) { setWasteByRecipe({}); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch(`/api/inventory/waste/rollup?business_id=${encodeURIComponent(bizId)}&days=30`, { cache: 'no-store' })
+        if (!r.ok) return
+        const j = await r.json()
+        if (!cancelled) setWasteByRecipe(j.by_recipe ?? {})
+      } catch { /* ignore */ }
+    })()
+    return () => { cancelled = true }
+  }, [bizId])
 
   // After recipes load: collect the fallback_product_ids and batch-fetch thumbs.
   useEffect(() => {
@@ -426,6 +446,26 @@ export default function InventoryRecipesPage() {
                   )}
                 </span>
               ) : <span style={{ color: UXP.ink3 }}>—</span> },
+            { id: 'waste', header: 'Waste 30d', align: 'right' as const, hideOnMobile: true,
+              cell: r => {
+                const w = wasteByRecipe[r.id]
+                if (!w || w.value_sek === 0) return <span style={{ color: UXP.ink4, fontSize: 10 }}>—</span>
+                // Show value in SEK + a small "X events" microcopy.
+                // A "high waste" flag fires when waste cost > 5% of
+                // a single portion's food_cost × estimated daily portions.
+                // For v1 we just show the raw money so owners get the
+                // signal without a threshold call.
+                const hi = r.food_cost > 0 && w.value_sek > r.food_cost * 5
+                return (
+                  <span style={{
+                    color: hi ? UXP.rose : UXP.ink2,
+                    fontWeight: hi ? 600 : 400,
+                    fontVariantNumeric: 'tabular-nums' as const,
+                  }} title={`${w.count} waste ${w.count === 1 ? 'event' : 'events'} in the last 30 days`}>
+                    {fmtKr(w.value_sek)}
+                  </span>
+                )
+              } },
             { id: 'warn',  header: t('colWarnings'), align: 'center' as const, hideOnMobile: true,
               cell: r => incomplete(r) ? (
                 <span style={{
