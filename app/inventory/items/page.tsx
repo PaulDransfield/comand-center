@@ -625,6 +625,7 @@ export default function InventoryItemsPage() {
           productId={editingProductId}
           onClose={() => setEditingProductId(null)}
           onSaved={() => { setEditingProductId(null); load({ silent: true }) }}
+          onChange={() => load({ silent: true })}
         />
       )}
     </AppShell>

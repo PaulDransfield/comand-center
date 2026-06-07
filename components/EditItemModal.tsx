@@ -101,10 +101,17 @@ interface EditContextResponse {
 
 const CATEGORIES = ['food', 'beverage', 'alcohol', 'cleaning', 'takeaway_material', 'disposables', 'other'] as const
 
-export function EditItemModal({ productId, onClose, onSaved }: {
+export function EditItemModal({ productId, onClose, onSaved, onChange }: {
   productId: string
   onClose: () => void
-  onSaved?: () => void   // called after a successful save so parent can refetch
+  onSaved?: () => void    // called after a SAVE button click — parent typically
+                          // refetches AND closes the modal.
+  onChange?: () => void   // called after inline edits (link / repoint /
+                          // alias deactivate) — parent should refetch its
+                          // list silently but MUST NOT close the modal,
+                          // so the owner can see the success flash and
+                          // verify the new state landed before closing
+                          // manually.
 }) {
   const [data, setData] = useState<EditContextResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -180,13 +187,14 @@ export function EditItemModal({ productId, onClose, onSaved }: {
   const [linking, setLinking] = useState(false)
   // Transient success indicator after a successful link/repoint. The link
   // and repoint actions COMMIT immediately on click — there's no separate
-  // Save step — so we surface a brief "Linked" message so the owner knows
-  // their action took effect (otherwise the picker closes and they wonder
-  // if it saved).
+  // Save step — so we surface a "Linked" message at the TOP of the modal
+  // so the owner can see what just happened and verify the new alias
+  // appears in the Supplier articles list below. 8s is long enough to
+  // read + visually confirm without staying stale forever.
   const [linkSuccess, setLinkSuccess] = useState<string | null>(null)
   function flashLinkSuccess(msg: string) {
     setLinkSuccess(msg)
-    setTimeout(() => setLinkSuccess(null), 4000)
+    setTimeout(() => setLinkSuccess(null), 8000)
   }
   async function linkSupplierLine(lineId: string) {
     setBusy(true); setErr(null)
@@ -206,7 +214,10 @@ export function EditItemModal({ productId, onClose, onSaved }: {
       setLinking(false)
       await load()
       flashLinkSuccess('Linked — cost history populated. No further save needed.')
-      onSaved?.()   // refresh parent so the items list reflects new link/price immediately
+      // onChange (NOT onSaved) — keep the modal open so the owner can
+      // see the success banner + verify the new article appears in the
+      // Supplier articles list. Parent refreshes its items list silently.
+      onChange?.()
     } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
   }
   async function repointSupplierAlias(aliasId: string, fromProductName: string | null) {
@@ -223,7 +234,9 @@ export function EditItemModal({ productId, onClose, onSaved }: {
       setLinking(false)
       await load()
       flashLinkSuccess('Article repointed — cost history moved over.')
-      onSaved?.()
+      // onChange (NOT onSaved) — same reason as linkSupplierLine: owner
+      // needs to verify the article moved over and the cost updated.
+      onChange?.()
     } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
   }
 
