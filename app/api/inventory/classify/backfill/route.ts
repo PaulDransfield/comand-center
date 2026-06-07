@@ -1,0 +1,580 @@
+// app/api/inventory/classify/backfill/route.ts
+//
+// POST — run the classification cascade against every product at a
+// business that doesn't yet have a sub_category set (or whose
+// confidence is below a threshold). Cascade order:
+//
+//   1. supplier_articles.category_path (highest signal: supplier said so)
+//   2. cross_customer (another business has the same supplier+article
+//                      already classified — copy the answer)
+//   3. openfoodfacts (GTIN lookup — Push 2)
+//   4. web_llm (Brave/Tavily search + Sonnet — Push 2)
+//   5. name_llm (Haiku from product name alone — last resort)
+//
+// owner-source rows are NEVER overwritten regardless of incoming
+// signal — manual override always wins.
+//
+// Body: { business_id: string, dry_run?: bool, only_sources?: string[] }
+// Returns per-product result rows so the owner can see what happened.
+
+import { NextRequest, NextResponse } from 'next/server'
+import { unstable_noStore as noStore } from 'next/cache'
+import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
+import { requireBusinessAccess } from '@/lib/auth/require-role'
+import { checkAndIncrementAiLimit, logAiRequest } from '@/lib/ai/usage'
+import { anthropicFetch } from '@/lib/ai/anthropic-fetch'
+import { AI_MODELS } from '@/lib/ai/models'
+import { SCOPE_NOTE } from '@/lib/ai/scope'
+import { SUB_CATEGORIES, type SubCategory } from '@/lib/inventory/taxonomy'
+import { mapCategoryPath, mapStorageType } from '@/lib/inventory/category-mapper'
+import { lookupGtin, mapOffCategories, mapOffAllergens } from '@/lib/inventory/openfoodfacts'
+import { searchTavily, buildClassificationQuery } from '@/lib/web/tavily'
+
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 300
+
+interface ProductRow {
+  id:                   string
+  name:                 string
+  category:             string | null
+  sub_category:         string | null
+  storage_type:         string | null
+  brand:                string | null
+  gtin:                 string | null
+  classification_source:     string | null
+  classification_confidence: number | null
+  archived_at:          string | null
+}
+
+interface ClassifyResult {
+  product_id:   string
+  product_name: string
+  before:       { sub_category: string | null; source: string | null; confidence: number | null }
+  after:        { sub_category: string | null; storage_type: string | null; source: string; confidence: number } | null
+  reason:       string         // explanation for owner audit
+}
+
+export async function POST(req: NextRequest) {
+  noStore()
+  const auth = await getRequestAuth(req)
+  if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+
+  let body: any
+  try { body = await req.json() } catch { body = {} }
+  const businessId = body.business_id ? String(body.business_id).trim() : null
+  if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
+  const dryRun = !!body.dry_run
+  const onlySources: Set<string> = new Set(Array.isArray(body.only_sources) ? body.only_sources : [])
+
+  const forbidden = requireBusinessAccess(auth, businessId)
+  if (forbidden) return forbidden
+
+  const db = createAdminClient()
+
+  // ── Load all candidate products (not owner-set, not archived) ──────
+  // Confidence threshold: re-classify anything below 0.7 (LLM-from-name
+  // is 0.5, web_llm is 0.7). Owner rows have source='owner' → never touched.
+  const products: ProductRow[] = []
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db
+      .from('products')
+      .select('id, name, category, sub_category, storage_type, brand, gtin, classification_source, classification_confidence, archived_at')
+      .eq('business_id', businessId)
+      .is('archived_at', null)
+      .neq('classification_source', 'owner')
+      .order('id', { ascending: true })
+      .range(from, from + 999)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    products.push(...((data ?? []) as ProductRow[]))
+    if (!data || data.length < 1000) break
+    if (products.length > 20_000) break
+  }
+
+  // Filter to those needing classification (null OR low confidence)
+  const candidates = products.filter(p =>
+    p.sub_category == null || (p.classification_confidence ?? 0) < 0.7,
+  )
+
+  if (candidates.length === 0) {
+    return NextResponse.json({
+      business_id:       businessId,
+      total_candidates:  0,
+      processed:         0,
+      updated:           0,
+      results:           [],
+      message:           'Nothing to classify — every product already has a high-confidence sub_category.',
+    })
+  }
+
+  // ── Source 1: supplier_articles direct lookup ───────────────────────
+  // Pull aliases for these products + join to supplier_articles for the
+  // category_path + storage_type signal.
+  const productIds = candidates.map(p => p.id)
+  const { data: aliases, error: aErr } = await db
+    .from('product_aliases')
+    .select('product_id, supplier_fortnox_number, article_number, last_seen_at')
+    .eq('business_id', businessId)
+    .eq('is_active', true)
+    .in('product_id', productIds)
+    .not('article_number', 'is', null)
+  if (aErr) return NextResponse.json({ error: aErr.message }, { status: 500 })
+
+  // Pick the most-recent alias per product (best supplier signal).
+  const aliasByProduct = new Map<string, { supplier: string; article: string; last_seen: string | null }>()
+  for (const a of aliases ?? []) {
+    const prev = aliasByProduct.get(a.product_id)
+    if (!prev || (a.last_seen_at && (!prev.last_seen || a.last_seen_at > prev.last_seen))) {
+      aliasByProduct.set(a.product_id, {
+        supplier:  String(a.supplier_fortnox_number),
+        article:   String(a.article_number),
+        last_seen: a.last_seen_at ?? null,
+      })
+    }
+  }
+
+  // Batch-fetch supplier_articles for every (supplier, article) we need
+  const keysNeeded = Array.from(new Set(Array.from(aliasByProduct.values()).map(v => `${v.supplier}|${v.article}`)))
+  const supplierArticleByKey = new Map<string, any>()
+  if (keysNeeded.length > 0) {
+    const BATCH = 200
+    for (let i = 0; i < keysNeeded.length; i += BATCH) {
+      const slice = keysNeeded.slice(i, i + BATCH)
+      // Build a single OR query — supplier_articles is small (cross-customer table)
+      const orClauses = slice.map(k => {
+        const [sup, art] = k.split('|')
+        return `and(supplier_fortnox_number.eq.${sup},article_number.eq.${art})`
+      })
+      const { data: sa } = await db
+        .from('supplier_articles')
+        .select('supplier_fortnox_number, article_number, category_path, storage_type, brand, gtin, official_name')
+        .or(orClauses.join(','))
+      for (const row of sa ?? []) {
+        supplierArticleByKey.set(`${row.supplier_fortnox_number}|${row.article_number}`, row)
+      }
+    }
+  }
+
+  // ── Source 2: cross-customer — same supplier+article seen at ANOTHER
+  // business with sub_category already set. Highest-signal cross-tenant
+  // hint after supplier_articles itself.
+  //
+  // Implementation: for the keys WITHOUT a supplier_articles row, look
+  // up any product anywhere in the system with a matching alias AND a
+  // non-null sub_category.
+  const keysNotInSa = keysNeeded.filter(k => !supplierArticleByKey.has(k))
+  const crossCustomerByKey = new Map<string, { sub_category: string | null; storage_type: string | null; brand: string | null }>()
+  if (keysNotInSa.length > 0) {
+    const BATCH = 200
+    for (let i = 0; i < keysNotInSa.length; i += BATCH) {
+      const slice = keysNotInSa.slice(i, i + BATCH)
+      const orClauses = slice.map(k => {
+        const [sup, art] = k.split('|')
+        return `and(supplier_fortnox_number.eq.${sup},article_number.eq.${art})`
+      })
+      // Get every alias matching, then join product_id to products
+      const { data: matchingAliases } = await db
+        .from('product_aliases')
+        .select('product_id, supplier_fortnox_number, article_number')
+        .or(orClauses.join(','))
+        .eq('is_active', true)
+      if (!matchingAliases || matchingAliases.length === 0) continue
+
+      const otherProductIds = Array.from(new Set(matchingAliases.map(a => a.product_id)))
+      const { data: otherProducts } = await db
+        .from('products')
+        .select('id, sub_category, storage_type, brand, classification_confidence')
+        .in('id', otherProductIds)
+        .not('sub_category', 'is', null)
+        .gte('classification_confidence', 0.7)
+      if (!otherProducts) continue
+
+      const productSubBy = new Map<string, any>()
+      for (const p of otherProducts) productSubBy.set(p.id, p)
+      for (const a of matchingAliases) {
+        const p = productSubBy.get(a.product_id)
+        if (!p) continue
+        const key = `${a.supplier_fortnox_number}|${a.article_number}`
+        if (!crossCustomerByKey.has(key)) {
+          crossCustomerByKey.set(key, {
+            sub_category: p.sub_category,
+            storage_type: p.storage_type,
+            brand:        p.brand,
+          })
+        }
+      }
+    }
+  }
+
+  // ── Pass 1: deterministic sources (supplier_articles + cross_customer) ─
+  const results: ClassifyResult[] = []
+  const remainingForLlm: ProductRow[] = []
+
+  for (const p of candidates) {
+    if (onlySources.size > 0 && !onlySources.has('supplier_articles') && !onlySources.has('cross_customer')) {
+      remainingForLlm.push(p); continue
+    }
+    const alias = aliasByProduct.get(p.id)
+    if (!alias) { remainingForLlm.push(p); continue }
+    const key = `${alias.supplier}|${alias.article}`
+
+    const sa = supplierArticleByKey.get(key)
+    if (sa) {
+      // Source 1: supplier_articles
+      const mapped = mapCategoryPath(sa.category_path, sa.storage_type)
+      const storage = mapStorageType(sa.storage_type) ?? mapped?.storage ?? null
+      if (mapped) {
+        results.push({
+          product_id: p.id,
+          product_name: p.name,
+          before: { sub_category: p.sub_category, source: p.classification_source, confidence: p.classification_confidence },
+          after: {
+            sub_category: mapped.sub,
+            storage_type: storage,
+            source:       'supplier_articles',
+            confidence:   0.95,
+          },
+          reason: `Mapped from MS category_path "${sa.category_path}"`,
+        })
+        continue
+      }
+      // Have supplier_articles row but path didn't map cleanly — still
+      // get storage + brand + gtin from it.
+      if (storage || sa.brand || sa.gtin) {
+        results.push({
+          product_id: p.id,
+          product_name: p.name,
+          before: { sub_category: p.sub_category, source: p.classification_source, confidence: p.classification_confidence },
+          after: null,                       // sub_category still unknown
+          reason: `supplier_articles row exists but category_path "${sa.category_path}" did not map — passing to LLM`,
+        })
+      }
+      remainingForLlm.push(p)
+      continue
+    }
+
+    const cross = crossCustomerByKey.get(key)
+    if (cross && cross.sub_category) {
+      results.push({
+        product_id: p.id,
+        product_name: p.name,
+        before: { sub_category: p.sub_category, source: p.classification_source, confidence: p.classification_confidence },
+        after: {
+          sub_category: cross.sub_category as SubCategory,
+          storage_type: cross.storage_type as any,
+          source:       'cross_customer',
+          confidence:   0.90,
+        },
+        reason: `Cross-customer match: same (supplier ${alias.supplier}, article ${alias.article}) classified at another business`,
+      })
+      continue
+    }
+
+    remainingForLlm.push(p)
+  }
+
+  // ── Source 3: OpenFoodFacts GTIN lookup ─────────────────────────────
+  // For products whose supplier_articles row has a GTIN, hit the free
+  // OFF API. ~60-80% hit rate on branded packaged goods. Allergens come
+  // along for free.
+  const stillUnclassified: ProductRow[] = []
+  if (onlySources.size === 0 || onlySources.has('openfoodfacts')) {
+    // Build (product → gtin) map from the supplier_articles cache loaded
+    // earlier in the function.
+    const gtinByProduct = new Map<string, string>()
+    for (const p of remainingForLlm) {
+      const alias = aliasByProduct.get(p.id)
+      if (!alias) continue
+      const sa = supplierArticleByKey.get(`${alias.supplier}|${alias.article}`)
+      if (sa?.gtin && /^[0-9]{8,14}$/.test(String(sa.gtin))) {
+        gtinByProduct.set(p.id, String(sa.gtin))
+      }
+    }
+
+    // Lookup in parallel chunks of 10 to respect OFF's rate limits.
+    const productsWithGtin = remainingForLlm.filter(p => gtinByProduct.has(p.id))
+    const offResults = new Map<string, any>()
+    const CONCURRENCY = 10
+    for (let i = 0; i < productsWithGtin.length; i += CONCURRENCY) {
+      const chunk = productsWithGtin.slice(i, i + CONCURRENCY)
+      await Promise.all(chunk.map(async p => {
+        const off = await lookupGtin(gtinByProduct.get(p.id))
+        if (off.found) offResults.set(p.id, off)
+      }))
+    }
+
+    for (const p of remainingForLlm) {
+      const off = offResults.get(p.id)
+      if (off && off.found) {
+        const mappedSub = mapOffCategories(off.categories)
+        if (mappedSub) {
+          results.push({
+            product_id:   p.id,
+            product_name: p.name,
+            before: { sub_category: p.sub_category, source: p.classification_source, confidence: p.classification_confidence },
+            after: {
+              sub_category: mappedSub,
+              storage_type: null,                       // OFF doesn't carry storage_type
+              source:       'openfoodfacts',
+              confidence:   0.85,
+            },
+            reason: `OpenFoodFacts hit (GTIN ${gtinByProduct.get(p.id)}): brand=${off.brand ?? '-'}, categories=${off.categories.slice(0, 3).join(',')}`,
+          })
+          continue
+        }
+      }
+      stillUnclassified.push(p)
+    }
+  } else {
+    stillUnclassified.push(...remainingForLlm)
+  }
+
+  // ── Source 4: Tavily web search + LLM (Sonnet for richer context) ───
+  // Soft-fails to name_llm when TAVILY_API_KEY missing or API errors.
+  const afterTavily: ProductRow[] = []
+  if (stillUnclassified.length > 0 && process.env.TAVILY_API_KEY && (onlySources.size === 0 || onlySources.has('web_llm'))) {
+    // Quota check before kicking off potentially many LLM calls.
+    const usage = await checkAndIncrementAiLimit(db, auth.orgId)
+    if (!usage.ok) return NextResponse.json(usage.body, { status: usage.status })
+
+    // Tavily searches in parallel chunks of 8 — cheaper tier limit is 5/sec.
+    const TAVILY_CONC = 8
+    const tavilyByProduct = new Map<string, { answer: string; brand: string | null }>()
+    for (let i = 0; i < stillUnclassified.length; i += TAVILY_CONC) {
+      const chunk = stillUnclassified.slice(i, i + TAVILY_CONC)
+      await Promise.all(chunk.map(async p => {
+        const q = buildClassificationQuery(p.name, null)
+        const tv = await searchTavily(q, { search_depth: 'basic', max_results: 3, include_answer: true })
+        if (tv && (tv.answer || tv.results.length > 0)) {
+          const ctx = tv.answer || tv.results.slice(0, 3).map(r => `${r.title}: ${r.content}`).join('\n')
+          tavilyByProduct.set(p.id, { answer: ctx.slice(0, 600), brand: null })
+        }
+      }))
+    }
+
+    // Batch LLM classification with Tavily context appended per product.
+    // Sonnet for the better reasoning over fuzzy snippets — cost still
+    // bounded because we only reach this path for the long tail.
+    const SUB_KEYS = Object.keys(SUB_CATEGORIES).join(', ')
+    const WEB_SYSTEM_PROMPT = `You classify Swedish restaurant products into a fixed taxonomy using web-search context.
+
+${SCOPE_NOTE}
+
+For each product you'll see its raw name and a short web-search summary. Pick the best-fit sub_category key. If the summary is irrelevant or contradicts the name, treat the summary as low-quality and rely on the name.
+
+Available sub_category keys (use these EXACT strings):
+${SUB_KEYS}
+
+Storage type: "frozen" | "refrigerated" | "ambient" | null.
+
+Output JSON ONLY:
+[{ "id": "<product_id>", "sub_category": "<key or null>", "storage_type": "<value or null>", "brand": "<brand or null>", "confidence": 0.0-1.0 }]
+
+Confidence 0.7+ when the web context clearly identifies the product. 0.5-0.6 when relying mostly on the name with thin web support.`
+
+    const BATCH = 10
+    const withContext = stillUnclassified.filter(p => tavilyByProduct.has(p.id))
+    for (let i = 0; i < withContext.length; i += BATCH) {
+      const slice = withContext.slice(i, i + BATCH)
+      const userMsg = JSON.stringify(slice.map(p => ({
+        id:      p.id,
+        name:    p.name,
+        web_context: tavilyByProduct.get(p.id)?.answer ?? '',
+      })))
+
+      const aiRes = await anthropicFetch({
+        body: {
+          model:       AI_MODELS.ANALYSIS,             // Sonnet — better at noisy context
+          max_tokens:  1500,
+          system:      [
+            { type: 'text', text: WEB_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+          ],
+          messages:    [{ role: 'user', content: userMsg }],
+        },
+      })
+
+      if (!aiRes.ok) {
+        afterTavily.push(...slice)
+        continue
+      }
+      await logAiRequest(db, {
+        org_id:        auth.orgId,
+        request_type:  'classify_backfill_web',
+        model:         AI_MODELS.ANALYSIS,
+        input_tokens:  aiRes.tokensIn ?? 0,
+        output_tokens: aiRes.tokensOut ?? 0,
+      })
+
+      const text = (aiRes.json as any)?.content?.[0]?.text?.trim() ?? '[]'
+      let parsed: any[] = []
+      try { parsed = JSON.parse(text.replace(/^```json\n?|\n?```$/g, '')) } catch { parsed = [] }
+      const byId = new Map<string, any>()
+      for (const r of parsed) if (r && r.id) byId.set(String(r.id), r)
+
+      for (const p of slice) {
+        const r = byId.get(p.id)
+        if (!r || !r.sub_category || !(r.sub_category in SUB_CATEGORIES)) {
+          afterTavily.push(p)
+          continue
+        }
+        const conf = Math.max(0.3, Math.min(1.0, Number(r.confidence ?? 0.7)))
+        results.push({
+          product_id:   p.id,
+          product_name: p.name,
+          before: { sub_category: p.sub_category, source: p.classification_source, confidence: p.classification_confidence },
+          after: {
+            sub_category: r.sub_category,
+            storage_type: (r.storage_type === 'frozen' || r.storage_type === 'refrigerated' || r.storage_type === 'ambient') ? r.storage_type : null,
+            source:       'web_llm',
+            confidence:   Math.min(0.75, conf),
+          },
+          reason: 'Tavily web search + Sonnet',
+        })
+      }
+    }
+
+    // Products that had NO Tavily context at all (or Tavily returned
+    // nothing useful) fall through to name_llm.
+    afterTavily.push(...stillUnclassified.filter(p => !tavilyByProduct.has(p.id)))
+  } else {
+    afterTavily.push(...stillUnclassified)
+  }
+
+  // Replace remainingForLlm with the post-Tavily set so the LLM-from-name
+  // pass below operates on the genuinely last-resort remainder.
+  remainingForLlm.length = 0
+  remainingForLlm.push(...afterTavily)
+
+  // ── Source 5: LLM-from-name fallback ────────────────────────────────
+  // For products we couldn't deterministically classify. Batch in groups
+  // of 25 to keep prompt small + cacheable. Haiku 4.5.
+  if (remainingForLlm.length > 0 && (onlySources.size === 0 || onlySources.has('name_llm'))) {
+    const usage = await checkAndIncrementAiLimit(db, auth.orgId)
+    if (!usage.ok) return NextResponse.json(usage.body, { status: usage.status })
+
+    const SUB_KEYS = Object.keys(SUB_CATEGORIES).join(', ')
+    const SYSTEM_PROMPT = `You classify Swedish restaurant products into a fixed taxonomy.
+
+${SCOPE_NOTE}
+
+You will receive a JSON array of products. For EACH product, return the best-fit sub_category key from the list. If you genuinely cannot tell from the name, return null.
+
+Available sub_category keys (use these EXACT strings):
+${SUB_KEYS}
+
+Storage type values: "frozen" | "refrigerated" | "ambient" | null (only set if confident — frozen products usually have "fryst" / "djupfryst" in the name; refrigerated products are dairy/meat/fish/produce; everything else is ambient).
+
+Output JSON ONLY:
+[{ "id": "<product_id>", "sub_category": "<key or null>", "storage_type": "<value or null>", "brand": "<brand name or null>", "confidence": 0.0-1.0 }]
+
+Tips:
+- Swedish words: "mjölk" = milk, "ost" = cheese, "kött" = meat, "kyckling" = chicken, "fisk" = fish, "vin" = wine, "öl" = beer
+- "HGN" / "JNK" / "MEG" etc. suffixes are MS brand codes, ignore for classification
+- Wine without colour info → default alc_wine_red (most common)
+- Confidence: 0.7+ when name is unambiguous, 0.5 when guessing from partial info.`
+
+    const BATCH = 25
+    for (let i = 0; i < remainingForLlm.length; i += BATCH) {
+      const slice = remainingForLlm.slice(i, i + BATCH)
+      const userMsg = JSON.stringify(slice.map(p => ({ id: p.id, name: p.name, category: p.category })))
+
+      const aiRes = await anthropicFetch({
+        body: {
+          model:       AI_MODELS.AGENT,
+          max_tokens:  2000,
+          system:      [
+            { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+          ],
+          messages:    [{ role: 'user', content: userMsg }],
+        },
+      })
+      if (!aiRes.ok) {
+        // Soft-fail — mark as unclassified, keep going
+        for (const p of slice) {
+          results.push({
+            product_id: p.id, product_name: p.name,
+            before: { sub_category: p.sub_category, source: p.classification_source, confidence: p.classification_confidence },
+            after: null,
+            reason: `LLM error: ${aiRes.errorText ?? aiRes.status}`,
+          })
+        }
+        continue
+      }
+      await logAiRequest(db, {
+        org_id:        auth.orgId,
+        request_type:  'classify_backfill',
+        model:         AI_MODELS.AGENT,
+        input_tokens:  aiRes.tokensIn ?? 0,
+        output_tokens: aiRes.tokensOut ?? 0,
+      })
+
+      const text = (aiRes.json as any)?.content?.[0]?.text?.trim() ?? '[]'
+      let parsed: any[] = []
+      try { parsed = JSON.parse(text.replace(/^```json\n?|\n?```$/g, '')) } catch { parsed = [] }
+      const byId = new Map<string, any>()
+      for (const r of parsed) if (r && r.id) byId.set(String(r.id), r)
+
+      for (const p of slice) {
+        const r = byId.get(p.id)
+        if (!r || !r.sub_category || !(r.sub_category in SUB_CATEGORIES)) {
+          results.push({
+            product_id: p.id, product_name: p.name,
+            before: { sub_category: p.sub_category, source: p.classification_source, confidence: p.classification_confidence },
+            after: null,
+            reason: 'LLM could not classify from name',
+          })
+          continue
+        }
+        const conf = Math.max(0.1, Math.min(1.0, Number(r.confidence ?? 0.5)))
+        results.push({
+          product_id: p.id, product_name: p.name,
+          before: { sub_category: p.sub_category, source: p.classification_source, confidence: p.classification_confidence },
+          after: {
+            sub_category: r.sub_category,
+            storage_type: (r.storage_type === 'frozen' || r.storage_type === 'refrigerated' || r.storage_type === 'ambient') ? r.storage_type : null,
+            source:       'name_llm',
+            confidence:   Math.min(0.55, conf),  // cap at 0.55 — LLM-from-name is best treated as low-confidence
+          },
+          reason: `LLM from name (Haiku)`,
+        })
+      }
+    }
+  }
+
+  // ── Apply writes ────────────────────────────────────────────────────
+  let updated = 0
+  if (!dryRun) {
+    for (const r of results) {
+      if (!r.after) continue
+      const { error: uErr } = await db
+        .from('products')
+        .update({
+          sub_category:              r.after.sub_category,
+          storage_type:              r.after.storage_type,
+          classification_source:     r.after.source,
+          classification_confidence: r.after.confidence,
+          classification_last_at:    new Date().toISOString(),
+        })
+        .eq('id', r.product_id)
+        .neq('classification_source', 'owner')  // safeguard: never overwrite owner
+      if (!uErr) updated++
+    }
+  }
+
+  return NextResponse.json({
+    business_id:        businessId,
+    total_candidates:   candidates.length,
+    processed:          results.length,
+    updated:            dryRun ? 0 : updated,
+    dry_run:            dryRun,
+    by_source: {
+      supplier_articles: results.filter(r => r.after?.source === 'supplier_articles').length,
+      cross_customer:    results.filter(r => r.after?.source === 'cross_customer').length,
+      openfoodfacts:     results.filter(r => r.after?.source === 'openfoodfacts').length,
+      web_llm:           results.filter(r => r.after?.source === 'web_llm').length,
+      name_llm:          results.filter(r => r.after?.source === 'name_llm').length,
+      unclassified:      results.filter(r => !r.after).length,
+    },
+    results,
+  }, { headers: { 'Cache-Control': 'no-store' } })
+}

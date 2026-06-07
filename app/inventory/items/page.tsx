@@ -27,6 +27,11 @@ interface CatalogueItem {
   product_id:           string
   name:                 string
   category:             string
+  sub_category:         string | null     // M137
+  storage_type:         string | null     // M137 — 'frozen' | 'refrigerated' | 'ambient'
+  brand:                string | null     // M137
+  classification_source:     string | null     // M137 — null until first classification run
+  classification_confidence: number | null     // M137
   default_supplier:     string | null
   latest_price:         number | null
   latest_unit:          string | null
@@ -279,6 +284,40 @@ export default function InventoryItemsPage() {
     }
   }
 
+  // M137 — run the classification cascade across the catalogue.
+  // Reads supplier_articles + cross-customer + LLM-from-name in priority
+  // order and fills products.sub_category / storage_type / classification_*.
+  const [classifyBusy, setClassifyBusy] = useState(false)
+  async function runClassify() {
+    if (!bizId || classifyBusy) return
+    if (!confirm('Classify catalogue into sub-categories (dairy / meat / wine etc.)?\n\nUses supplier data first, then cross-customer matches, then AI from product names. Already-classified products are skipped.')) return
+    setClassifyBusy(true)
+    try {
+      const r = await fetch('/api/inventory/classify/backfill', {
+        method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: bizId }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      const by = j.by_source ?? {}
+      alert(
+        `Classified ${j.updated}/${j.total_candidates} products.\n\n` +
+        `From supplier data: ${by.supplier_articles ?? 0}\n` +
+        `From other customers: ${by.cross_customer ?? 0}\n` +
+        `From OpenFoodFacts (GTIN): ${by.openfoodfacts ?? 0}\n` +
+        `From web search + AI: ${by.web_llm ?? 0}\n` +
+        `From AI (name only): ${by.name_llm ?? 0}\n` +
+        `Couldn't classify: ${by.unclassified ?? 0}`,
+      )
+      load()
+    } catch (e: any) {
+      alert(e.message)
+    } finally {
+      setClassifyBusy(false)
+    }
+  }
+
   async function recategoriseOther() {
     if (!bizId || recatBusy) return
     const otherCount = data?.counts?.other ?? 0
@@ -353,6 +392,20 @@ export default function InventoryItemsPage() {
                 whiteSpace: 'nowrap' as const,
               }}>
               {t('backfillPack')}
+            </button>
+            <button onClick={runClassify}
+              disabled={classifyBusy}
+              title="Sort catalogue into sub-categories using supplier data + cross-customer + AI"
+              style={{
+                padding: '6px 12px', fontSize: 11, fontWeight: 500,
+                background: classifyBusy ? UXP.subtleBg : UXP.lavFill,
+                color: UXP.lavText,
+                border: `0.5px solid ${UXP.lavMid}`, borderRadius: 5,
+                cursor: classifyBusy ? 'wait' : 'pointer', fontFamily: 'inherit',
+                whiteSpace: 'nowrap' as const,
+              }}>
+              <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.04em', marginRight: 5 }}>AI</span>
+              {classifyBusy ? 'Classifying…' : 'Classify catalogue'}
             </button>
             <a href="/inventory/duplicates"
               title="Find products that share a supplier article code — same SKU per the supplier"
