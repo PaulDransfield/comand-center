@@ -117,6 +117,7 @@ export async function POST(req: NextRequest) {
   )
   const totalUnprocessed = allCandidates.length
   const candidates = allCandidates.slice(0, MAX_CANDIDATES)
+  console.log(`[classify] biz=${businessId} loaded=${products.length} candidates=${candidates.length}/${allCandidates.length}`)
 
   if (candidates.length === 0) {
     return NextResponse.json({
@@ -155,6 +156,7 @@ export async function POST(req: NextRequest) {
     }
     if (data) aliases.push(...data)
   }
+  console.log(`[classify] aliases loaded: ${aliases.length}`)
 
   // Pick the most-recent alias per product (best supplier signal).
   const aliasByProduct = new Map<string, { supplier: string; article: string; last_seen: string | null }>()
@@ -203,6 +205,11 @@ export async function POST(req: NextRequest) {
         }
       }
     }
+  }
+  console.log(`[classify] supplier_articles hits: ${supplierArticleByKey.size}/${keysNeeded.length} (keys needed)`)
+  if (keysNeeded.length > 0 && supplierArticleByKey.size === 0) {
+    const sample = keysNeeded.slice(0, 5)
+    console.log(`[classify] sample keys queried (none matched): ${JSON.stringify(sample)}`)
   }
 
   // ── Source 2: cross-customer — same supplier+article seen at ANOTHER
@@ -605,21 +612,32 @@ Tips:
   // need a DB-level guard. Keeping the UPDATE filter-free avoids the
   // PostgREST OR-syntax gotcha.
   let updated = 0
+  const writableResults = results.filter(r => r.after && r.before.source !== 'owner')
+  console.log(`[classify] writable results: ${writableResults.length}/${results.length} (rest had after=null or owner-source)`)
+  let updateErrors = 0
+  let firstUpdateError: string | null = null
   if (!dryRun) {
-    for (const r of results) {
-      if (!r.after) continue
-      if (r.before.source === 'owner') continue   // double-belt safeguard
+    for (const r of writableResults) {
       const { error: uErr } = await db
         .from('products')
         .update({
-          sub_category:              r.after.sub_category,
-          storage_type:              r.after.storage_type,
-          classification_source:     r.after.source,
-          classification_confidence: r.after.confidence,
+          sub_category:              r.after!.sub_category,
+          storage_type:              r.after!.storage_type,
+          classification_source:     r.after!.source,
+          classification_confidence: r.after!.confidence,
           classification_last_at:    new Date().toISOString(),
         })
         .eq('id', r.product_id)
-      if (!uErr) updated++
+      if (uErr) {
+        updateErrors++
+        if (!firstUpdateError) firstUpdateError = uErr.message
+        console.error(`[classify] update failed for product ${r.product_id}: ${uErr.message}`)
+      } else {
+        updated++
+      }
+    }
+    if (updateErrors > 0) {
+      console.error(`[classify] ${updateErrors} updates failed. first error: ${firstUpdateError}`)
     }
   }
 
@@ -629,8 +647,17 @@ Tips:
     processed_this_run:    candidates.length,
     remaining_after_run:   Math.max(0, totalUnprocessed - candidates.length),
     updated:               dryRun ? 0 : updated,
+    update_errors:         updateErrors,
+    first_update_error:    firstUpdateError,
     dry_run:               dryRun,
     include_tavily:        includeTavily,
+    debug: {
+      candidates_count:     candidates.length,
+      aliases_count:        aliases.length,
+      supplier_keys_needed: keysNeeded.length,
+      supplier_articles_hits: supplierArticleByKey.size,
+      writable_results:     writableResults.length,
+    },
     by_source: {
       supplier_articles: results.filter(r => r.after?.source === 'supplier_articles').length,
       cross_customer:    results.filter(r => r.after?.source === 'cross_customer').length,
