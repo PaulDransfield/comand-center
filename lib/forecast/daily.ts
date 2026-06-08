@@ -107,6 +107,11 @@ export interface ConsolidatedV1Snapshot {
     weekday:   number
     revenue:   number
     samples:   number
+    // v1.8.0 — synthetic = derived from monthly_metrics fallback
+    // rather than a real daily_metrics row. Audit / UI surfaces should
+    // be able to distinguish so owners can attribute precision.
+    synthetic?:        boolean
+    synthesis_basis?:  string
   }
 
   yoy_same_month: {
@@ -218,7 +223,7 @@ export interface ConsolidatedV1Snapshot {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const MODEL_VERSION_DEFAULT  = 'consolidated_v1.7.0'   // 2026-06-08: staff-hours forward-looking multiplier. Reads staff_logs.scheduled+logged hours for the forecast date and the same-weekday recency window. Computes staff_factor = total_hrs(date) / weekday_avg_total_hrs. Clamp [0.6, 1.5]. Multiplied into the prediction as the second forward-looking signal (alongside weather). Pearson 0.80 vs revenue in Vero audit. Captures chef's actual rostering judgment, which encodes upcoming-event / school-holiday / reservation knowledge the recency baseline can't see. Honest-incomplete: when staff_logs has no rows for the forecast date OR the weekday baseline has < 3 samples, multiplier defaults to 1.0 (no change). v1.6.0: YoY-month seasonality damper (2026-06-08, smooth proportional blend 0-50%). v1.5.0: opening_days short-circuit (2026-05-16).
+const MODEL_VERSION_DEFAULT  = 'consolidated_v1.8.0'   // 2026-06-08: synthetic yoy_same_weekday fallback from monthly_metrics. When the real daily lookup misses (Vero pattern: 2025 daily_metrics has revenue=0 because Fortnox monthly P&L is the source), fall back to (yoy_monthly_revenue / open_days_in_month) × weekday_share. Activates the 30 %/70 % YoY weekday blend that was silently disabled for all businesses without daily 2025 history. Tagged in snapshot as `yoy_same_weekday.synthetic=true` so audits can distinguish from real-daily-derived values. v1.7.0: staff-hours multiplier (2026-06-08, Pearson 0.80, −10pp MAPE on Vero backtest). v1.6.0: YoY-month seasonality damper. v1.5.0: opening_days short-circuit.
 const SNAPSHOT_VERSION       = 'consolidated_v1' as const
 const BASELINE_WINDOW_WEEKS  = 12   // mature businesses (≥180 days history)
 const SHORT_HISTORY_WEEKS    = 4    // Vero-style cold-start adjustment
@@ -520,13 +525,85 @@ export async function dailyForecast(
   // ── 2b. YoY same-weekday (Piece 3 — activates at 365+ days history) ─
   // For a forecast on (e.g.) 2026-05-15 Friday, look up 2025-05-16 Friday
   // (52 weeks back, same weekday). When available, blend 30% with the
-  // weekday baseline. Vero won't activate this until 2026-11-24; Chicce
-  // hits 1 year mid-May 2026 so this engages for her.
+  // weekday baseline.
   const yoyTarget = subtractDays(date, 364)
   const yoyTargetIso = ymd(yoyTarget)
   const yoyDailyRow = dailyMetrics.find((r: any) => r.date === yoyTargetIso && Number(r.revenue ?? 0) > 0)
-  const yoySameWeekdayAvailable = !!yoyDailyRow
-  const yoySameWeekdayValue = yoySameWeekdayAvailable ? Number(yoyDailyRow.revenue) : 0
+  let yoySameWeekdayAvailable = !!yoyDailyRow
+  let yoySameWeekdayValue = yoySameWeekdayAvailable ? Number(yoyDailyRow.revenue) : 0
+  let yoySameWeekdaySynthetic = false   // v1.8.0 — true when value came from monthly fallback
+
+  // ── 2b.II — v1.8.0 synthetic fallback ──────────────────────────────
+  // When the real daily lookup misses (Vero pattern: 2025 daily_metrics
+  // has revenue=0 rows because Fortnox annual P&L is monthly-only), but
+  // monthly_metrics HAS same-month-last-year revenue, derive a synthetic
+  // same-weekday value by distributing the monthly revenue across open
+  // trading days. Tagged synthetic in the snapshot so audits know.
+  //
+  // The weekday weighting matters — a Saturday should claim more of the
+  // monthly total than a Tuesday. We derive weekday share weights from
+  // the recent same-weekday baseline ratios so the synthetic anchor
+  // respects the business's actual weekday pattern.
+  //
+  // When recent weekday baselines aren't usable yet (cold-start), fall
+  // back to flat distribution: monthly_revenue / open_days_in_month.
+  if (!yoySameWeekdayAvailable && yoyAvailable && yoySameMonthRow) {
+    const lastYearMonth     = date.getUTCMonth() + 1
+    const lastYearYear      = date.getUTCFullYear() - 1
+    const daysInLastYearMonth = new Date(lastYearYear, lastYearMonth, 0).getUTCDate()
+    // Count open trading days from the business.opening_days config —
+    // closed weekdays don't claim revenue share.
+    let openDaysInMonth = 0
+    for (let day = 1; day <= daysInLastYearMonth; day++) {
+      const d = new Date(Date.UTC(lastYearYear, lastYearMonth - 1, day))
+      const wd = OPENING_KEYS[d.getUTCDay()]
+      if (!openingDays || openingDays[wd] !== false) openDaysInMonth++
+    }
+    if (openDaysInMonth === 0) openDaysInMonth = daysInLastYearMonth   // safety
+
+    const yoyMonthRev = Number((yoySameMonthRow as any).revenue ?? 0)
+    if (yoyMonthRev > 0 && openDaysInMonth > 0) {
+      const flatDaily = yoyMonthRev / openDaysInMonth
+
+      // Optional weekday-weighted version. Compute the recent same-weekday
+      // share: sum of recent same-weekday revenues / total recent open-day
+      // revenue. If we have enough data, multiply flatDaily by
+      // (weekday_share / equal_share) where equal_share = 1/open_weekdays.
+      let weekdayWeight = 1.0
+      if (weekdayValues.length >= 3 && dailyMetrics.length >= 28) {
+        const recent28Cut = asOfDate.getTime() - 28 * 86_400_000
+        const recent28 = dailyMetrics.filter((r: any) => {
+          const t = new Date(r.date + 'T12:00:00Z').getTime()
+          return t >= recent28Cut && Number(r.revenue ?? 0) > 0
+        })
+        if (recent28.length >= 7) {
+          const sumByWeekday = new Array(7).fill(0)
+          const cntByWeekday = new Array(7).fill(0)
+          for (const r of recent28) {
+            const wd = new Date(r.date + 'T12:00:00Z').getUTCDay()
+            sumByWeekday[wd] += Number(r.revenue ?? 0)
+            cntByWeekday[wd]++
+          }
+          // Average revenue per weekday in last 28 days
+          const avgByWeekday = sumByWeekday.map((s, i) => cntByWeekday[i] > 0 ? s / cntByWeekday[i] : 0)
+          const totalWeekdayAvg = avgByWeekday.reduce((s, v) => s + v, 0)
+          const openWeekdayCount = avgByWeekday.filter(v => v > 0).length
+          if (totalWeekdayAvg > 0 && openWeekdayCount > 0) {
+            const targetWeekdayAvg = avgByWeekday[weekday]
+            const equalShare = totalWeekdayAvg / openWeekdayCount
+            if (equalShare > 0 && targetWeekdayAvg > 0) {
+              weekdayWeight = targetWeekdayAvg / equalShare
+              // Clamp [0.4, 2.5] — weekday differences exist but shouldn't 5×
+              weekdayWeight = Math.max(0.4, Math.min(2.5, weekdayWeight))
+            }
+          }
+        }
+      }
+      yoySameWeekdayValue     = flatDaily * weekdayWeight
+      yoySameWeekdayAvailable = true
+      yoySameWeekdaySynthetic = true
+    }
+  }
 
   // ── 3. Weather + bucket lift ────────────────────────────────────────
   const weatherForecastRow = weatherDaily.find((w: any) => w.date === forecastIso)
@@ -932,10 +1009,14 @@ export async function dailyForecast(
 
     yoy_same_weekday: yoySameWeekdayAvailable
       ? {
-          available: true as const,
+          available:        true as const,
           weekday,
-          revenue:   Math.round(yoySameWeekdayValue),
-          samples:   1,
+          revenue:          Math.round(yoySameWeekdayValue),
+          samples:          1,
+          synthetic:        yoySameWeekdaySynthetic,
+          synthesis_basis:  yoySameWeekdaySynthetic
+            ? `derived from monthly_metrics ${yoySameMonthLookup} × weekday share`
+            : undefined,
         } as any
       : {
           available: false,
