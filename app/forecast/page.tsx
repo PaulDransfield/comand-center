@@ -29,6 +29,7 @@ import PairedBarChart from '@/components/ux/PairedBarChart'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
 import { UXP } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
+import { computeInterval, formatIntervalLong } from '@/lib/forecast/intervals'
 
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const MONTHS_FULL  = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -273,6 +274,7 @@ export default function ForecastPage() {
           nextMonth={nextMonth}
           avgForecastMargin={avgForecastMargin}
           projectedMarginPct={projectedMarginPct}
+          mapePct={accuracy?.overall?.mape ?? mape ?? null}
         />
 
         {/* Year chart */}
@@ -289,6 +291,7 @@ export default function ForecastPage() {
           totalActual={monthly.reduce((s, r) => s + r.actualRev, 0)}
           totalForecast={monthly.reduce((s, r) => s + r.forecastRev, 0)}
           projectedFullYear={projectedFullYear}
+          mapePct={accuracy?.overall?.mape ?? mape ?? null}
         />
 
         {/* Flags */}
@@ -528,7 +531,14 @@ function ConfidenceChip({ confidence, mape }: { confidence: 'high' | 'medium' | 
 function KpiStrip({
   year, projectedFullYear, actualMonths, hasProjection,
   ytdActualProfit, currentMonthIdx, nextMonth, avgForecastMargin, projectedMarginPct,
+  mapePct,
 }: any) {
+  // A2.7 — intervals on the two forecast cards. mapePct is the model's
+  // historical mean absolute % error; we project ±mape% as the band.
+  // Honest-incomplete: if mape is missing or < threshold of observations,
+  // computeInterval returns null and we fall back to the existing micro copy.
+  const projectedInterval = computeInterval(projectedFullYear ?? 0, mapePct)
+  const nextMonthInterval = computeInterval(nextMonth?.forecastRev ?? 0, mapePct)
   return (
     <div style={{
       display:             'grid',
@@ -538,9 +548,11 @@ function KpiStrip({
       <KpiCardUX
         title={`Projected ${year}`}
         value={projectedFullYear != null ? fmtKr(projectedFullYear) : '—'}
-        microLabel={hasProjection
-          ? `${actualMonths} month${actualMonths === 1 ? '' : 's'} closed`
-          : 'Not enough actuals yet'}
+        microLabel={projectedInterval
+          ? `±${projectedInterval.half_width_pct.toFixed(0)}% · ${formatIntervalLong(projectedInterval, fmtKr)}`
+          : (hasProjection
+              ? `${actualMonths} month${actualMonths === 1 ? '' : 's'} closed`
+              : 'Not enough actuals yet')}
       />
       <KpiCardUX
         title="YTD net profit"
@@ -557,7 +569,9 @@ function KpiStrip({
           { label: 'This month', value: nextMonth.marginForecast, max: 100, color: UXP.lav   },
           { label: 'Year avg',   value: avgForecastMargin,        max: 100, color: UXP.lavMid },
         ] : undefined}
-        microLabel={nextMonth ? MONTHS_SHORT[nextMonth.m - 1] : ''}
+        microLabel={nextMonthInterval
+          ? `±${nextMonthInterval.half_width_pct.toFixed(0)}% · ${formatIntervalLong(nextMonthInterval, fmtKr)}`
+          : (nextMonth ? MONTHS_SHORT[nextMonth.m - 1] : '')}
       />
       <KpiCardUX
         title="Projected margin"
@@ -611,13 +625,13 @@ function YearChart({ monthly, loading }: { monthly: any[]; loading: boolean }) {
 }
 
 // ── Monthly BreakdownTable ──────────────────────────────────────────
-function MonthlyBreakdown({ monthly, totalActual, totalForecast, projectedFullYear }: any) {
+function MonthlyBreakdown({ monthly, totalActual, totalForecast, projectedFullYear, mapePct }: any) {
   return (
     <div>
       <div style={{ marginBottom: 8 }}>
         <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>Monthly forecast</div>
         <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
-          Actual vs forecast per month
+          Actual vs forecast per month{mapePct != null && ` · forecast band ±${mapePct.toFixed(0)}%`}
         </div>
       </div>
       <BreakdownTable
@@ -638,9 +652,23 @@ function MonthlyBreakdown({ monthly, totalActual, totalForecast, projectedFullYe
           { key: 'actual', header: 'Actual', align: 'right', render: (r: any) =>
             r.actualRev > 0 ? fmtKr(r.actualRev) : <span style={{ color: UXP.ink4 }}>—</span>
           },
-          { key: 'forecast', header: 'Forecast', align: 'right', render: (r: any) =>
-            r.forecastRev > 0 ? fmtKr(r.forecastRev) : <span style={{ color: UXP.ink4 }}>—</span>
-          },
+          { key: 'forecast', header: 'Forecast', align: 'right', render: (r: any) => {
+            if (!(r.forecastRev > 0)) return <span style={{ color: UXP.ink4 }}>—</span>
+            // A2.7 — only future-month forecasts get the band rendered.
+            // Past months have the actual right there; the band would just
+            // be noise on a settled number.
+            const iv = r.isFuture ? computeInterval(r.forecastRev, mapePct) : null
+            return (
+              <span title={iv ? `Typical range: ${formatIntervalLong(iv, fmtKr)} (±${iv.half_width_pct}% based on last 6 months)` : undefined}>
+                {fmtKr(r.forecastRev)}
+                {iv && (
+                  <span style={{ display: 'block', fontSize: 9, color: UXP.ink4, marginTop: 1, fontVariantNumeric: 'tabular-nums' as const }}>
+                    ±{iv.half_width_pct.toFixed(0)}%
+                  </span>
+                )}
+              </span>
+            )
+          } },
           { key: 'delta', header: 'Δ vs forecast', align: 'right', render: (r: any) => {
             if (!(r.actualRev > 0 && r.forecastRev > 0)) return <span style={{ color: UXP.ink4 }}>—</span>
             const pct = ((r.actualRev - r.forecastRev) / r.forecastRev) * 100
