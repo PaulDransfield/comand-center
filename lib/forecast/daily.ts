@@ -117,6 +117,11 @@ export interface ConsolidatedV1Snapshot {
     monthly_revenue:              number
     trailing_12m_growth_multiplier: number
     applied_as_baseline_anchor:   boolean
+    // v1.6.0 — seasonality damper diagnostics
+    damper_applied:               boolean
+    damper_blend_weight:          number
+    yoy_daily_avg:                number | null
+    damper_reason:                string | null
   }
 
   weather_forecast: {
@@ -198,7 +203,7 @@ export interface ConsolidatedV1Snapshot {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const MODEL_VERSION_DEFAULT  = 'consolidated_v1.5.0'   // 2026-05-16: opening_days short-circuit — when the business is closed on the forecast weekday (businesses.opening_days[mon..sun]=false), return predicted_revenue=0 immediately. Required after v1.4.0 because the zero-fallback otherwise produces overall-mean predictions for closed days (Vero is closed Sundays, was predicting non-zero Sunday revenue)
+const MODEL_VERSION_DEFAULT  = 'consolidated_v1.6.0'   // 2026-06-08: YoY-month seasonality damper. When yoy_same_weekday is unavailable but monthly_metrics has same-month-last-year revenue, derive yoy_daily_avg = monthly_revenue / days_in_month and damp the recency-weighted weekday baseline toward it when divergence > 50%. Fixes the winter→summer transition bias where Vero's recency baseline inherited Feb-Mar's high values into June (90→200k/wk actual vs 330-490k/wk recency-implied baseline = +30% bias). Without daily 2025 history, this is the only seasonality signal we have for restaurants whose business varies materially by season.
 const SNAPSHOT_VERSION       = 'consolidated_v1' as const
 const BASELINE_WINDOW_WEEKS  = 12   // mature businesses (≥180 days history)
 const SHORT_HISTORY_WEEKS    = 4    // Vero-style cold-start adjustment
@@ -689,6 +694,63 @@ export async function dailyForecast(
   if (yoySameWeekdayAvailable && yoySameWeekdayValue > 0) {
     blendedBaseline = weekdayBaseline * 0.7 + yoySameWeekdayValue * 0.3
   }
+
+  // Step 1b (v1.6.0): YoY same-MONTH seasonality damper.
+  //
+  // This fires when:
+  //   - yoy_same_weekday is NOT available (daily history missing for last
+  //     year — Vero's 2025 daily_metrics rows have revenue=0 because the
+  //     Fortnox annual P&L is monthly-only)
+  //   - yoy_same_month_revenue IS available (monthly_metrics has the
+  //     same-month-last-year total; 406k for Vero June 2025)
+  //   - the recency-weighted weekday baseline is materially HIGHER than
+  //     last year's daily average for that month (the "still inheriting
+  //     winter recency" signature)
+  //
+  // The damper pulls the baseline halfway toward yoy_daily_avg. Without
+  // it, a winter restaurant exiting winter (Vero Mar→Jun: 330-490k/wk
+  // historical baseline vs 90-200k/wk actual) over-predicts by 30-100%
+  // because the 28-day recency window can't fully drown out the 8 older
+  // weeks of high-winter values. With this damper, the prediction
+  // converges to last-year-same-month's typical daily revenue.
+  //
+  // The 1.5× divergence threshold prevents normal noise from triggering
+  // it — only fires when the model is genuinely mis-anchored on
+  // seasonality. Below the threshold, the recency signal stays canonical.
+  // Smooth proportional damper — blend weight grows from 0 % at ratio
+  // 1.5 to 50 % at ratio 3.0+. A hard 1.5× threshold over-damped mid-
+  // divergence days (Vero Thursday Jun 11: ratio 2.06 → pre-fix +8 %,
+  // hard-blend −20 %). Proportional blend keeps mild divergences
+  // mostly-untouched while catching extreme cases (winter Fri/Sat
+  // baselines vs summer reality).
+  let yoyMonthDamperApplied = false
+  let yoyMonthDailyAvg: number | null = null
+  let yoyMonthDamperBlendWeight = 0
+  let yoyMonthDamperReason: string | null = null
+  if (yoyAvailable && !yoySameWeekdayAvailable && yoySameMonthRow) {
+    const lastYearMonth = date.getUTCMonth() + 1
+    const daysInLastYearMonth = new Date(
+      date.getUTCFullYear() - 1,
+      lastYearMonth,    // month index +1 = last day of target month
+      0,
+    ).getUTCDate()
+    const yoyMonthRev = Number((yoySameMonthRow as any).revenue ?? 0)
+    if (daysInLastYearMonth > 0 && yoyMonthRev > 0) {
+      yoyMonthDailyAvg = yoyMonthRev / daysInLastYearMonth
+      const ratio = blendedBaseline / yoyMonthDailyAvg
+      if (ratio > 1.5) {
+        // Linear ramp: 0 weight at ratio 1.5, 0.5 weight at ratio 3.0+
+        yoyMonthDamperBlendWeight = Math.min(0.5, (ratio - 1.5) / 1.5 * 0.5)
+        const before = blendedBaseline
+        blendedBaseline = blendedBaseline * (1 - yoyMonthDamperBlendWeight) + yoyMonthDailyAvg * yoyMonthDamperBlendWeight
+        yoyMonthDamperApplied = true
+        yoyMonthDamperReason = `ratio ${ratio.toFixed(2)} > 1.5; blend ${(yoyMonthDamperBlendWeight * 100).toFixed(0)} % yoy_daily_avg ${Math.round(yoyMonthDailyAvg)}; baseline ${Math.round(before)} → ${Math.round(blendedBaseline)}`
+      } else {
+        yoyMonthDamperReason = `ratio ${ratio.toFixed(2)} ≤ 1.5 — within tolerance, no damping`
+      }
+    }
+  }
+
   let predicted = blendedBaseline
   // Step 2: apply yoy-monthly trailing growth multiplier
   if (yoyAvailable) {
@@ -770,6 +832,15 @@ export async function dailyForecast(
           monthly_revenue:                 Number(yoySameMonthRow?.revenue ?? 0),
           trailing_12m_growth_multiplier:  Math.round(trailing12mGrowth * 1000) / 1000,
           applied_as_baseline_anchor:      true,
+          // v1.6.0 — YoY-month seasonality damper diagnostics.
+          // yoy_daily_avg = monthly_revenue / days_in_month. Damper
+          // blend weight scales linearly with ratio: 0 % at 1.5×, 50 %
+          // at 3.0×+. Captures Vero's winter→summer transition while
+          // leaving mild divergences mostly untouched.
+          damper_applied:                  yoyMonthDamperApplied,
+          damper_blend_weight:             Math.round(yoyMonthDamperBlendWeight * 1000) / 1000,
+          yoy_daily_avg:                   yoyMonthDailyAvg != null ? Math.round(yoyMonthDailyAvg) : null,
+          damper_reason:                   yoyMonthDamperReason,
         }
       : {
           available: false,
