@@ -56,7 +56,7 @@ function enrich(r: LogRow): OutRow {
 
 export async function GET(req: NextRequest) {
   const guard = await requireAdmin(req)
-  if (guard) return guard
+  if (!('ok' in guard)) return guard
 
   if (cached && Date.now() - cached.at < TTL_MS) {
     return NextResponse.json(cached.payload, {

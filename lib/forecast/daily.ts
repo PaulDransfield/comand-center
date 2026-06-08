@@ -41,6 +41,7 @@ export interface DailyForecast {
     school_holiday_pct:    number
     salary_cycle_pct:      number
     this_week_scaler:      number
+    staff_factor:          number          // v1.7.0 — chef rostering multiplier, clamped [0.6, 1.5]
   }
   confidence:        'high' | 'medium' | 'low'
   inputs_snapshot:   ConsolidatedV1Snapshot
@@ -198,12 +199,26 @@ export interface ConsolidatedV1Snapshot {
     filter_predicate:                       string
   }
 
+  // v1.7.0 — chef rostering signal.
+  staff_factor: {
+    available:               boolean
+    forecast_total_hrs:      number
+    forecast_scheduled_hrs:  number
+    forecast_logged_hrs:     number
+    weekday_avg_hrs:         number
+    weekday_samples:         number
+    factor_raw:              number | null
+    factor_applied:          number
+    clamped:                 'low' | 'high' | null
+    reason:                  string
+  }
+
   data_quality_flags: string[]
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const MODEL_VERSION_DEFAULT  = 'consolidated_v1.6.0'   // 2026-06-08: YoY-month seasonality damper. When yoy_same_weekday is unavailable but monthly_metrics has same-month-last-year revenue, derive yoy_daily_avg = monthly_revenue / days_in_month and damp the recency-weighted weekday baseline toward it when divergence > 50%. Fixes the winter→summer transition bias where Vero's recency baseline inherited Feb-Mar's high values into June (90→200k/wk actual vs 330-490k/wk recency-implied baseline = +30% bias). Without daily 2025 history, this is the only seasonality signal we have for restaurants whose business varies materially by season.
+const MODEL_VERSION_DEFAULT  = 'consolidated_v1.7.0'   // 2026-06-08: staff-hours forward-looking multiplier. Reads staff_logs.scheduled+logged hours for the forecast date and the same-weekday recency window. Computes staff_factor = total_hrs(date) / weekday_avg_total_hrs. Clamp [0.6, 1.5]. Multiplied into the prediction as the second forward-looking signal (alongside weather). Pearson 0.80 vs revenue in Vero audit. Captures chef's actual rostering judgment, which encodes upcoming-event / school-holiday / reservation knowledge the recency baseline can't see. Honest-incomplete: when staff_logs has no rows for the forecast date OR the weekday baseline has < 3 samples, multiplier defaults to 1.0 (no change). v1.6.0: YoY-month seasonality damper (2026-06-08, smooth proportional blend 0-50%). v1.5.0: opening_days short-circuit (2026-05-16).
 const SNAPSHOT_VERSION       = 'consolidated_v1' as const
 const BASELINE_WINDOW_WEEKS  = 12   // mature businesses (≥180 days history)
 const SHORT_HISTORY_WEEKS    = 4    // Vero-style cold-start adjustment
@@ -324,6 +339,7 @@ export async function dailyForecast(
     monthlyMetricsRes,
     weatherDailyRes,
     confirmedAnomaliesRes,
+    staffLogsRes,
   ] = await Promise.all([
     db.from('daily_metrics')
       .select('date, revenue, hours_worked, labour_pct')
@@ -356,11 +372,24 @@ export async function dailyForecast(
       .eq('confirmation_status', 'confirmed')
       .gte('period_date', baselineFromIso)
       .lte('period_date', asOfIso),
+
+    // v1.7.0 — staff_logs for the recency window (same-weekday baseline)
+    // AND the forecast date itself. Cap reads at forecast_date so we
+    // include "today's" scheduled rows AND any backfill-honest history.
+    // hours_worked is the canonical column for both scheduled (PK
+    // pre-service plan) and logged (post-service actual) rows; pk_log_url
+    // suffix '_scheduled' distinguishes them.
+    db.from('staff_logs')
+      .select('shift_date, hours_worked, estimated_salary, cost_actual, pk_log_url')
+      .eq('business_id', businessId)
+      .gte('shift_date', baselineFromIso)
+      .lte('shift_date', forecastIso),
   ])
 
   const dailyMetrics    = dailyMetricsRes.data ?? []
   const monthlyMetrics  = monthlyMetricsRes.data ?? []
   const weatherDaily    = weatherDailyRes.data ?? []
+  const staffLogs       = staffLogsRes.data ?? []
   const contaminatedSet: Set<string> = new Set((confirmedAnomaliesRes.data ?? []).map((a: any) => a.period_date as string))
 
   // ── Detect short-history mode (cold-start protection) ──────────────
@@ -751,6 +780,93 @@ export async function dailyForecast(
     }
   }
 
+  // ── v1.7.0 — staff_factor (forward-looking chef rostering signal) ──
+  //
+  // The chef rosters tonight's shifts the day before based on expectation
+  // (reservations, upcoming events, school holidays, repeat-customer
+  // patterns). That judgment encodes information no recency baseline
+  // can see. Pearson 0.80 vs revenue at Vero across 74 trading days;
+  // 0.69-0.76 on Friday/Saturday — exactly the high-revenue days where
+  // the existing model has the largest bias.
+  //
+  // Calculation:
+  //   forecast_total_hrs = scheduled + logged hours for forecast_date
+  //   weekday_avg_hrs    = mean total_hrs across same-weekday days in
+  //                        the recency window (exclude contaminated)
+  //   staff_factor       = forecast_total_hrs / weekday_avg_hrs
+  //                        clamped to [0.6, 1.5]
+  //
+  // Honest-incomplete: when forecast_date has 0 staff rows OR the
+  // weekday baseline has < 3 samples, factor = 1.0 (no signal, no
+  // change). This lets customers who don't roster ahead degrade
+  // gracefully to the existing model.
+  const STAFF_FACTOR_MIN = 0.6
+  const STAFF_FACTOR_MAX = 1.5
+  const STAFF_MIN_SAMPLES = 3
+  let staffForecastHrs = 0
+  let staffForecastScheduledHrs = 0
+  let staffForecastLoggedHrs = 0
+  let staffWeekdayAvgHrs = 0
+  let staffWeekdaySamples = 0
+  let staffFactorRaw: number | null = null
+  let staffFactorApplied = 1.0
+  let staffClampedAt: 'low' | 'high' | null = null
+  let staffReason: string
+
+  for (const r of staffLogs as any[]) {
+    const isScheduled = String(r.pk_log_url ?? '').includes('_scheduled')
+    const hrs = Number(r.hours_worked ?? 0)
+    if (!Number.isFinite(hrs) || hrs <= 0) continue
+    if (r.shift_date === forecastIso) {
+      staffForecastHrs += hrs
+      if (isScheduled) staffForecastScheduledHrs += hrs
+      else             staffForecastLoggedHrs += hrs
+    }
+  }
+
+  // Same-weekday baseline — group staff hours per shift_date in the
+  // baseline window, sum to a total_hrs per day, then average across
+  // matching weekdays. Skip the forecast date itself + any contaminated
+  // anomaly dates.
+  const staffPerDate = new Map<string, number>()
+  for (const r of staffLogs as any[]) {
+    const hrs = Number(r.hours_worked ?? 0)
+    if (!Number.isFinite(hrs) || hrs <= 0) continue
+    if (r.shift_date === forecastIso) continue
+    staffPerDate.set(r.shift_date, (staffPerDate.get(r.shift_date) ?? 0) + hrs)
+  }
+  const weekdayHrSamples: number[] = []
+  for (const [d, hrs] of staffPerDate) {
+    if (contaminatedSet.has(d)) continue
+    const dWeekday = new Date(d + 'T12:00:00Z').getUTCDay()
+    if (dWeekday !== weekday) continue
+    weekdayHrSamples.push(hrs)
+  }
+  staffWeekdaySamples = weekdayHrSamples.length
+  staffWeekdayAvgHrs = weekdayHrSamples.length > 0
+    ? weekdayHrSamples.reduce((s, v) => s + v, 0) / weekdayHrSamples.length
+    : 0
+
+  if (staffForecastHrs <= 0) {
+    staffReason = 'no_staff_rows_for_forecast_date — factor=1.0 (no change)'
+  } else if (staffWeekdaySamples < STAFF_MIN_SAMPLES) {
+    staffReason = `weekday baseline has ${staffWeekdaySamples} samples (< ${STAFF_MIN_SAMPLES}) — factor=1.0 (no change)`
+  } else if (staffWeekdayAvgHrs <= 0) {
+    staffReason = 'weekday baseline avg=0 — factor=1.0 (no change)'
+  } else {
+    staffFactorRaw = staffForecastHrs / staffWeekdayAvgHrs
+    if (staffFactorRaw < STAFF_FACTOR_MIN) {
+      staffFactorApplied = STAFF_FACTOR_MIN
+      staffClampedAt = 'low'
+    } else if (staffFactorRaw > STAFF_FACTOR_MAX) {
+      staffFactorApplied = STAFF_FACTOR_MAX
+      staffClampedAt = 'high'
+    } else {
+      staffFactorApplied = staffFactorRaw
+    }
+    staffReason = `forecast=${staffForecastHrs.toFixed(1)}h (sched ${staffForecastScheduledHrs.toFixed(1)}h + logged ${staffForecastLoggedHrs.toFixed(1)}h) vs weekday_avg ${staffWeekdayAvgHrs.toFixed(1)}h (n=${staffWeekdaySamples}) → raw ${staffFactorRaw.toFixed(2)}${staffClampedAt ? ` (clamped ${staffClampedAt})` : ''}, applied ${staffFactorApplied.toFixed(2)}`
+  }
+
   let predicted = blendedBaseline
   // Step 2: apply yoy-monthly trailing growth multiplier
   if (yoyAvailable) {
@@ -764,6 +880,7 @@ export async function dailyForecast(
   predicted *= schoolHolidayInfo.applied_factor
   predicted *= salaryCycleFactor
   predicted *= scalerResult.scaler
+  predicted *= staffFactorApplied   // v1.7.0 — chef rostering signal
 
   const predictedInt = Math.max(0, Math.round(predicted))
   const baselineInt  = Math.max(0, Math.round(weekdayBaseline))
@@ -928,6 +1045,19 @@ export async function dailyForecast(
       filter_predicate:                       "alert_type IN ('revenue_drop','revenue_spike') AND confirmation_status = 'confirmed'",
     },
 
+    staff_factor: {
+      available:              staffForecastHrs > 0 && staffWeekdaySamples >= STAFF_MIN_SAMPLES,
+      forecast_total_hrs:     Math.round(staffForecastHrs * 10) / 10,
+      forecast_scheduled_hrs: Math.round(staffForecastScheduledHrs * 10) / 10,
+      forecast_logged_hrs:    Math.round(staffForecastLoggedHrs * 10) / 10,
+      weekday_avg_hrs:        Math.round(staffWeekdayAvgHrs * 10) / 10,
+      weekday_samples:        staffWeekdaySamples,
+      factor_raw:             staffFactorRaw != null ? Math.round(staffFactorRaw * 1000) / 1000 : null,
+      factor_applied:         Math.round(staffFactorApplied * 1000) / 1000,
+      clamped:                staffClampedAt,
+      reason:                 staffReason,
+    },
+
     data_quality_flags: dataQualityFlags,
   }
 
@@ -960,6 +1090,7 @@ export async function dailyForecast(
       school_holiday_pct:    schoolHolidayInfo.applied_factor,
       salary_cycle_pct:      Math.round(salaryCycleFactor * 100) / 100,
       this_week_scaler:      Math.round(scalerResult.scaler * 100) / 100,
+      staff_factor:          Math.round(staffFactorApplied * 100) / 100,
     },
     confidence,
     inputs_snapshot:   snapshot,
@@ -1085,6 +1216,11 @@ async function buildClosedDayForecast(args: {
       checked: false, contaminated_dates_in_baseline_window: [], owner_confirmed_count: 0,
       filter_predicate: 'skipped_business_closed_for_weekday',
     },
+    staff_factor: {
+      available: false, forecast_total_hrs: 0, forecast_scheduled_hrs: 0, forecast_logged_hrs: 0,
+      weekday_avg_hrs: 0, weekday_samples: 0, factor_raw: null, factor_applied: 1,
+      clamped: null, reason: 'business_closed_for_weekday — staff signal not evaluated',
+    },
     data_quality_flags: ['business_closed_for_weekday'],
   }
 
@@ -1116,6 +1252,7 @@ async function buildClosedDayForecast(args: {
       school_holiday_pct:    1,
       salary_cycle_pct:      1,
       this_week_scaler:      1,
+      staff_factor:          1,
     },
     confidence:        'high',
     inputs_snapshot:   snapshot,
