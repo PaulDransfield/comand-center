@@ -119,11 +119,13 @@ for (let i = 28; i < daily.length; i++) {
     yoySameWeekdayValue = flatDaily * weekdayWeight
   }
 
-  // v1.6.0 (uses yoy_same_weekday if available, else damper)
-  // Step 1: blend
+  // v1.9.0 — adaptive blend weight on top of v1.8.0 synthetic
   let v160 = baseline
   if (yoyAvailable && yoySameWeekdayValue > 0) {
-    v160 = baseline * 0.7 + yoySameWeekdayValue * 0.3
+    let blendW = 0.30
+    const ratio = baseline / yoySameWeekdayValue
+    if (ratio > 1.5) blendW = Math.min(0.60, 0.30 + (ratio - 1.5) / 1.5 * 0.30)
+    v160 = baseline * (1 - blendW) + yoySameWeekdayValue * blendW
   } else if (yoyAvailable) {
     // Damper case (v1.6.0 only path)
     const yoyMonth = monthlyByYM.get(yoyKey) ?? 0

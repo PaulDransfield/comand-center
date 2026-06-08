@@ -112,6 +112,8 @@ export interface ConsolidatedV1Snapshot {
     // be able to distinguish so owners can attribute precision.
     synthetic?:        boolean
     synthesis_basis?:  string
+    // v1.9.0 — adaptive blend weight (default 0.30, up to 0.60)
+    blend_weight_applied?: number
   }
 
   yoy_same_month: {
@@ -223,7 +225,7 @@ export interface ConsolidatedV1Snapshot {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const MODEL_VERSION_DEFAULT  = 'consolidated_v1.8.0'   // 2026-06-08: synthetic yoy_same_weekday fallback from monthly_metrics. When the real daily lookup misses (Vero pattern: 2025 daily_metrics has revenue=0 because Fortnox monthly P&L is the source), fall back to (yoy_monthly_revenue / open_days_in_month) × weekday_share. Activates the 30 %/70 % YoY weekday blend that was silently disabled for all businesses without daily 2025 history. Tagged in snapshot as `yoy_same_weekday.synthetic=true` so audits can distinguish from real-daily-derived values. v1.7.0: staff-hours multiplier (2026-06-08, Pearson 0.80, −10pp MAPE on Vero backtest). v1.6.0: YoY-month seasonality damper. v1.5.0: opening_days short-circuit.
+const MODEL_VERSION_DEFAULT  = 'consolidated_v1.9.0'   // 2026-06-08: adaptive YoY weekday blend weight. Default 30 % YoY + 70 % baseline (legacy). When recency baseline overshoots YoY weekday by 1.5× +, ramp the YoY weight linearly to 0.60 at ratio 3.0×+. Compounds with v1.8.0 synthetic YoY fallback to fully address Vero's winter→summer transition bias. v1.8.0: synthetic yoy_same_weekday from monthly_metrics. v1.7.0: staff-hours multiplier (Pearson 0.80, −10pp MAPE). v1.6.0: YoY-month seasonality damper. v1.5.0: opening_days short-circuit. Combined v1.6-v1.9 backtest on Vero: 70.3 % → 45.9 % MAPE (−24.4pp), Fri/Sat dropped 44-48pp.
 const SNAPSHOT_VERSION       = 'consolidated_v1' as const
 const BASELINE_WINDOW_WEEKS  = 12   // mature businesses (≥180 days history)
 const SHORT_HISTORY_WEEKS    = 4    // Vero-style cold-start adjustment
@@ -791,14 +793,34 @@ export async function dailyForecast(
   const scalerResult = thisWeekScaler(scalerPairs)
 
   // ── 9. Compose ─────────────────────────────────────────────────────
-  // Step 1: apply YoY same-weekday blend (when 1+ year history). 30% YoY +
-  // 70% weekday-baseline. This catches seasonal transitions that the
-  // weekday baseline alone misses (post-holiday dips, summer drops, etc.)
-  // — exactly the architecture's self-healing path for Vero's January
-  // problem once she hits 2026-11-24.
+  // Step 1: apply YoY same-weekday blend (when 1+ year history).
+  //
+  // v1.9.0 — adaptive blend weight. Default 30% YoY + 70% baseline.
+  // When the recency baseline materially OVER-shoots the YoY weekday
+  // value (signature: seasonal transition with stale winter recency),
+  // scale the YoY weight up to 60%.
+  //
+  // Ramp:
+  //   ratio = baseline / yoy_weekday
+  //   ≤ 1.5 → blend 0.30 YoY (default)
+  //   1.5–3.0 → linear ramp from 0.30 → 0.60
+  //   ≥ 3.0 → 0.60 YoY (cap)
+  //
+  // Symmetric for under-prediction case (ratio < 1/1.5 = 0.67), the
+  // baseline already trends toward the lower number via recency
+  // weighting so we keep the default. We only need extra pull on the
+  // over-prediction side; under-prediction is well-served by the
+  // existing recency window already eating the higher older values.
   let blendedBaseline = weekdayBaseline
+  let yoyBlendWeight = 0.0
   if (yoySameWeekdayAvailable && yoySameWeekdayValue > 0) {
-    blendedBaseline = weekdayBaseline * 0.7 + yoySameWeekdayValue * 0.3
+    yoyBlendWeight = 0.30
+    const ratio = weekdayBaseline / yoySameWeekdayValue
+    if (ratio > 1.5) {
+      // Linear ramp 0.30 → 0.60 as ratio goes 1.5 → 3.0+
+      yoyBlendWeight = Math.min(0.60, 0.30 + (ratio - 1.5) / 1.5 * 0.30)
+    }
+    blendedBaseline = weekdayBaseline * (1 - yoyBlendWeight) + yoySameWeekdayValue * yoyBlendWeight
   }
 
   // Step 1b (v1.6.0): YoY same-MONTH seasonality damper.
@@ -1017,6 +1039,9 @@ export async function dailyForecast(
           synthesis_basis:  yoySameWeekdaySynthetic
             ? `derived from monthly_metrics ${yoySameMonthLookup} × weekday share`
             : undefined,
+          // v1.9.0 — adaptive blend weight (0.30 default, up to 0.60
+          // when recency baseline overshoots YoY weekday materially)
+          blend_weight_applied: Math.round(yoyBlendWeight * 1000) / 1000,
         } as any
       : {
           available: false,
