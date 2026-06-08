@@ -1,5 +1,6 @@
 {
   "crons": [
+    { "path": "/api/cron/weather-sync",                    "schedule": "30 3 * * *" },
     { "path": "/api/cron/master-sync",                     "schedule": "0 4 * * *" },
     { "path": "/api/cron/events-sync",                     "schedule": "15 4 * * *" },
     { "path": "/api/cron/reviews-sync",                    "schedule": "20 4 * * *" },
