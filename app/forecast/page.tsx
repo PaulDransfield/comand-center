@@ -41,6 +41,11 @@ export default function ForecastPage() {
   const [loading,    setLoading]    = useState(true)
   const [error,      setError]      = useState('')
   const [syncing,    setSyncing]    = useState(false)
+  // A2.9 — accuracy badge data from daily_forecast_outcomes (far more
+  // signal than the local monthly MAPE because we get 180+ daily rows
+  // over 6 months vs 6 monthly pairs). Click toggles the drilldown panel.
+  const [accuracy,   setAccuracy]   = useState<any>(null)
+  const [accuracyOpen, setAccuracyOpen] = useState(false)
 
   // Subscribe to BizPicker
   useEffect(() => {
@@ -64,6 +69,21 @@ export default function ForecastPage() {
     setLoading(false)
   }, [bizId])
   useEffect(() => { if (bizId) load() }, [bizId, load])
+
+  // A2.9 — fetch the accuracy summary in parallel. Best-effort.
+  useEffect(() => {
+    if (!bizId) { setAccuracy(null); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch(`/api/forecast/accuracy?business_id=${bizId}&months=6`, { cache: 'no-store' })
+        if (!r.ok) return
+        const j = await r.json()
+        if (!cancelled && !j.error) setAccuracy(j)
+      } catch { /* ignore */ }
+    })()
+    return () => { cancelled = true }
+  }, [bizId])
 
   async function refresh() {
     setSyncing(true)
@@ -198,8 +218,15 @@ export default function ForecastPage() {
     >
       <PageContainer style={{ display: 'grid', gap: 14 }}>
 
-        {/* Header — confidence pill + refresh */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
+        {/* Header — accuracy badge + confidence pill + refresh */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const }}>
+          {accuracy?.overall && (
+            <AccuracyBadge
+              accuracy={accuracy}
+              open={accuracyOpen}
+              onClick={() => setAccuracyOpen(o => !o)}
+            />
+          )}
           {confidence && mape != null && <ConfidenceChip confidence={confidence} mape={mape} />}
           <button
             type="button"
@@ -251,6 +278,11 @@ export default function ForecastPage() {
         {/* Year chart */}
         <YearChart monthly={monthly} loading={loading} />
 
+        {/* Accuracy drilldown (A2.9) — expand-on-badge-click */}
+        {accuracyOpen && accuracy && (
+          <AccuracyPanel accuracy={accuracy} onClose={() => setAccuracyOpen(false)} />
+        )}
+
         {/* Monthly breakdown */}
         <MonthlyBreakdown
           monthly={monthly}
@@ -283,6 +315,190 @@ export default function ForecastPage() {
 // ════════════════════════════════════════════════════════════════════
 // Sub-components
 // ════════════════════════════════════════════════════════════════════
+
+// ── AccuracyBadge (A2.9) ─────────────────────────────────────────────
+// Headline pill: "Last 6 months: X% accurate". Tone follows the same
+// green / coral / rose scale used elsewhere. Click toggles the
+// AccuracyPanel below the chart.
+function AccuracyBadge({
+  accuracy, open, onClick,
+}: {
+  accuracy: any
+  open:     boolean
+  onClick:  () => void
+}) {
+  const score = accuracy?.overall?.accuracy_pct ?? null
+  const n     = accuracy?.n_observations ?? 0
+  const months = accuracy?.months ?? 6
+  const tone =
+    score == null    ? UXP.ink3
+    : score >= 85    ? UXP.green
+    : score >= 70    ? UXP.coral
+    :                  UXP.rose
+  const toneBg =
+    score == null    ? UXP.subtleBg
+    : score >= 85    ? UXP.greenFill
+    : score >= 70    ? UXP.lavFill
+    :                  UXP.roseFill
+  return (
+    <button
+      onClick={onClick}
+      title={`Click to see the per-layer accuracy breakdown — based on ${n} resolved daily forecasts over the last ${months} months.`}
+      style={{
+        display:        'inline-flex',
+        alignItems:     'center',
+        gap:            8,
+        padding:        '4px 12px',
+        background:     toneBg,
+        color:          tone,
+        border:         `0.5px solid ${tone}33`,
+        borderRadius:   999,
+        fontSize:       10,
+        fontWeight:     500,
+        letterSpacing:  '0.02em',
+        cursor:         'pointer',
+      }}
+    >
+      <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: tone }} />
+      Last {months}m {score != null ? `${score}%` : '—'} accurate
+      <span style={{ fontSize: 9, color: tone, opacity: 0.7 }}>{open ? '▴' : '▾'}</span>
+    </button>
+  )
+}
+
+// ── AccuracyPanel (A2.9 drilldown) ───────────────────────────────────
+// Expands below the chart when the badge is clicked. Per-surface
+// breakdown + per-horizon bucket. Read-only.
+function AccuracyPanel({ accuracy, onClose }: { accuracy: any; onClose: () => void }) {
+  const SURFACE_LABELS: Record<string, string> = {
+    consolidated_daily:    'Consolidated daily',
+    llm_adjusted:          'LLM adjusted',
+    scheduling_ai_revenue: 'Scheduling AI',
+    weather_demand:        'Weather demand',
+  }
+  const surfaces = Object.entries(accuracy?.by_surface ?? {}) as Array<[string, any]>
+  const horizons = Object.entries(accuracy?.by_horizon ?? {}) as Array<[string, any]>
+  const tone = (acc: number) =>
+      acc >= 85 ? UXP.green
+    : acc >= 70 ? UXP.coral
+    :             UXP.rose
+
+  return (
+    <div style={{
+      background:    UXP.cardBg,
+      border:        `0.5px solid ${UXP.border}`,
+      borderRadius:  UXP.r_lg,
+      padding:       '16px 18px',
+      boxShadow:     UXP.shadowCard,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>Accuracy breakdown</div>
+          <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+            {accuracy.n_observations} resolved forecasts · {accuracy.months}-month window
+          </div>
+        </div>
+        <button onClick={onClose} aria-label="Close" style={{
+          width: 22, height: 22, border: 'none', background: 'transparent',
+          color: UXP.ink3, fontSize: 14, cursor: 'pointer',
+        }}>×</button>
+      </div>
+
+      {/* By surface */}
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ fontSize: 9, color: UXP.ink4, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+          By forecast layer
+        </div>
+        {surfaces.length === 0 ? (
+          <div style={{ fontSize: 11, color: UXP.ink4, padding: '8px 0' }}>No per-layer data yet.</div>
+        ) : (
+          <div style={{ display: 'grid', gap: 0 }}>
+            {surfaces.map(([key, v]: any, idx) => (
+              <div key={key} style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr auto auto auto',
+                gap: 12,
+                padding: '8px 0',
+                borderBottom: idx < surfaces.length - 1 ? `0.5px solid ${UXP.borderSoft}` : 'none',
+                alignItems: 'baseline',
+              }}>
+                <div style={{ fontSize: 11, color: UXP.ink1 }}>
+                  {SURFACE_LABELS[key] ?? key}
+                </div>
+                <div style={{ fontSize: 10, color: UXP.ink4, fontVariantNumeric: 'tabular-nums' as const }}>
+                  n {v.n}
+                </div>
+                <div style={{ fontSize: 10, color: UXP.ink4, fontVariantNumeric: 'tabular-nums' as const, minWidth: 70, textAlign: 'right' as const }}>
+                  bias {v.bias_pct >= 0 ? '+' : ''}{v.bias_pct.toFixed(1)}%
+                </div>
+                <div style={{
+                  fontSize: 11,
+                  color: tone(v.accuracy_pct),
+                  fontWeight: 500,
+                  fontVariantNumeric: 'tabular-nums' as const,
+                  minWidth: 56,
+                  textAlign: 'right' as const,
+                }}>
+                  {v.accuracy_pct.toFixed(1)}%
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* By horizon */}
+      <div>
+        <div style={{ fontSize: 9, color: UXP.ink4, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+          By prediction horizon
+        </div>
+        {horizons.length === 0 ? (
+          <div style={{ fontSize: 11, color: UXP.ink4, padding: '8px 0' }}>—</div>
+        ) : (
+          <div style={{ display: 'grid', gap: 0 }}>
+            {horizons.map(([key, v]: any, idx) => (
+              <div key={key} style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr auto auto auto',
+                gap: 12,
+                padding: '8px 0',
+                borderBottom: idx < horizons.length - 1 ? `0.5px solid ${UXP.borderSoft}` : 'none',
+                alignItems: 'baseline',
+              }}>
+                <div style={{ fontSize: 11, color: UXP.ink1 }}>
+                  {key === '0' ? 'Same day'
+                    : key === '1-3' ? '1-3 days out'
+                    : key === '4-7' ? '4-7 days out'
+                    : '8+ days out'}
+                </div>
+                <div style={{ fontSize: 10, color: UXP.ink4, fontVariantNumeric: 'tabular-nums' as const }}>
+                  n {v.n}
+                </div>
+                <div style={{ fontSize: 10, color: UXP.ink4, fontVariantNumeric: 'tabular-nums' as const, minWidth: 70, textAlign: 'right' as const }}>
+                  bias {v.bias_pct >= 0 ? '+' : ''}{v.bias_pct.toFixed(1)}%
+                </div>
+                <div style={{
+                  fontSize: 11,
+                  color: tone(v.accuracy_pct),
+                  fontWeight: 500,
+                  fontVariantNumeric: 'tabular-nums' as const,
+                  minWidth: 56,
+                  textAlign: 'right' as const,
+                }}>
+                  {v.accuracy_pct.toFixed(1)}%
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 14, lineHeight: 1.5 }}>
+        Accuracy = 100 − MAPE (mean absolute percentage error). Bias is the average signed error: positive = we tend to overshoot, negative = we tend to undershoot. n = resolved daily predictions in this group.
+      </div>
+    </div>
+  )
+}
 
 function ConfidenceChip({ confidence, mape }: { confidence: 'high' | 'medium' | 'low'; mape: number }) {
   const palette = {
