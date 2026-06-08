@@ -45,6 +45,7 @@ import { PageContainer } from '@/components/ui/Layout'
 import { ResponsiveChart } from '@/components/ui/ResponsiveChart'
 import { PdfButton } from '@/components/ui/PdfButton'
 import KpiCardUX from '@/components/ux/KpiCard'
+import { ProvenancePopover, type Metric as ProvMetric } from '@/components/ProvenancePopover'
 import PairedBarChart from '@/components/ux/PairedBarChart'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
 
@@ -471,6 +472,9 @@ function DashboardInner() {
           prevCovers={prevCovers}
           depts={depts?.departments ?? []}
           periodLabel={periodLabel}
+          bizId={bizId}
+          from={period.from}
+          to={period.to}
         />
 
         {/* ── Demand outlook (next 7 days) ──────────────────────── */}
@@ -520,6 +524,7 @@ function DashboardInner() {
 // ── KPI strip ────────────────────────────────────────────────────────
 function KpiStrip({
   totalRev, prevRev, totalLabour, labourPct, prevLabPct, totalCovers, prevCovers, depts, periodLabel,
+  bizId, from, to,
 }: any) {
   const channels = (depts && depts.length > 0
     ? [...depts]
@@ -561,52 +566,79 @@ function KpiStrip({
       })()
     : null
 
+  // A1.10 — each KPI tile gets a corner ProvenancePopover that lazy-fetches
+  // /api/audit/provenance on first open. KpiCardUX has no slot for a
+  // corner affordance, so each card is wrapped in a relative-positioned
+  // div with an absolute-positioned popover trigger.
+  const provWrap = (children: React.ReactNode, metric: ProvMetric, label: string) => (
+    <div style={{ position: 'relative' as const }}>
+      {children}
+      {bizId && from && to && (
+        <div style={{ position: 'absolute' as const, top: 12, right: 12, zIndex: 5 }}>
+          <ProvenancePopover businessId={bizId} metric={metric} from={from} to={to} label={label} />
+        </div>
+      )}
+    </div>
+  )
+
   return (
     <div style={{
       display:             'grid',
       gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
       gap:                 12,
     }}>
-      <KpiCardUX
-        title="Revenue"
-        value={totalRev > 0 ? fmtKr(totalRev) : '—'}
-        delta={revDelta}
-        deltaGood
-        variant="channels"
-        channels={channels}
-        microLabel={periodLabel}
-      />
-      <KpiCardUX
-        title="Margin"
-        value={totalRev > 0 ? fmtPct(grossMargin) : '—'}
-        delta={marginDelta}
-        deltaGood
-        variant="stacked"
-        stackedBars={[
-          { label: 'Current', value: grossMargin,   max: 100, color: UXP.lav   },
-          { label: 'Target',  value: TARGET_MARGIN, max: 100, color: UXP.green },
-        ]}
-      />
-      <KpiCardUX
-        title="Labour"
-        value={totalRev > 0 ? fmtPct(labourPct) : '—'}
-        delta={labDelta}
-        deltaGood={false}
-        variant="targetBand"
-        targetBand={{
-          actualPct:    Math.min(100, labourPct),
-          targetMinPct: DEFAULT_TIER_CONFIG.targetMin,
-          targetMaxPct: DEFAULT_TIER_CONFIG.targetMax,
-        }}
-        microLabel={tierLabel}
-      />
-      <KpiCardUX
-        title="Covers"
-        value={totalCovers > 0 ? totalCovers.toLocaleString('sv-SE') : '—'}
-        delta={coversDelta}
-        deltaGood
-        microLabel={totalCovers > 0 && totalRev > 0 ? `${fmtKr(Math.round(totalRev / totalCovers))} per cover` : ''}
-      />
+      {provWrap(
+        <KpiCardUX
+          title="Revenue"
+          value={totalRev > 0 ? fmtKr(totalRev) : '—'}
+          delta={revDelta}
+          deltaGood
+          variant="channels"
+          channels={channels}
+          microLabel={periodLabel}
+        />,
+        'revenue', 'Revenue',
+      )}
+      {provWrap(
+        <KpiCardUX
+          title="Margin"
+          value={totalRev > 0 ? fmtPct(grossMargin) : '—'}
+          delta={marginDelta}
+          deltaGood
+          variant="stacked"
+          stackedBars={[
+            { label: 'Current', value: grossMargin,   max: 100, color: UXP.lav   },
+            { label: 'Target',  value: TARGET_MARGIN, max: 100, color: UXP.green },
+          ]}
+        />,
+        'net_profit', 'Margin',
+      )}
+      {provWrap(
+        <KpiCardUX
+          title="Labour"
+          value={totalRev > 0 ? fmtPct(labourPct) : '—'}
+          delta={labDelta}
+          deltaGood={false}
+          variant="targetBand"
+          targetBand={{
+            actualPct:    Math.min(100, labourPct),
+            targetMinPct: DEFAULT_TIER_CONFIG.targetMin,
+            targetMaxPct: DEFAULT_TIER_CONFIG.targetMax,
+          }}
+          microLabel={tierLabel}
+        />,
+        'staff_cost', 'Labour',
+      )}
+      {provWrap(
+        <KpiCardUX
+          title="Covers"
+          value={totalCovers > 0 ? totalCovers.toLocaleString('sv-SE') : '—'}
+          delta={coversDelta}
+          deltaGood
+          microLabel={totalCovers > 0 && totalRev > 0 ? `${fmtKr(Math.round(totalRev / totalCovers))} per cover` : ''}
+        />,
+        'covers', 'Covers',
+      )}
     </div>
   )
 }
