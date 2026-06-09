@@ -89,10 +89,12 @@ export async function POST(req: NextRequest) {
       }, { status: 500 })
     }
   } else {
-    const { error: insErr } = await db.from('integrations').insert({
-      ...payload,
-      connected_at: new Date().toISOString(),
-    })
+    // Don't include `connected_at` — that column doesn't exist on the
+    // current schema (the original code had it; surfaced as
+    // "Could not find the 'connected_at' column" on first Caspeco
+    // connect for Chicce 2026-06-09). created_at takes care of itself
+    // via the column DEFAULT.
+    const { error: insErr } = await db.from('integrations').insert(payload)
     if (insErr) {
       return NextResponse.json({
         error: `integrations insert failed: ${insErr.message}`,
