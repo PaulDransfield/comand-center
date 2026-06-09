@@ -598,16 +598,26 @@ async function syncFortnox(_db: any, _integ: any, _fromDate: string, _toDate: st
 
 // ── Caspeco sync ─────────────────────────────────────────────────────────────
 //
-// 2026-06-09 rewrite — old code targeted the wrong host with the wrong
-// auth model. Multi-business mapping is now via integrations.metadata
-// .caspeco_company_id (the UUID identifying the per-company database).
+// Multi-business mapping is via integrations.metadata.caspeco_company_id
+// (the UUID identifying the per-company database).
 //
-// Until owners grant `booking.getall` + `unit.getall` permissions, the
-// only data we can pull is the employee roster + stations. We log
-// what's reachable and leave hooks for bookings/units; once permission
-// lands, no code change is needed — the next sync picks up the data.
-async function syncCaspeco(_db: any, integ: any, _fromDate: string, _toDate: string) {
-  const { testCaspecoConnection, getCaspecoEmployees, getCaspecoStations, getCaspecoBookings, getCaspecoUnits } = await import('@/lib/pos/caspeco')
+// What we PERSIST (M142):
+//   - employees → caspeco_employees (84 rows for Chicce)
+//   - station id + name → integrations.metadata (1 station for Chicce —
+//     "Aglianico i Örebro AB" = the legal entity behind Chicce Slottsgatan)
+//
+// What we PROBE but can't persist yet (gated by Caspeco permissions):
+//   - bookings → needs booking.getall
+//   - units    → needs unit.getall
+//   When granted, the next sync starts pulling reservations.
+async function syncCaspeco(db: any, integ: any, _fromDate: string, _toDate: string) {
+  const {
+    testCaspecoConnection,
+    getCaspecoEmployees,
+    getCaspecoStations,
+    getCaspecoBookings,
+    getCaspecoUnits,
+  } = await import('@/lib/pos/caspeco')
   const pat = decrypt(integ.credentials_enc)
   if (!pat) throw new Error('Invalid Caspeco PAT')
 
@@ -621,36 +631,93 @@ async function syncCaspeco(_db: any, integ: any, _fromDate: string, _toDate: str
   const test = await testCaspecoConnection(creds)
   if (!test.ok) {
     return {
-      ok:      false,
-      message: test.message,
+      ok:           false,
+      message:      test.message,
       missing_perm: test.missing_perm,
     }
   }
 
-  // 2. Pull what we can
-  const [employees, stations] = await Promise.all([
-    getCaspecoEmployees(creds),
-    getCaspecoStations(creds),
-  ])
-
-  // 3. Probe gated endpoints to surface missing permissions in the sync log
+  // 2. Pull what we can in parallel
   const today  = new Date().toISOString().slice(0, 10)
   const ahead  = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)
-  const [bookings, units] = await Promise.all([
+  const [employees, stations, bookings, units] = await Promise.all([
+    getCaspecoEmployees(creds),
+    getCaspecoStations(creds),
     getCaspecoBookings(creds, today, ahead),
     getCaspecoUnits(creds),
   ])
 
+  // 3. Persist employees → caspeco_employees
+  let employeesUpserted = 0
+  if (employees.ok && employees.data && employees.data.length > 0 && integ.business_id) {
+    const rows = employees.data.map((e: any) => {
+      // Pick the most recent employment as "current". changePoints
+      // within that employment give us station + profession.
+      const employmentsByEnd = (e.employments ?? []).slice().sort((a: any, b: any) => {
+        const ae = a.endDate ?? '9999-12-31'
+        const be = b.endDate ?? '9999-12-31'
+        return be.localeCompare(ae)
+      })
+      const current = employmentsByEnd[0] ?? null
+      const latestChange = (current?.changePoints ?? []).slice().sort((a: any, b: any) => {
+        return (b.validFrom ?? '').localeCompare(a.validFrom ?? '')
+      })[0] ?? null
+      return {
+        org_id:                  integ.org_id,
+        business_id:             integ.business_id,
+        caspeco_employee_id:     e.id,
+        caspeco_company_id:      companyid,
+        caspeco_employee_number: e.employeeNumber ?? null,
+        first_name:              e.firstName ?? null,
+        last_name:               e.lastName  ?? null,
+        personal_identity:       e.personalIdentity ?? null,
+        email:                   e.email ?? null,
+        current_employment_id:   current?.id ?? null,
+        current_contract_id:     current?.contractId ?? null,
+        current_profession_id:   latestChange?.localProfessionId ?? null,
+        current_station_id:      latestChange?.defaultStationId  ?? null,
+        employment_start_date:   current?.startDate ?? null,
+        employment_end_date:     current?.endDate   ?? null,
+        is_active:               current ? current.endDate == null : false,
+        raw_payload:             e,
+        last_synced_at:          new Date().toISOString(),
+      }
+    })
+
+    const BATCH = 100
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const slice = rows.slice(i, i + BATCH)
+      const { error: upErr } = await db
+        .from('caspeco_employees')
+        .upsert(slice, { onConflict: 'business_id,caspeco_employee_id' })
+      if (upErr) {
+        console.error('[caspeco] employees upsert failed:', upErr.message)
+      } else {
+        employeesUpserted += slice.length
+      }
+    }
+  }
+
+  // 4. Pin station info on integrations.metadata so the connect UI
+  //    can surface "Synced to: Aglianico i Örebro AB" alongside the UUID.
+  if (stations.ok && stations.data && stations.data.length > 0) {
+    const station = stations.data[0]
+    const newMeta = {
+      ...(integ.metadata ?? {}),
+      caspeco_station_id:   station.id,
+      caspeco_station_name: station.name,
+    }
+    await db.from('integrations').update({ metadata: newMeta }).eq('id', integ.id)
+  }
+
   return {
-    ok:       true,
-    employees: employees.ok ? (employees.data?.length ?? 0) : 0,
-    stations:  stations.ok  ? (stations.data?.length  ?? 0) : 0,
-    bookings:  bookings.ok  ? (bookings.data?.length  ?? 0) : 0,
-    units:     units.ok     ? (units.data?.length     ?? 0) : 0,
-    missing_perms: [
-      bookings.missing_perm,
-      units.missing_perm,
-    ].filter(Boolean),
+    ok:                   true,
+    employees_seen:       employees.ok ? (employees.data?.length ?? 0) : 0,
+    employees_persisted:  employeesUpserted,
+    stations:             stations.ok  ? (stations.data?.length  ?? 0) : 0,
+    bookings:             bookings.ok  ? (bookings.data?.length  ?? 0) : 0,
+    units:                units.ok     ? (units.data?.length     ?? 0) : 0,
+    missing_perms:        [bookings.missing_perm, units.missing_perm].filter(Boolean),
   }
 }
 
