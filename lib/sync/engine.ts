@@ -597,53 +597,61 @@ async function syncFortnox(_db: any, _integ: any, _fromDate: string, _toDate: st
 }
 
 // ── Caspeco sync ─────────────────────────────────────────────────────────────
-async function syncCaspeco(db: any, integ: any, fromDate: string, toDate: string) {
-  const { getCaspecoShifts, getCaspecoEmployees } = await import('@/lib/pos/caspeco')
-  const token = decrypt(integ.credentials_enc)
-  if (!token) throw new Error('Invalid credentials')
+//
+// 2026-06-09 rewrite — old code targeted the wrong host with the wrong
+// auth model. Multi-business mapping is now via integrations.metadata
+// .caspeco_company_id (the UUID identifying the per-company database).
+//
+// Until owners grant `booking.getall` + `unit.getall` permissions, the
+// only data we can pull is the employee roster + stations. We log
+// what's reachable and leave hooks for bookings/units; once permission
+// lands, no code change is needed — the next sync picks up the data.
+async function syncCaspeco(_db: any, integ: any, _fromDate: string, _toDate: string) {
+  const { testCaspecoConnection, getCaspecoEmployees, getCaspecoStations, getCaspecoBookings, getCaspecoUnits } = await import('@/lib/pos/caspeco')
+  const pat = decrypt(integ.credentials_enc)
+  if (!pat) throw new Error('Invalid Caspeco PAT')
 
-  const [employees, shifts] = await Promise.all([
-    getCaspecoEmployees(token),
-    getCaspecoShifts(token, fromDate, toDate),
-  ])
+  const companyid = (integ.metadata as any)?.caspeco_company_id
+  if (!companyid) {
+    throw new Error('Caspeco integration missing companyid — re-connect via /integrations and paste the company UUID')
+  }
+  const creds = { pat, companyid }
 
-  const empMap: Record<string, any> = {}
-  for (const e of employees) empMap[String(e.id)] = e
-
-  let upserted = 0
-  const BATCH = 50
-  for (let i = 0; i < shifts.length; i += BATCH) {
-    const rows = shifts.slice(i, i + BATCH).map((s: any) => {
-      const emp = empMap[String(s.employee_id)] ?? {}
-      if (!s.date) return null
-      return {
-        org_id:           integ.org_id,
-        business_id:      integ.business_id ?? null,
-        pk_log_url:       `caspeco-${s.id}`,
-        pk_staff_url:     `caspeco-staff-${s.employee_id}`,
-        pk_staff_id:      s.employee_id,
-        staff_name:       s.employee_name ?? emp.name ?? null,
-        staff_group:      s.department ?? null,
-        staff_email:      emp.email ?? null,
-        shift_date:       s.date,
-        shift_start:      s.start,
-        shift_end:        s.end,
-        hours_worked:     s.hours ?? 0,
-        cost_actual:      s.cost ?? 0,
-        estimated_salary: 0,
-        period_year:      parseInt(s.date.slice(0,4)),
-        period_month:     parseInt(s.date.slice(5,7)),
-        updated_at:       new Date().toISOString(),
-      }
-    }).filter(Boolean)
-
-    if (rows.length) {
-      await db.from('staff_logs').upsert(rows, { onConflict: 'pk_log_url' })
-      upserted += rows.length
+  // 1. Smoke test
+  const test = await testCaspecoConnection(creds)
+  if (!test.ok) {
+    return {
+      ok:      false,
+      message: test.message,
+      missing_perm: test.missing_perm,
     }
   }
 
-  return { shifts: upserted, employees: employees.length }
+  // 2. Pull what we can
+  const [employees, stations] = await Promise.all([
+    getCaspecoEmployees(creds),
+    getCaspecoStations(creds),
+  ])
+
+  // 3. Probe gated endpoints to surface missing permissions in the sync log
+  const today  = new Date().toISOString().slice(0, 10)
+  const ahead  = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)
+  const [bookings, units] = await Promise.all([
+    getCaspecoBookings(creds, today, ahead),
+    getCaspecoUnits(creds),
+  ])
+
+  return {
+    ok:       true,
+    employees: employees.ok ? (employees.data?.length ?? 0) : 0,
+    stations:  stations.ok  ? (stations.data?.length  ?? 0) : 0,
+    bookings:  bookings.ok  ? (bookings.data?.length  ?? 0) : 0,
+    units:     units.ok     ? (units.data?.length     ?? 0) : 0,
+    missing_perms: [
+      bookings.missing_perm,
+      units.missing_perm,
+    ].filter(Boolean),
+  }
 }
 
 // ── Inzii sync ────────────────────────────────────────────────────────────────

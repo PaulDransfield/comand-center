@@ -38,9 +38,9 @@ const PROVIDERS = [
   { key: 'quinyx',         name: 'Quinyx',               category: 'Staff', icon: 'Q',
     authType: 'api_key', docsUrl: 'https://api.quinyx.com',
     configFields: [{ key: 'group_id' }] },
-  { key: 'caspeco',        name: 'Caspeco Personal',     category: 'Staff', icon: 'C',
-    authType: 'api_key', docsUrl: 'https://caspeco.se',
-    configFields: [{ key: 'unit_id' }] },
+  { key: 'caspeco',        name: 'Caspeco',              category: 'Staff', icon: 'C',
+    authType: 'api_key', docsUrl: 'https://id.caspeco.se/pat',
+    configFields: [{ key: 'company_id' }] },
   { key: 'personalkollen', name: 'Personalkollen',       category: 'Staff', icon: 'P',
     authType: 'api_key', docsUrl: 'https://personalkollen.se',
     configFields: [] },
@@ -189,10 +189,22 @@ export default function IntegrationsPage() {
           const saveData = await saveRes.json()
           if (!saveRes.ok || !saveData.ok) throw new Error(saveData.error ?? t('errors.saveFailed'))
         } else {
-          // Generic save via sync API
+          // Generic save via sync API. For Caspeco we capture the
+          // companyid (UUID) the user pasted into the config field —
+          // it's how multi-business Caspeco accounts pin a sync to a
+          // specific restaurant database.
+          const metadata: Record<string, string> = {}
+          if (provider === 'caspeco' && configValues.company_id) {
+            metadata.caspeco_company_id = configValues.company_id.trim()
+          }
           const saveRes = await fetch('/api/integrations/generic', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider, api_key: apiKey.trim(), business_id: bizForPOS }),
+            body: JSON.stringify({
+              provider,
+              api_key:     apiKey.trim(),
+              business_id: bizForPOS,
+              metadata,
+            }),
           })
           const saveData = await saveRes.json()
           if (!saveRes.ok || !saveData.ok) throw new Error(saveData.error ?? t('errors.saveFailed'))
