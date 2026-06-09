@@ -115,10 +115,10 @@
       }
     },
     "caspeco": {
-      "description": "Staff scheduling — part of Trivec group",
-      "features": ["Scheduled hours", "Actual hours", "Staff cost", "Absence"],
+      "description": "Staff scheduling + bookings — part of Trivec group",
+      "features": ["Scheduled hours", "Actual hours", "Staff cost", "Bookings"],
       "configFields": {
-        "unit_id": { "label": "Unit ID", "placeholder": "Your Caspeco unit ID" }
+        "company_id": { "label": "Company ID", "placeholder": "UUID from Caspeco e.g. db5a8731-bded-4bac-..." }
       }
     },
     "personalkollen": {

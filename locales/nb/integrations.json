@@ -118,7 +118,7 @@
       "description": "Personalplanlegging — del av Trivec-gruppen",
       "features": ["Planlagte timer", "Faktiske timer", "Personalkostnad", "Fravær"],
       "configFields": {
-        "unit_id": { "label": "Enhets-ID", "placeholder": "Din Caspeco enhets-ID" }
+        "company_id": { "label": "Selskaps-ID", "placeholder": "UUID fra Caspeco f.eks. db5a8731-bded-4bac-..." }
       }
     },
     "personalkollen": {
