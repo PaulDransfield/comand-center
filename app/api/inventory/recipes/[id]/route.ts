@@ -11,6 +11,7 @@ import { requireBusinessAccess } from '@/lib/auth/require-role'
 import { computeRecipeCost, getProductLatestPrices, loadRecipeIndex } from '@/lib/inventory/recipe-cost'
 import { loadFxIndex } from '@/lib/inventory/fx'
 import { resolveRecipePriceFields } from '@/lib/inventory/recipe-price'
+import { packFieldsForPromotedRecipe } from '@/lib/inventory/promoted-product-pack'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -219,14 +220,26 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Promoted-product name sync: if this recipe has a linked catalogue
-  // product (source_recipe_id), keep its name in lockstep with the
-  // recipe's. Cost already flows through automatically (engine reads
-  // live), so name is the only field that can drift. Best-effort —
-  // failure shouldn't block the recipe save.
-  if (patch.name) {
+  // Promoted-product sync: if this recipe has a linked catalogue product
+  // (source_recipe_id), keep it in lockstep with the recipe. Cost flows
+  // through automatically (engine reads live); NAME and the YIELD-derived
+  // pack model are the fields that can drift. Re-deriving pack_size/
+  // base_unit on a yield change is what lets the next stock count value
+  // physical weight (M111). Best-effort — never block the recipe save.
+  const productPatch: Record<string, any> = {}
+  if (patch.name) productPatch.name = patch.name
+  if (patch.yield_amount !== undefined || patch.yield_unit !== undefined) {
+    const pack = packFieldsForPromotedRecipe({
+      yield_amount: (data as any)?.yield_amount ?? null,
+      yield_unit:   (data as any)?.yield_unit ?? null,
+    })
+    productPatch.invoice_unit = pack.invoice_unit
+    productPatch.pack_size    = pack.pack_size
+    productPatch.base_unit    = pack.base_unit
+  }
+  if (Object.keys(productPatch).length > 0) {
     await db.from('products')
-      .update({ name: patch.name })
+      .update(productPatch)
       .eq('business_id', existing.business_id)
       .eq('source_recipe_id', params.id)
   }

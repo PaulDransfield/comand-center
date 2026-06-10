@@ -440,13 +440,20 @@ function CountRow({ row, thumbUrl, disabled, onPatch }: {
   disabled: boolean
   onPatch: (p: { quantity?: number; unit?: string; delete?: boolean }) => void
 }) {
-  const initialUnit = row.saved?.unit ?? row.invoice_unit ?? 'st'
+  // Default count unit. Recipe-sourced products (promoted sub-recipes) are
+  // valued per base_unit (g / ml) when the recipe declares a yield, so
+  // default to that base unit — the owner can count the sauce in kg / l and
+  // it converts + values correctly. invoice_unit is 'portion' for these,
+  // which doesn't convert, so it's the wrong default. Non-recipe products
+  // keep the invoice_unit default.
+  const defaultUnit = (row.is_recipe_sourced && row.base_unit) ? row.base_unit : (row.invoice_unit ?? 'st')
+  const initialUnit = row.saved?.unit ?? defaultUnit
   const [qty,  setQty]  = useState(row.saved?.quantity != null ? String(row.saved.quantity) : '')
   const [unit, setUnit] = useState(initialUnit)
   useEffect(() => {
     setQty(row.saved?.quantity != null ? String(row.saved.quantity) : '')
-    setUnit(row.saved?.unit ?? row.invoice_unit ?? 'st')
-  }, [row.saved?.quantity, row.saved?.unit, row.invoice_unit])
+    setUnit(row.saved?.unit ?? defaultUnit)
+  }, [row.saved?.quantity, row.saved?.unit, defaultUnit])
 
   function saveIfChanged() {
     const trimmed = qty.trim()

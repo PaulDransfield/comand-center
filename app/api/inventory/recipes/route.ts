@@ -128,6 +128,11 @@ export async function GET(req: NextRequest) {
       // product, so it shows up in stock counts / items.
       promoted:             promotedByRecipe.has(r.id),
       product_id:           promotedByRecipe.get(r.id) ?? null,
+      // M111 yield — drives whether a promoted sub-recipe can be counted
+      // by weight/volume. mass/volume yield = weight-countable; no yield
+      // (or count yield) = pieces only.
+      has_yield:            r.yield_amount != null && r.yield_unit != null,
+      yield_unit:           r.yield_unit ?? null,
       image_url:            r.image_url ?? null,
       // Single-product-ingredient recipes (every wine bottle, single-bottle
       // spirits, mineral water etc.) get a free header thumbnail from the

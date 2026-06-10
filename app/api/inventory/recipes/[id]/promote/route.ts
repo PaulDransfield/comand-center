@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
+import { packFieldsForPromotedRecipe } from '@/lib/inventory/promoted-product-pack'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -28,17 +29,32 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   const db = createAdminClient()
-  const { data: r, error: rErr } = await db
+  // Pull yield so the catalogue product can be counted by weight/volume
+  // (M111). Defensive: yield columns may be absent on very old schemas.
+  let { data: r, error: rErr } = await db
     .from('recipes')
-    .select('id, business_id, org_id, name')
+    .select('id, business_id, org_id, name, yield_amount, yield_unit')
     .eq('id', params.id)
     .maybeSingle()
+  if (rErr && /yield_amount|yield_unit/.test(rErr.message)) {
+    const retry = await db
+      .from('recipes')
+      .select('id, business_id, org_id, name')
+      .eq('id', params.id)
+      .maybeSingle()
+    r = retry.data as any; rErr = retry.error
+  }
   if (rErr)  return NextResponse.json({ error: rErr.message }, { status: 500 })
   if (!r)    return NextResponse.json({ error: 'recipe not found' }, { status: 404 })
   const forbidden = requireBusinessAccess(auth, r.business_id)
   if (forbidden) return forbidden
 
-  // Idempotent: if already promoted, return that product.
+  // Pack model — weight/volume when the recipe declares a yield, else
+  // pieces. See lib/inventory/promoted-product-pack.ts for the math.
+  const pack = packFieldsForPromotedRecipe({ yield_amount: (r as any).yield_amount ?? null, yield_unit: (r as any).yield_unit ?? null })
+
+  // Idempotent: if already promoted, re-sync its pack model (so a yield
+  // set/changed after the first promotion flows through) and return it.
   const { data: existing } = await db
     .from('products')
     .select('id, name, category')
@@ -46,23 +62,23 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .eq('source_recipe_id', r.id)
     .maybeSingle()
   if (existing?.id) {
-    return NextResponse.json({ ok: true, product_id: existing.id, already_promoted: true })
+    await db.from('products')
+      .update({ invoice_unit: pack.invoice_unit, pack_size: pack.pack_size, base_unit: pack.base_unit })
+      .eq('id', existing.id)
+    return NextResponse.json({ ok: true, product_id: existing.id, already_promoted: true, count_mode: pack.count_mode })
   }
 
-  // Build the product row. Pack model for prep recipes:
-  //   invoice_unit = 'portion' (cosmetic display)
-  //   pack_size    = 1
-  //   base_unit    = 'st' (CHECK only allows g/ml/st; portion ≈ st semantically)
-  // Cost calc downstream uses source_recipe_id to derive the actual
-  // price per portion from the live recipe.
+  // Build the product row. Cost calc downstream uses source_recipe_id to
+  // derive the live price per portion; pack_size/base_unit let the stock
+  // count value physical weight (e.g. 2 kg of sauce).
   const insertRow: any = {
     org_id:         r.org_id,
     business_id:     r.business_id,
     name:            r.name,
     category,
-    invoice_unit:    'portion',
-    pack_size:       1,
-    base_unit:       'st',
+    invoice_unit:    pack.invoice_unit,
+    pack_size:       pack.pack_size,
+    base_unit:       pack.base_unit,
     source_recipe_id: r.id,
     created_via:     'recipe_promotion',
   }
@@ -88,6 +104,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     ok: true,
     product_id: prod.id,
     already_promoted: false,
+    count_mode: pack.count_mode,
   }, { headers: { 'Cache-Control': 'no-store' } })
 }
 

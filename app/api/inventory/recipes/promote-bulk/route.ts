@@ -19,6 +19,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
+import { packFieldsForPromotedRecipe } from '@/lib/inventory/promoted-product-pack'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -60,11 +61,21 @@ export async function POST(req: NextRequest) {
   const db = createAdminClient()
 
   // Fetch the recipes — only ones that belong to this business get touched.
-  const { data: recipes, error: rErr } = await db
+  // yield_* drives the weight/volume pack model (M111). Defensive retry
+  // for very old schemas without the yield columns.
+  let { data: recipes, error: rErr } = await db
     .from('recipes')
-    .select('id, business_id, org_id, name')
+    .select('id, business_id, org_id, name, yield_amount, yield_unit')
     .eq('business_id', businessId)
     .in('id', recipeIds)
+  if (rErr && /yield_amount|yield_unit/.test(rErr.message)) {
+    const retry = await db
+      .from('recipes')
+      .select('id, business_id, org_id, name')
+      .eq('business_id', businessId)
+      .in('id', recipeIds)
+    recipes = retry.data as any; rErr = retry.error
+  }
   if (rErr) return NextResponse.json({ error: rErr.message }, { status: 500 })
   const recipeById = new Map<string, any>((recipes ?? []).map((r: any) => [r.id, r]))
 
@@ -102,20 +113,30 @@ export async function POST(req: NextRequest) {
     }
 
     // action === 'add'
-    const existingId = productByRecipe.get(rid)
-    if (existingId) { results.push({ recipe_id: rid, status: 'already', product_id: existingId }); continue }
+    // Pack model — weight/volume when the recipe declares a yield (M111),
+    // else pieces. Lets the stock count value physical weight of a sauce.
+    const pack = packFieldsForPromotedRecipe({ yield_amount: recipe.yield_amount ?? null, yield_unit: recipe.yield_unit ?? null })
 
-    // Pack model for prep recipes: invoice_unit 'portion' (cosmetic),
-    // pack_size 1, base_unit 'st'. Cost downstream derives per-portion
-    // price from the live recipe via source_recipe_id.
+    const existingId = productByRecipe.get(rid)
+    if (existingId) {
+      // Re-sync the pack model so a yield set/changed after promotion
+      // takes effect on the next count.
+      await db.from('products')
+        .update({ invoice_unit: pack.invoice_unit, pack_size: pack.pack_size, base_unit: pack.base_unit })
+        .eq('id', existingId)
+      results.push({ recipe_id: rid, status: 'already', product_id: existingId }); continue
+    }
+
+    // Cost downstream derives per-portion price from the live recipe via
+    // source_recipe_id; pack_size/base_unit value physical weight.
     const insertRow: any = {
       org_id:           recipe.org_id,
       business_id:      recipe.business_id,
       name:             recipe.name,
       category,
-      invoice_unit:     'portion',
-      pack_size:        1,
-      base_unit:        'st',
+      invoice_unit:     pack.invoice_unit,
+      pack_size:        pack.pack_size,
+      base_unit:        pack.base_unit,
       source_recipe_id: recipe.id,
       created_via:      'recipe_promotion',
     }

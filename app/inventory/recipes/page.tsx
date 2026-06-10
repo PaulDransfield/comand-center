@@ -44,6 +44,9 @@ interface RecipeRow {
   // (countable in stock takes). product_id is the linked products row.
   promoted?:        boolean
   product_id?:      string | null
+  // M111 yield — true when this sub-recipe can be counted by weight/volume.
+  has_yield?:       boolean
+  yield_unit?:      string | null
   image_url:        string | null
   fallback_product_id: string | null
   glass_price:      number | null
@@ -252,6 +255,10 @@ export default function InventoryRecipesPage() {
   const selectedRows       = rows.filter(r => selectedSub.has(r.id))
   const selectedUnpromoted = selectedRows.filter(r => !r.promoted)
   const selectedPromoted   = selectedRows.filter(r => r.promoted)
+  // Sub-recipes the owner is adding that have no yield set — they can only
+  // be counted in portions (pieces), not by weight. Surface so the owner
+  // can set a yield first if they want kg/l counting.
+  const selectedNoYield    = selectedUnpromoted.filter(r => !r.has_yield)
 
   async function runPromote(action: 'add' | 'remove') {
     if (!bizId || selectedSub.size === 0) return
@@ -422,12 +429,17 @@ export default function InventoryRecipesPage() {
               {selectedSub.size > 0 ? (
                 <strong style={{ color: UXP.ink1 }}>{selectedSub.size} selected</strong>
               ) : (
-                <>Tick sub-recipes to <strong style={{ color: UXP.ink1 }}>add them to inventory</strong> — they become countable items in stock takes, valued at their live recipe cost. Edit a sub-recipe later and the next count uses the new value (past counts keep theirs).</>
+                <>Tick sub-recipes to <strong style={{ color: UXP.ink1 }}>add them to inventory</strong> — they become countable items in stock takes, counted by <strong style={{ color: UXP.ink1 }}>weight</strong> (kg / g / l) and valued at their live recipe cost. Edit a sub-recipe later and the next count uses the new value (past counts keep theirs). Weight counting needs a yield set on the recipe.</>
               )}
               {selectedSub.size > 0 && (
                 <span style={{ color: UXP.ink4 }}>
                   {' '}· {selectedUnpromoted.length} to add{selectedPromoted.length > 0 ? ` · ${selectedPromoted.length} already in inventory` : ''}
                 </span>
+              )}
+              {selectedNoYield.length > 0 && (
+                <div style={{ marginTop: 4, color: UXP.coral, fontSize: 11 }}>
+                  {selectedNoYield.length} of these have no yield set — they'll be counted in portions, not weight. Set a yield (e.g. 1 portion = 250 g) on the recipe to count them by weight.
+                </div>
               )}
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' as const }}>
@@ -607,11 +619,17 @@ export default function InventoryRecipesPage() {
             cols.push({
               id: 'inv', header: 'Inventory', align: 'center' as const,
               cell: r => r.promoted ? (
-                <span style={{
-                  display: 'inline-block', padding: '2px 8px',
-                  background: UXP.greenFill ?? '#e8f5ec', color: UXP.greenDeep,
-                  fontSize: 10, fontWeight: 600, borderRadius: 6, letterSpacing: '0.02em',
-                }} title="This sub-recipe is a catalogue item — it shows up in stock counts and is valued at its live recipe cost.">In inventory</span>
+                <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                  <span style={{
+                    display: 'inline-block', padding: '2px 8px',
+                    background: UXP.greenFill, color: UXP.greenDeep,
+                    fontSize: 10, fontWeight: 600, borderRadius: 6, letterSpacing: '0.02em',
+                  }} title="This sub-recipe is a catalogue item — it shows up in stock counts and is valued at its live recipe cost.">In inventory</span>
+                  <span style={{ fontSize: 9, color: r.has_yield ? UXP.ink4 : UXP.coral }}
+                    title={r.has_yield ? 'Counted by weight/volume in stock takes.' : 'No yield set — counted in portions. Set a yield to count by weight.'}>
+                    {r.has_yield ? 'by weight' : 'by portion'}
+                  </span>
+                </span>
               ) : <span style={{ color: UXP.ink4, fontSize: 11 }}>—</span>,
             })
           }
