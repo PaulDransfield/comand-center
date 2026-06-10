@@ -16,6 +16,8 @@
 //     engine knows the owner has decided to accept the trade-off
 //     (e.g. lone closer when the owner trusts the staff).
 
+import { resolveLimits, MINOR, type LaborConfig } from './labor-rules-sweden'
+
 export type CheckSeverity = 'HARD' | 'WARN'
 
 export interface ComplianceCheck {
@@ -36,6 +38,11 @@ export interface ShiftLike {
   end_at:        string                     // ISO
   breaks_seconds: number
   shift_kind:    string                     // 'regular' | 'semester' | etc.
+  // Optional local clock strings ('HH:MM'). When present they're used for
+  // wall-clock checks (minor night work) instead of the ISO instants, which
+  // avoids UTC/local drift. staff_shifts already carries these.
+  start_time_local?: string | null
+  end_time_local?:   string | null
 }
 
 export interface StaffProfileLike {
@@ -43,6 +50,9 @@ export interface StaffProfileLike {
   display_name:        string | null
   service_grade_pct:   number | null         // contract %; 100 = full-time
   hourly_rate_sek:     number | null
+  /** Under-18 (minderårig). Only acted on when business_rules enable minor
+   *  rules. Drives the AFS 2012:3 night-work / daily-hours protections. */
+  is_minor?:           boolean
 }
 
 export interface ComplianceInput {
@@ -57,6 +67,11 @@ export interface ComplianceInput {
   }
   /** Codes the owner has previously acknowledged (so WARNs don't keep reappearing). */
   acknowledged_codes?: string[]
+  /** Swedish labour ruleset (statute + Visita–HRF agreement + minor toggle).
+   *  When omitted, the engine keeps its legacy behaviour (statutory checks
+   *  driven by business_rules); the agreement 10h/24h cap and minor rules
+   *  only fire when this is supplied. */
+  labor_config?: LaborConfig
 }
 
 /**
@@ -71,6 +86,13 @@ export function runCompliance(input: ComplianceInput): ComplianceCheck[] {
   const maxWeeklyHours  = rules.max_weekly_hours ?? 48
   const contractFloorPct = rules.contracted_hours_floor_pct ?? 40
   const acked = new Set(input.acknowledged_codes ?? [])
+
+  // Swedish labour ruleset. Only the NEW checks (agreement 10h/24h cap, minor
+  // protections) read this — the legacy statutory checks above keep using
+  // business_rules so existing callers are unaffected.
+  const laborCfg = input.labor_config
+  const limits   = laborCfg ? resolveLimits(laborCfg) : null
+  const minorRulesOn = !!laborCfg?.enforce_minor_rules
 
   // Group shifts by staff_uid for per-person checks
   const byStaff = new Map<string, ShiftLike[]>()
@@ -192,6 +214,74 @@ export function runCompliance(input: ComplianceInput): ComplianceCheck[] {
             affected_dates:      [s.shift_date],
           })
         }
+      }
+    }
+
+    // CHECK 7: Max working time per 24h (Visita–HRF Gröna Riksavtalet — 10h).
+    // Statute has no fixed per-shift cap, so this only fires when a collective
+    // agreement is configured (limits.maxHoursPer24h != null).
+    if (limits?.maxHoursPer24h != null) {
+      for (const s of shifts) {
+        const workedH = ((new Date(s.end_at).getTime() - new Date(s.start_at).getTime()) / 1000 - (s.breaks_seconds ?? 0)) / 3600
+        if (workedH > limits.maxHoursPer24h + 0.01) {
+          checks.push({
+            code: `max_shift_24h:${s.id}`,
+            severity: 'HARD',
+            message: `${name}'s ${s.shift_date} shift is ${workedH.toFixed(1)}h of work. The collective agreement caps a single 24h period at ${limits.maxHoursPer24h}h (excl. breaks).`,
+            affected_shift_ids:  [s.id],
+            affected_staff_uids: [staffUid],
+            affected_dates:      [s.shift_date],
+          })
+        }
+      }
+    }
+
+    // CHECK 8: Minor (under-18) protections — AFS 2012:3. A collective
+    // agreement can NEVER weaken these. Gated on the business enabling minor
+    // rules AND the staff member being flagged as a minor.
+    if (minorRulesOn && profile?.is_minor) {
+      // 8a: no work in the night-free window 22:00–06:00
+      for (const s of shifts) {
+        const start = s.start_time_local ?? null
+        const end   = s.end_time_local ?? null
+        const startH = start ? Number(start.slice(0, 2)) : new Date(s.start_at).getUTCHours()
+        const endH   = end   ? Number(end.slice(0, 2))   : new Date(s.end_at).getUTCHours()
+        const wrapsMidnight = end != null ? (end <= start!) : (new Date(s.end_at).getTime() <= new Date(s.start_at).getTime())
+        const touchesNight = wrapsMidnight || startH >= MINOR.NIGHT_FREE_START || startH < MINOR.NIGHT_FREE_END
+                             || endH > MINOR.NIGHT_FREE_START || endH === 0
+        if (touchesNight) {
+          checks.push({
+            code: `minor_night:${s.id}`,
+            severity: 'HARD',
+            message: `${name} is under 18 and cannot work the ${s.shift_date} shift — minors must be free of work between ${MINOR.NIGHT_FREE_START}:00 and 0${MINOR.NIGHT_FREE_END}:00 (AFS 2012:3).`,
+            affected_shift_ids:  [s.id],
+            affected_staff_uids: [staffUid],
+            affected_dates:      [s.shift_date],
+          })
+        }
+        // 8b: max 8h/day for minors
+        const workedH = ((new Date(s.end_at).getTime() - new Date(s.start_at).getTime()) / 1000 - (s.breaks_seconds ?? 0)) / 3600
+        if (workedH > MINOR.MAX_HOURS_PER_DAY + 0.01) {
+          checks.push({
+            code: `minor_daily_hours:${s.id}`,
+            severity: 'HARD',
+            message: `${name} is under 18 and scheduled ${workedH.toFixed(1)}h on ${s.shift_date}. Minors may work at most ${MINOR.MAX_HOURS_PER_DAY}h/day (AFS 2012:3).`,
+            affected_shift_ids:  [s.id],
+            affected_staff_uids: [staffUid],
+            affected_dates:      [s.shift_date],
+          })
+        }
+      }
+      // 8c: max 40h/week for minors
+      if (totalHoursThisWeek > MINOR.MAX_WEEKLY_H + 0.1) {
+        checks.push({
+          code: `minor_weekly_hours:${staffUid}`,
+          severity: 'HARD',
+          message: `${name} is under 18 and scheduled ${totalHoursThisWeek.toFixed(1)}h this week. Minors may work at most ${MINOR.MAX_WEEKLY_H}h/week (AFS 2012:3).`,
+          affected_shift_ids:  shifts.map(s => s.id),
+          affected_staff_uids: [staffUid],
+          affected_dates:      Array.from(datesWorked),
+        })
       }
     }
   }

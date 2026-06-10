@@ -37,6 +37,45 @@ export const SCHEDULING_ASYMMETRY = `SCHEDULING RULE — ASYMMETRIC:
 - You must NEVER recommend adding hours. Write "no change" or note that the day looks lighter than the 12-week pattern and flag it as a judgment call for the owner.
 - A wrong cut loses one shift of coverage (recoverable). A wrong add creates fixed labour liability on a slow day (cash burn, non-recoverable). Default to cuts-only.`
 
+// ── Swedish labour compliance (statute + Visita–HRF agreement) ───────────────
+// Built from the canonical ruleset in lib/scheduling/labor-rules-sweden.ts so
+// the AI's suggestions and the pre-publish compliance engine can never drift.
+// Two jobs in the prompt:
+//   1. HARD CONSTRAINTS the AI must never propose a change that breaks.
+//      (Cuts inherently only increase rest, so they're safe; but extend /
+//      reassign / swap_template CAN break rest/hours — those must comply.)
+//   2. OB AWARENESS — evenings/weekends/nights carry an inconvenient-hours
+//      premium, so when choosing WHAT to trim, prefer those bands: same hour
+//      cut saves more money there.
+import {
+  type LaborConfig, DEFAULT_LABOR_CONFIG, resolveLimits, OB_BANDS_DESCRIPTION,
+} from '@/lib/scheduling/labor-rules-sweden'
+
+export function swedishLabourCompliance(config: LaborConfig = DEFAULT_LABOR_CONFIG): string {
+  const L = resolveLimits(config)
+  const lines: string[] = [
+    'SWEDISH LABOUR COMPLIANCE — non-negotiable constraints on any roster change:',
+    `- Daily rest (Arbetstidslagen §13): every employee must get ≥${L.minDailyRestH}h continuous rest per 24h. Never propose a change that leaves <${L.minDailyRestH}h between an employee's consecutive shifts.`,
+    `- Weekly rest (ATL §14): ≥${L.minWeeklyRestH}h continuous rest per 7-day period — keep at least one clear rest block per person per week (don't propose a 7th straight day).`,
+    `- Max weekly hours (ATL §10b): ≤${L.maxWeeklyH}h/week. Ordinary full-time is ${L.ordinaryWeeklyH}h.`,
+  ]
+  if (L.maxHoursPer24h != null) {
+    lines.push(`- Max shift length (Visita–HRF Gröna Riksavtalet): working time may not exceed ${L.maxHoursPer24h}h per 24h (excl. breaks). Don't propose extending a shift past ${L.maxHoursPer24h}h.`)
+  }
+  lines.push('- Rast (ATL §15): a shift longer than 6h needs a break; never remove a break to "save" cost.')
+  if (config.enforce_minor_rules) {
+    lines.push('- MINORS (under 18, AFS 2012:3 — a collective agreement can NOT weaken these): no work 22:00–06:00, ≤8h/day, ≤40h/week, ≥12h daily rest. Never schedule a minor into a night/closing shift.')
+  }
+  lines.push(
+    'These limits can only ever be IMPROVED by a cut (more rest, fewer hours), so cuts are always safe. For extend / reassign / swap suggestions, verify the limits still hold for the affected person.',
+    `OB COST AWARENESS: ${OB_BANDS_DESCRIPTION} When two cuts save similar coverage, prefer the one removing more OB hours — it saves more kr. Mention in your reasoning when a cut lands on OB hours.`,
+  )
+  return lines.join('\n')
+}
+
+/** Default block for businesses on the Visita–HRF agreement with minors off. */
+export const SWEDISH_LABOUR_COMPLIANCE = swedishLabourCompliance()
+
 // ── Voice ────────────────────────────────────────────────────────────────────
 // Swedish restaurant owners reading a Monday memo don't want marketing copy
 // or American-consultancy hedging. Direct, owner-to-owner, no fluff.

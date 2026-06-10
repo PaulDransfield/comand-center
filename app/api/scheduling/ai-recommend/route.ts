@@ -39,7 +39,8 @@ import { AI_MODELS }                    from '@/lib/ai/models'
 import { anthropicFetch }               from '@/lib/ai/anthropic-fetch'
 import { checkAndIncrementAiLimit }     from '@/lib/ai/usage'
 import { getHolidaysForCountry }        from '@/lib/holidays'
-import { composeRules, INDUSTRY_BENCHMARKS, VOICE, SCHEDULING_ASYMMETRY } from '@/lib/ai/rules'
+import { composeRules, INDUSTRY_BENCHMARKS, VOICE, SCHEDULING_ASYMMETRY, swedishLabourCompliance } from '@/lib/ai/rules'
+import { DEFAULT_LABOR_CONFIG, type LaborConfig } from '@/lib/scheduling/labor-rules-sweden'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -224,6 +225,12 @@ export async function POST(req: NextRequest) {
 
   const targetPct      = biz.target_staff_pct ? Number(biz.target_staff_pct) : 32
   const allowAdds      = false   // Plan §7 — default cuts-only. Per-business opt-in lives on businesses.scheduling_ai_allow_adds (not yet added; uncomment when wired)
+  // Swedish labour ruleset for this business. Reads businesses.scheduling_labor_config
+  // (JSONB) when present; falls back to the Visita–HRF default (SE restaurants).
+  // Defensive: the column may not be applied yet — treat absence as default.
+  const laborConfig: LaborConfig = (biz as any).scheduling_labor_config
+    ? { ...DEFAULT_LABOR_CONFIG, ...(biz as any).scheduling_labor_config }
+    : DEFAULT_LABOR_CONFIG
   const totalForecast  = dayContext.reduce((s, d) => s + (d.forecast_revenue ?? 0), 0)
   const totalCost      = dayContext.reduce((s, d) => s + d.planned_cost, 0)
   const weekStaffPct   = totalForecast > 0 ? (totalCost / totalForecast) * 100 : null
@@ -239,6 +246,7 @@ export async function POST(req: NextRequest) {
 - For every ADD: explicitly quantify downside risk in your reasoning ("if revenue lands at 70% of forecast, this adds X kr fixed cost on a slow day").
 - Adds must respect typical_days for the suggested staff member — never schedule someone outside their normal pattern unless absolutely necessary.`
       : SCHEDULING_ASYMMETRY,
+    swedishLabourCompliance(laborConfig),
     `HOURLY DEMAND PROFILE (12-week history):
 - "hourly_demand_by_weekday" gives the average revenue + covers for every open hour of each weekday, derived from the past 12 weeks of POS sales. This is your PRIMARY signal for whether a shift overlap is justified.
 - Use these numbers in your reasoning. Specific example: "Monday 12:00–13:00 avg 1,800 kr / 22 covers — below the threshold to justify three FOH on the floor; cutting Linnéa's 12:00 start to 14:00 is safe."
