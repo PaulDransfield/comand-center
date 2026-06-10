@@ -123,7 +123,6 @@ export default function UserMenu() {
           />
           <MenuItem
             label="Help & support"
-            icon="?"
             onClick={() => { setOpen(false); setHelpOpen(true) }}
           />
           <MenuItem
@@ -142,15 +141,13 @@ export default function UserMenu() {
   )
 }
 
-function MenuItem({ label, onClick, tone, icon }: { label: string; onClick: () => void; tone?: 'rose'; icon?: string }) {
+function MenuItem({ label, onClick, tone }: { label: string; onClick: () => void; tone?: 'rose' }) {
   return (
     <button
       type="button"
       onClick={onClick}
       style={{
-        display:      'flex',
-        alignItems:   'center',
-        gap:          8,
+        display:      'block',
         width:        '100%',
         textAlign:    'left' as const,
         padding:      '7px 9px',
@@ -163,13 +160,6 @@ function MenuItem({ label, onClick, tone, icon }: { label: string; onClick: () =
         fontFamily:   'inherit',
       }}
     >
-      {icon && (
-        <span aria-hidden style={{
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 15, height: 15, borderRadius: '50%', flexShrink: 0,
-          border: `1px solid ${UXP.border}`, color: UXP.ink3, fontSize: 9, fontWeight: 700,
-        }}>{icon}</span>
-      )}
       {label}
     </button>
   )
