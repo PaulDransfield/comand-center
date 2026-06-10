@@ -4,6 +4,28 @@
 
 ---
 
+## Applied — 2026-06-10 (Supabase security-advisor remediation batch)
+
+### M145 — function search_path hardening ✅ applied 2026-06-10
+**File:** `sql/M145-FUNCTION-SEARCH-PATH-HARDENING.sql`
+**Purpose:** Clears all `function_search_path_mutable` (lint 0011) warnings. `ALTER FUNCTION … SET search_path = public, extensions, pg_catalog` on 26 functions (trigger touch-fns + RPCs). Pins the path so SECURITY DEFINER fns can't be hijacked via caller search_path. Verified live: `f_unaccent` still resolves unaccent; 0 target funcs left mutable.
+
+### M146 — lock down server-only SECURITY DEFINER RPCs ✅ applied 2026-06-10
+**File:** `sql/M146-LOCKDOWN-SECURITY-DEFINER-RPCS.sql` (applied as m146 + m146b)
+**Purpose:** Clears anon/authenticated executable-SECURITY-DEFINER findings (lints 0028/0029). `REVOKE EXECUTE … FROM PUBLIC, anon, authenticated` on 14 server/cron-only RPCs (incl. `admin_run_sql`, stripe-claim, extraction-job, fortnox-lock, prune/archive fns). **Gotcha learned:** revoking only anon+authenticated leaves the implicit PUBLIC grant — must revoke PUBLIC. Verified live: each now executable only by `{postgres, service_role}`.
+**Deliberately kept executable:** `current_org_id`, `current_user_org_ids`, `get_my_org_id`, `is_org_admin` — RLS policies invoke them; revoking would break RLS. Residual advisor warning on these is accepted (they only return the caller's own org).
+
+### M147 — departments RLS + metrics policy tighten ✅ applied 2026-06-10
+**File:** `sql/M147-DEPARTMENTS-RLS-AND-METRICS-POLICY-TIGHTEN.sql`
+**Purpose:** (1) ERROR fix — `ALTER TABLE public.departments ENABLE ROW LEVEL SECURITY` (lint 0013). (2) Dropped 4 always-true ALL policies (lint 0024) on `daily_metrics`, `dept_metrics`, `monthly_metrics`, `overhead_drilldown_cache`. All five are service_role-only (verified all readers use createAdminClient), so service_role keeps full access via bypass while anon/authenticated are now denied — closes a cross-tenant metrics read/write hole. Verified live: departments RLS on, 0 leftover always-true policies.
+
+**NOT auto-fixed (reported to owner — out of safe-SQL scope or needs a product decision):**
+- `extension_in_public` (`vector`, `pg_trgm`): moving extensions out of public risks breaking trigram GIN indexes + vector columns. Low reward, high risk — recommend leaving.
+- `public_bucket_allows_listing` (`recipe-images`, `supplier-article-images`): public buckets with broad SELECT/list policy. App never calls `.list()` and serves via public URLs, so the listing policy can be narrowed — deferred as a storage-policy change to do deliberately.
+- `auth_leaked_password_protection`: enable in Supabase dashboard (Authentication → Password security → HaveIBeenPwned) — an Auth setting, not SQL.
+
+---
+
 ## Applied — 2026-06-10 (views security hardening — SECURITY INVOKER sweep)
 
 ### M144 — remaining public views: SECURITY INVOKER (advisor sweep) ✅ applied 2026-06-10
