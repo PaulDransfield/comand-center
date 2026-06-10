@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
-import { requireBusinessAccess } from '@/lib/auth/require-role'
+import { requireBusinessAccess, requireOperator } from '@/lib/auth/require-role'
 import { computeRecipeCost, getProductLatestPrices, loadRecipeIndex } from '@/lib/inventory/recipe-cost'
 import { loadFxIndex } from '@/lib/inventory/fx'
 import { resolveRecipePriceFields } from '@/lib/inventory/recipe-price'
@@ -74,13 +74,28 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .eq('source_recipe_id', r.id)
     .maybeSingle()
 
+  // Staff get the operational view only — strip every money field (recipe
+  // price + per-ingredient cost + the GP summary) before it leaves the server.
+  const isStaff = auth.role === 'staff'
+  const recipeOut: any = isStaff
+    ? { ...r, menu_price: null, selling_price_ex_vat: null, vat_rate: null, glass_price: null, source_product_id: null }
+    : { ...r, menu_price: r.menu_price != null ? Number(r.menu_price) : null, source_product_id: promoted?.id ?? null }
+  const summaryOut: any = isStaff
+    ? {
+        ...summary,
+        food_cost: null, food_pct: null, gp_pct: null, gp_kr: null,
+        missing_prices: 0, unit_mismatches: 0,
+        ingredients: (summary.ingredients ?? []).map((i: any) => ({
+          ...i,
+          unit_price: null, line_cost: null, cost_per_base_unit: null,
+          price_change_pct: null, latest_currency: null, latest_line_id: null,
+        })),
+      }
+    : summary
+
   return NextResponse.json({
-    recipe: {
-      ...r,
-      menu_price: r.menu_price != null ? Number(r.menu_price) : null,
-      source_product_id: promoted?.id ?? null,
-    },
-    summary,
+    recipe: recipeOut,
+    summary: summaryOut,
   }, { headers: { 'Cache-Control': 'no-store' } })
 }
 
@@ -88,6 +103,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   noStore()
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+
+  const op = requireOperator(auth)
+  if (op) return op
 
   let body: any
   try { body = await req.json() } catch { body = {} }
@@ -251,6 +269,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   noStore()
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const op = requireOperator(auth)
+  if (op) return op
 
   const db = createAdminClient()
   const { data: r } = await db

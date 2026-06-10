@@ -19,7 +19,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
-import { requireBusinessAccess } from '@/lib/auth/require-role'
+import { requireBusinessAccess, requireOperator } from '@/lib/auth/require-role'
 import { AI_MODELS } from '@/lib/ai/models'
 import { anthropicFetch } from '@/lib/ai/anthropic-fetch'
 import { checkAndIncrementAiLimit, logAiRequest } from '@/lib/ai/usage'
@@ -129,6 +129,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `input too long (${menuText.length} chars)` }, { status: 400 })
   }
 
+  const op = requireOperator(auth)
+  if (op) return op
   const forbidden = requireBusinessAccess(auth, businessId)
   if (forbidden) return forbidden
 

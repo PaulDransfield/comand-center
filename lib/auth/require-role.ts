@@ -103,3 +103,21 @@ export function requireOwnerRole(auth: { role: string }): NextResponse | null {
     role:  auth.role,
   }, { status: 403 })
 }
+
+/**
+ * Gate for MUTATING operational endpoints (create/edit/delete recipes, prep
+ * sessions, etc.). The path allow-list (lib/auth/permissions.ts) is NOT
+ * HTTP-method-aware, so the staff role can READ those surfaces but must not
+ * WRITE to them. Add this to the POST/PATCH/DELETE handlers staff can reach:
+ *
+ *   const op = requireOperator(auth); if (op) return op
+ *
+ * Allowed: owner + manager. Denied: staff (and viewer/revisor by extension).
+ */
+export function requireOperator(auth: { role: string }): NextResponse | null {
+  if (auth.role === 'owner' || auth.role === 'manager') return null
+  return NextResponse.json({
+    error: 'Forbidden — this action requires manager or owner role.',
+    role:  auth.role,
+  }, { status: 403 })
+}

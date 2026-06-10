@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
-import { requireBusinessAccess } from '@/lib/auth/require-role'
+import { requireBusinessAccess, requireOperator } from '@/lib/auth/require-role'
 import { computeRecipeCost, getProductLatestPrices, loadRecipeIndex } from '@/lib/inventory/recipe-cost'
 import { loadFxIndex } from '@/lib/inventory/fx'
 import { resolveRecipePriceFields } from '@/lib/inventory/recipe-price'
@@ -172,14 +172,29 @@ export async function GET(req: NextRequest) {
   const withPrice = enriched.filter(r => r.menu_price != null && r.menu_price > 0) as any[]
   const avgPrice  = withPrice.length ? withPrice.reduce((s, r) => s + r.menu_price, 0) / withPrice.length : null
 
+  // Staff get the OPERATIONAL view only — no money. Strip cost / price / margin
+  // before it leaves the server so it can't leak through the UI either.
+  const isStaff = auth.role === 'staff'
+  const recipesOut = isStaff
+    ? enriched.map((r: any) => ({
+        ...r,
+        menu_price: null, selling_price_ex_vat: null, vat_rate: null,
+        food_cost: null, food_pct: null, gp_pct: null, gp_kr: null,
+        missing_prices: 0, unit_mismatches: 0,
+        glass_price: null, glass_cost: null, glass_cost_pct: null, glass_gp_pct: null, glass_gp_kr: null,
+      }))
+    : enriched
+
   return NextResponse.json({
-    recipes: enriched,
-    summary: {
-      count:           enriched.length,
-      avg_gp_pct:      avgGp != null ? Math.round(avgGp * 10) / 10 : null,
-      low_gp_count:    lowGp,
-      avg_menu_price:  avgPrice != null ? Math.round(avgPrice) : null,
-    },
+    recipes: recipesOut,
+    summary: isStaff
+      ? { count: enriched.length, avg_gp_pct: null, low_gp_count: 0, avg_menu_price: null }
+      : {
+          count:           enriched.length,
+          avg_gp_pct:      avgGp != null ? Math.round(avgGp * 10) / 10 : null,
+          low_gp_count:    lowGp,
+          avg_menu_price:  avgPrice != null ? Math.round(avgPrice) : null,
+        },
   }, { headers: { 'Cache-Control': 'no-store' } })
 }
 
@@ -187,6 +202,9 @@ export async function POST(req: NextRequest) {
   noStore()
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+
+  const op = requireOperator(auth)
+  if (op) return op
 
   let body: any
   try { body = await req.json() } catch { body = {} }

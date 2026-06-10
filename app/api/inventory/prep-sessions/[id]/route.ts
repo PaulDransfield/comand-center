@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
-import { requireBusinessAccess } from '@/lib/auth/require-role'
+import { requireBusinessAccess, requireOperator } from '@/lib/auth/require-role'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -177,6 +177,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   noStore()
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const op = requireOperator(auth)
+  if (op) return op
 
   let body: PatchBody
   try { body = await req.json() }
@@ -217,6 +219,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   noStore()
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const op = requireOperator(auth)
+  if (op) return op
 
   const db = createAdminClient()
   const { data: session, error } = await loadSession(db, params.id)

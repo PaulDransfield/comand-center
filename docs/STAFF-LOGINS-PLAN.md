@@ -24,8 +24,12 @@
 - `/api/settings/team`: `staff` is now invitable; **managers default to `can_view_finances = true`**; staff forced `false`; staff/revisor invites must be scoped; staff land on `/inventory/recipes/prep`.
 - **M153** `prep_session_line_events` (append-only) + the toggle endpoint now records every check/uncheck with user + timestamp.
 
-## Phase 2 — staff-safe UI (NEXT — required before inviting real staff)
-- [ ] **Cost-stripped, read-only recipe view for staff** — method + ingredients + quantities; hide GP/food cost/selling price/margin. Also add role guards on the mutating recipe/prep/ingredient endpoints (the path allow-list isn't method-aware, so staff must not be able to POST edits).
+## Phase 2a — backend safety ✅ SHIPPED (2026-06-10)
+- [x] **Cost stripped server-side for staff** on the recipe list (`/api/inventory/recipes` GET) AND detail (`/api/inventory/recipes/[id]` GET) — every money field (price, food cost, GP, per-ingredient cost) nulled before it leaves the server, so it can't leak through the UI.
+- [x] **`requireOperator` guard** (owner/manager only) on every staff-reachable mutation: recipe create/patch/delete, ingredient add/edit/delete, promote, promote-bulk, import-parse, recipe image. Prep: create + patch + delete guarded; **the line toggle stays open** (staff's core action). The path allow-list isn't method-aware, so these per-route guards are what actually stop a staff login writing.
+
+## Phase 2b — staff UI (NEXT — required before inviting real staff)
+- [ ] **Read-only recipe view for staff** — the API already returns no cost; the page should hide the cost/GP columns + the edit affordances (they'd 403 anyway, but it's poor UX).
 - [ ] **Prep list = staff home** + a staff-appropriate nav (hide everything they can't reach).
 - [ ] **Surface accountability** in the prep UI — "completed by «Name» · 14:20" per line, plus a per-session history from `prep_session_line_events` (resolve `user_id` → name via `public.users`).
 - [ ] **Team settings UI**: add "Staff" to the invite role picker (with required location scope); show role + location in the member list.

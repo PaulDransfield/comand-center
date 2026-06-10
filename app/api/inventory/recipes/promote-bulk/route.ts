@@ -18,7 +18,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
-import { requireBusinessAccess } from '@/lib/auth/require-role'
+import { requireBusinessAccess, requireOperator } from '@/lib/auth/require-role'
 import { packFieldsForPromotedRecipe } from '@/lib/inventory/promoted-product-pack'
 
 export const runtime = 'nodejs'
@@ -43,6 +43,8 @@ export async function POST(req: NextRequest) {
 
   const businessId = String(body.business_id ?? '').trim()
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
+  const op = requireOperator(auth)
+  if (op) return op
   const forbidden = requireBusinessAccess(auth, businessId)
   if (forbidden) return forbidden
 
