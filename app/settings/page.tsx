@@ -6,6 +6,7 @@ import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
 import React, { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
+import ContactSupport from '@/components/ContactSupport'
 
 interface Mapping {
   id: string
@@ -273,6 +274,17 @@ export default function SettingsPage() {
           </div>
           <span style={{ fontSize: 13, color: UXP.lavDeep, fontWeight: 500 }}>Manage →</span>
         </a>
+
+        {/* Help & support — in-app contact (reliable alternative to mailto). */}
+        <div style={{ ...S.card, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+          <div>
+            <div style={S.title}>Help &amp; support</div>
+            <div style={{ fontSize: 12, color: UXP.ink3, marginTop: 2 }}>
+              Send us a message from inside the app — support, billing, or a security issue. We reply to your account email; your business and current page are attached automatically.
+            </div>
+          </div>
+          <ContactSupport label="Contact us" />
+        </div>
 
         {/* Scheduling labour rules — link card to /settings/scheduling */}
         <a

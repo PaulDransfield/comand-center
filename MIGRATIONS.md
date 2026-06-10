@@ -4,6 +4,14 @@
 
 ---
 
+## Applied — 2026-06-10 (in-app support contact)
+
+### M152 — support_tickets fields ✅ applied 2026-06-10
+**File:** `sql/M152-SUPPORT-TICKETS-FIELDS.sql`
+**Purpose:** Fleshes out the M012 `support_tickets` stub so the new in-app "Contact us" form can store the message, not just fire an email. Added `category` ('support'|'security'|'billing'), `message`, `contact_email`, `contact_name`, `business_id`, `user_id`, `page`, `email_status`. Server-side only (service_role); RLS stays deny-all for anon/authenticated. Powers `POST /api/support` + `components/ContactSupport.tsx` (Settings → Help & support), which emails support@/security@/billing@ via Resend with auto-attached context + a user confirmation.
+
+---
+
 ## Applied — 2026-06-10 (scheduling labour compliance)
 
 ### M151 — Caspeco scheduling Phase 1 (roster → canonical grid) ✅ applied 2026-06-10
