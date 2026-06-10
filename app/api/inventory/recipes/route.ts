@@ -69,6 +69,24 @@ export async function GET(req: NextRequest) {
   const fxIndex  = await loadFxIndex(db, ['EUR', 'USD', 'NOK', 'DKK', 'GBP'])
   const priceMap = await getProductLatestPrices(db, businessId, Array.from(allProductIds), fxIndex)
 
+  // Promotion state (M089) — which recipes already have a catalogue
+  // product (source_recipe_id) so the list can show "In inventory" and
+  // the sub-recipe view can pre-mark them. One cheap query for the whole
+  // business. A promoted sub-recipe is countable in stock-takes; its
+  // value tracks the recipe's live cost (see getProductLatestPrices).
+  const promotedByRecipe = new Map<string, string>()
+  {
+    const { data: promotedProducts } = await db
+      .from('products')
+      .select('id, source_recipe_id')
+      .eq('business_id', businessId)
+      .is('archived_at', null)
+      .not('source_recipe_id', 'is', null)
+    for (const p of promotedProducts ?? []) {
+      if (p.source_recipe_id) promotedByRecipe.set(p.source_recipe_id, p.id)
+    }
+  }
+
   const enriched = recipes.map((r: any) => {
     const entry = recipeIndex.get(r.id)
     const ings  = entry?.ingredients ?? []
@@ -106,6 +124,10 @@ export async function GET(req: NextRequest) {
       unit_mismatches:      summary.unit_mismatches,
       subrecipe_count:      ings.filter(i => i.subrecipe_id != null).length,
       is_subrecipe:         r.is_subrecipe === true,
+      // M089 promotion — true when this recipe has a live catalogue
+      // product, so it shows up in stock counts / items.
+      promoted:             promotedByRecipe.has(r.id),
+      product_id:           promotedByRecipe.get(r.id) ?? null,
       image_url:            r.image_url ?? null,
       // Single-product-ingredient recipes (every wine bottle, single-bottle
       // spirits, mineral water etc.) get a free header thumbnail from the

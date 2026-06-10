@@ -11,7 +11,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
@@ -39,6 +39,11 @@ interface RecipeRow {
   missing_prices:   number
   unit_mismatches:  number
   updated_at:       string
+  is_subrecipe?:    boolean
+  // M089 promotion — true when this recipe is a live catalogue item
+  // (countable in stock takes). product_id is the linked products row.
+  promoted?:        boolean
+  product_id?:      string | null
   image_url:        string | null
   fallback_product_id: string | null
   glass_price:      number | null
@@ -148,6 +153,14 @@ export default function InventoryRecipesPage() {
   const [viewFilter, setViewFilter] = useState<'food' | 'drinks' | 'subrecipes' | 'all'>(initialView)
   const [typeFilter, setTypeFilter] = useState<string>('')   // empty = all types
   const [search, setSearch] = useState<string>('')
+  // Sub-recipe → inventory selection. Set of recipe ids ticked in the
+  // Sub-recipes view; drives the bulk "Add to inventory" action bar.
+  const [selectedSub, setSelectedSub] = useState<Set<string>>(new Set())
+  const [promoting, setPromoting] = useState(false)
+  const [promoteMsg, setPromoteMsg] = useState<string | null>(null)
+  // Clear the selection whenever the view or business changes so a stale
+  // tick from another tab can't get acted on.
+  useEffect(() => { setSelectedSub(new Set()); setPromoteMsg(null) }, [viewFilter, bizId])
   // Click-to-sort column. null = default (alphabetical by name from API).
   const [sortKey, setSortKey] = useState<'type'|'menu_price'|'food_cost'|'food_pct'|'gp_pct'|null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -215,6 +228,63 @@ export default function InventoryRecipesPage() {
       incomplete_count: rows.filter((r: any) => r.missing_prices > 0 || r.unit_mismatches > 0).length,
     }
   })()
+
+  // ── Sub-recipe → inventory selection helpers ─────────────────────────
+  // Selection is scoped to the rows currently visible in the Sub-recipes
+  // view (after search). Select-all ticks exactly those.
+  const selectableIds = viewFilter === 'subrecipes' ? rows.map(r => r.id) : []
+  const allSelected   = selectableIds.length > 0 && selectableIds.every(id => selectedSub.has(id))
+  const someSelected  = selectableIds.some(id => selectedSub.has(id)) && !allSelected
+  function toggleOne(id: string) {
+    setSelectedSub(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+  function toggleAll() {
+    setSelectedSub(prev => {
+      if (selectableIds.every(id => prev.has(id))) return new Set()   // all → none
+      return new Set(selectableIds)                                    // some/none → all
+    })
+  }
+  // Count how many of the current selection are / aren't already in inventory.
+  const selectedRows       = rows.filter(r => selectedSub.has(r.id))
+  const selectedUnpromoted = selectedRows.filter(r => !r.promoted)
+  const selectedPromoted   = selectedRows.filter(r => r.promoted)
+
+  async function runPromote(action: 'add' | 'remove') {
+    if (!bizId || selectedSub.size === 0) return
+    setPromoting(true); setPromoteMsg(null)
+    try {
+      const r = await fetch('/api/inventory/recipes/promote-bulk', {
+        method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: bizId, recipe_ids: Array.from(selectedSub), action, category: 'food' }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) { setPromoteMsg(j.error ?? `HTTP ${r.status}`); return }
+      const t = j.tally ?? {}
+      if (action === 'add') {
+        const parts = [`${t.promoted ?? 0} added to inventory`]
+        if (t.already)  parts.push(`${t.already} already there`)
+        if (t.errors)   parts.push(`${t.errors} failed`)
+        setPromoteMsg(parts.join(' · '))
+      } else {
+        const parts = [`${t.removed ?? 0} removed from inventory`]
+        if (t.in_use)       parts.push(`${t.in_use} still used in recipes (kept)`)
+        if (t.not_promoted) parts.push(`${t.not_promoted} weren't in inventory`)
+        if (t.errors)       parts.push(`${t.errors} failed`)
+        setPromoteMsg(parts.join(' · '))
+      }
+      setSelectedSub(new Set())
+      await load()   // refresh promotion badges
+    } catch (e: any) {
+      setPromoteMsg(e?.message ?? String(e))
+    } finally {
+      setPromoting(false)
+    }
+  }
 
   return (
     <AppShell>
@@ -338,6 +408,54 @@ export default function InventoryRecipesPage() {
             secondary={{ label: 'Bulk import a menu', href: '/inventory/recipes?import=1' }}
             style={{ marginTop: 16 }}
           />
+        )}
+
+        {viewFilter === 'subrecipes' && !loading && rows.length > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' as const,
+            padding: '10px 14px', marginBottom: 10,
+            background: selectedSub.size > 0 ? UXP.lavFill : UXP.subtleBg,
+            border: `0.5px solid ${selectedSub.size > 0 ? UXP.lav : UXP.border}`,
+            borderRadius: 8,
+          }}>
+            <div style={{ fontSize: 12, color: UXP.ink2, lineHeight: 1.5, flex: '1 1 260px', minWidth: 0 }}>
+              {selectedSub.size > 0 ? (
+                <strong style={{ color: UXP.ink1 }}>{selectedSub.size} selected</strong>
+              ) : (
+                <>Tick sub-recipes to <strong style={{ color: UXP.ink1 }}>add them to inventory</strong> — they become countable items in stock takes, valued at their live recipe cost. Edit a sub-recipe later and the next count uses the new value (past counts keep theirs).</>
+              )}
+              {selectedSub.size > 0 && (
+                <span style={{ color: UXP.ink4 }}>
+                  {' '}· {selectedUnpromoted.length} to add{selectedPromoted.length > 0 ? ` · ${selectedPromoted.length} already in inventory` : ''}
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' as const }}>
+              {selectedSub.size > 0 && (
+                <button type="button" onClick={() => setSelectedSub(new Set())}
+                  style={{ ...secondaryBtn, opacity: promoting ? 0.5 : 1 }} disabled={promoting}>
+                  Clear
+                </button>
+              )}
+              {selectedPromoted.length > 0 && (
+                <button type="button" onClick={() => runPromote('remove')}
+                  disabled={promoting}
+                  title="Remove the selected sub-recipes from the stocktake catalogue. Kept if still used as an ingredient in another recipe."
+                  style={{ ...secondaryBtn, color: UXP.coral, borderColor: UXP.coral, opacity: promoting ? 0.5 : 1, cursor: promoting ? 'not-allowed' : 'pointer' }}>
+                  {promoting ? 'Working…' : `Remove from inventory (${selectedPromoted.length})`}
+                </button>
+              )}
+              <button type="button" onClick={() => runPromote('add')}
+                disabled={promoting || selectedUnpromoted.length === 0}
+                title={selectedUnpromoted.length === 0 ? 'Tick at least one sub-recipe that is not already in inventory' : 'Add the selected sub-recipes to the stocktake catalogue'}
+                style={{ ...primaryBtn, opacity: (promoting || selectedUnpromoted.length === 0) ? 0.5 : 1, cursor: (promoting || selectedUnpromoted.length === 0) ? 'not-allowed' : 'pointer' }}>
+                {promoting ? 'Adding…' : `Add to inventory${selectedUnpromoted.length > 0 ? ` (${selectedUnpromoted.length})` : ''}`}
+              </button>
+            </div>
+            {promoteMsg && (
+              <div style={{ flexBasis: '100%', fontSize: 11, color: UXP.ink3 }}>{promoteMsg}</div>
+            )}
+          </div>
         )}
 
         {!loading && rows.length > 0 && (() => {
@@ -477,6 +595,26 @@ export default function InventoryRecipesPage() {
                 </span>
               ) : null },
           ]
+          // Sub-recipes view: prepend a selection checkbox column and
+          // append an inventory-status column so the owner can pick
+          // sub-recipes and add them to the stocktake catalogue.
+          if (viewFilter === 'subrecipes') {
+            cols.unshift({
+              id: 'sel', width: 34,
+              header: <SelectCheckbox checked={allSelected} indeterminate={someSelected} onToggle={toggleAll} ariaLabel="Select all sub-recipes" />,
+              cell: r => <SelectCheckbox checked={selectedSub.has(r.id)} onToggle={() => toggleOne(r.id)} ariaLabel={`Select ${r.name}`} />,
+            })
+            cols.push({
+              id: 'inv', header: 'Inventory', align: 'center' as const,
+              cell: r => r.promoted ? (
+                <span style={{
+                  display: 'inline-block', padding: '2px 8px',
+                  background: UXP.greenFill ?? '#e8f5ec', color: UXP.greenDeep,
+                  fontSize: 10, fontWeight: 600, borderRadius: 6, letterSpacing: '0.02em',
+                }} title="This sub-recipe is a catalogue item — it shows up in stock counts and is valued at its live recipe cost.">In inventory</span>
+              ) : <span style={{ color: UXP.ink4, fontSize: 11 }}>—</span>,
+            })
+          }
           return (
             <DataTable<RecipeRow>
               columns={cols}
@@ -1394,6 +1532,25 @@ function Stat({ label, value, tone = 'ink' }: { label: string; value: string; to
       <div style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{label}</div>
       <div style={{ fontSize: 20, fontWeight: 600, color: tone === 'coral' ? UXP.coral : UXP.ink1, marginTop: 4, fontVariantNumeric: 'tabular-nums' as const }}>{value}</div>
     </div>
+  )
+}
+// Checkbox that supports the indeterminate (partial-selection) visual.
+// stopPropagation keeps a tick from triggering row navigation.
+function SelectCheckbox({ checked, indeterminate, onToggle, ariaLabel }: {
+  checked: boolean; indeterminate?: boolean; onToggle: () => void; ariaLabel: string
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  useEffect(() => { if (ref.current) ref.current.indeterminate = !!indeterminate }, [indeterminate])
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      aria-label={ariaLabel}
+      onClick={e => e.stopPropagation()}
+      onChange={e => { e.stopPropagation(); onToggle() }}
+      style={{ cursor: 'pointer', width: 15, height: 15, accentColor: UXP.lavDeep }}
+    />
   )
 }
 function ViewPill({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {
