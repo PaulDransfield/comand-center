@@ -274,6 +274,28 @@ export default function SettingsPage() {
           <span style={{ fontSize: 13, color: UXP.lavDeep, fontWeight: 500 }}>Manage →</span>
         </a>
 
+        {/* Scheduling labour rules — link card to /settings/scheduling */}
+        <a
+          href="/settings/scheduling"
+          style={{
+            ...S.card,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            textDecoration: 'none',
+            color: 'inherit',
+            cursor: 'pointer',
+          }}
+        >
+          <div>
+            <div style={S.title}>Scheduling — labour rules</div>
+            <div style={{ fontSize: 12, color: UXP.ink3, marginTop: 2 }}>
+              Set which Swedish collective agreement applies (Visita–HRF), enforce under-18 rules, and tag minor staff. Drives the scheduling AI and the pre-publish compliance check.
+            </div>
+          </div>
+          <span style={{ fontSize: 13, color: UXP.lavDeep, fontWeight: 500 }}>Manage →</span>
+        </a>
+
         {/* Integrations — link card to /integrations */}
         <a
           href="/integrations"

@@ -4,6 +4,14 @@
 
 ---
 
+## Applied — 2026-06-10 (scheduling labour compliance)
+
+### M149 — per-business labour config + per-staff minor flag ✅ applied 2026-06-10
+**File:** `sql/M149-SCHEDULING-LABOR-CONFIG.sql`
+**Purpose:** Persists the Swedish labour-compliance config. `businesses.scheduling_labor_config JSONB` (which collective agreement binds the business + minor-rule enforcement); `staff_profiles.is_minor boolean` (effective under-18 flag the compliance engine reads); `staff_profiles.birth_date date` (auto-source from PK personnummer / Caspeco `personal_identity` when disclosed). NULL config → DEFAULT_LABOR_CONFIG (Visita–HRF, minors off). Drives `/settings/scheduling`, `/api/settings/labor-rules`, the scheduling AI prompt, and the pre-publish compliance engine. See `docs/SWEDISH-LABOUR-COMPLIANCE.md`.
+
+---
+
 ## Applied — 2026-06-10 (Supabase security-advisor remediation batch)
 
 ### M145 — function search_path hardening ✅ applied 2026-06-10

@@ -1517,12 +1517,17 @@ function ReviewPanel({ data, onClose, onApply }: {
       id: s.id, staff_uid: s.staff_uid, staff_name: s.staff_name,
       shift_date: s.shift_date, start_at: s.start_at, end_at: s.end_at,
       breaks_seconds: s.breaks_seconds ?? 0, shift_kind: s.shift_kind,
+      start_time_local: s.start_time_local ?? null, end_time_local: s.end_time_local ?? null,
     })),
     staff: data.profiles.map((p: any) => ({
       staff_uid: p.staff_uid, display_name: p.display_name,
       service_grade_pct: p.service_grade_pct, hourly_rate_sek: p.hourly_rate_sek,
+      is_minor: p.is_minor === true,
     })),
-    business_rules: {},   // pull from business settings when wired
+    business_rules: {},
+    // Swedish labour ruleset for this business (agreement 10h/24h cap + minor
+    // protections fire from here). Returned by /api/scheduling/week.
+    labor_config: (data as any).labor_config,
   }), [data])
   const hardCount = checks.filter(c => c.severity === 'HARD').length
   const warnCount = checks.filter(c => c.severity === 'WARN').length

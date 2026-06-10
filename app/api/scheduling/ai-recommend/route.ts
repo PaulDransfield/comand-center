@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
 
   // ── Load context ────────────────────────────────────────────────
   const { data: biz } = await db.from('businesses')
-    .select('id, name, country, opening_days, target_staff_pct, business_stage')
+    .select('id, name, country, opening_days, target_staff_pct, business_stage, scheduling_labor_config')
     .eq('id', businessId).maybeSingle()
   if (!biz) return NextResponse.json({ error: 'business not found' }, { status: 404 })
 

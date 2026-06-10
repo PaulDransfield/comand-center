@@ -16,6 +16,7 @@ import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess }       from '@/lib/auth/require-role'
 import { getHolidaysForCountry }       from '@/lib/holidays'
 import { dailyForecast }               from '@/lib/forecast/daily'
+import { DEFAULT_LABOR_CONFIG, type LaborConfig } from '@/lib/scheduling/labor-rules-sweden'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -38,10 +39,13 @@ export async function GET(req: NextRequest) {
   // Business context
   const { data: biz } = await db
     .from('businesses')
-    .select('id, name, country, opening_days, target_food_pct, target_staff_pct, target_margin_pct, business_stage')
+    .select('id, name, country, opening_days, target_food_pct, target_staff_pct, target_margin_pct, business_stage, scheduling_labor_config')
     .eq('id', businessId)
     .maybeSingle()
   if (!biz) return NextResponse.json({ error: 'business not found' }, { status: 404 })
+
+  // Effective Swedish labour ruleset for this business (defaults to Visita–HRF).
+  const laborConfig: LaborConfig = { ...DEFAULT_LABOR_CONFIG, ...((biz as any).scheduling_labor_config ?? {}) }
 
   // Compute Monday-Sunday date range from week ISO
   const { monday, sunday } = isoWeekToRange(weekIso)
@@ -68,7 +72,7 @@ export async function GET(req: NextRequest) {
       .order('sort_order')
       .order('name'),
     db.from('staff_profiles')
-      .select('staff_uid, display_name, full_name, primary_section, salary_type, hourly_rate_sek, service_grade_pct, typical_shift_window, closer_confidence, rush_capability')
+      .select('staff_uid, display_name, full_name, primary_section, salary_type, hourly_rate_sek, service_grade_pct, typical_shift_window, closer_confidence, rush_capability, is_minor')
       .eq('business_id', businessId)
       .eq('is_active', true)
       .order('primary_section')
@@ -159,6 +163,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     business: { id: biz.id, name: biz.name, country: biz.country, target_staff_pct: biz.target_staff_pct },
+    labor_config: laborConfig,
     week:     summary,
     days:     dayHeaders,
     templates, profiles, shifts, suggestions,

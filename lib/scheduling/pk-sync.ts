@@ -389,12 +389,30 @@ async function refreshStaffProfiles(
     st.weeksObserved.add(w)
   }
 
+  // Existing minor flags / birth dates, so we (a) preserve an owner's manual
+  // is_minor when PK exposes no birth date, and (b) keep a previously-derived
+  // birth_date. Keyed by pk_staff_url.
+  const { data: existingFlags } = await db
+    .from('staff_profiles')
+    .select('pk_staff_url, is_minor, birth_date')
+    .eq('business_id', businessId)
+  const flagByUid = new Map((existingFlags ?? []).map((r: any) => [r.pk_staff_url, r]))
+
   // 3. Build upsert rows
   const today = new Date().toISOString().slice(0, 10)
   const profileRows: any[] = []
   for (const s of pkStaff) {
     const staffUid = String(s.url ?? s.id ?? '')
     if (!staffUid) continue
+
+    // Minor (under-18) derivation. PK may expose a personnummer / birth date
+    // under one of several field names; parse it best-effort. If nothing is
+    // disclosed, fall back to the existing stored values so a manual flag set
+    // in Settings → Scheduling isn't clobbered every sync.
+    const existing = flagByUid.get(staffUid)
+    const derivedBirth = deriveBirthDate(s)
+    const birthDate = derivedBirth ?? existing?.birth_date ?? null
+    const isMinor = birthDate ? (ageFromBirth(birthDate) < 18) : (existing?.is_minor ?? false)
     const activeEmp = (s.employments ?? []).find((e: any) =>
       (!e.end || e.end >= today) && (!e.start || e.start <= today),
     ) ?? null
@@ -441,6 +459,8 @@ async function refreshStaffProfiles(
       typical_shift_window: typicalShiftWindow,
       versatility_score:  versatilityScore,
       is_active:          s.confirmed ?? true,
+      birth_date:         birthDate,
+      is_minor:           isMinor,
       last_refreshed_at:  new Date().toISOString(),
     })
   }
@@ -452,6 +472,55 @@ async function refreshStaffProfiles(
       .upsert(profileRows, { onConflict: 'business_id,pk_staff_url' })
     if (error) throw new Error(`profile upsert: ${error.message}`)
   }
+}
+
+// Best-effort birth-date extraction from a PK staff object. PK may expose a
+// Swedish personnummer or an explicit birth date under one of several field
+// names — probe them all. Returns 'YYYY-MM-DD' or null.
+function deriveBirthDate(s: any): string | null {
+  const candidates = [
+    s?.social_security_number, s?.personal_identity_number, s?.personal_number,
+    s?.personnummer, s?.ssn, s?.date_of_birth, s?.birth_date, s?.birthdate, s?.born,
+  ]
+  for (const raw of candidates) {
+    if (raw == null) continue
+    const str = String(raw).trim()
+    // Explicit ISO date 'YYYY-MM-DD…'
+    const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (iso) {
+      const d = `${iso[1]}-${iso[2]}-${iso[3]}`
+      if (isValidDate(d)) return d
+    }
+    // Swedish personnummer: 12-digit YYYYMMDDXXXX or 10-digit YYMMDDXXXX
+    // (optionally with '-'/'+' before the last 4). Strip non-digits first.
+    const digits = str.replace(/[^\d]/g, '')
+    if (digits.length === 12) {
+      const d = `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`
+      if (isValidDate(d)) return d
+    } else if (digits.length === 10) {
+      const yy = Number(digits.slice(0, 2))
+      const nowYY = new Date().getUTCFullYear() % 100
+      // Two-digit year → 20xx if that wouldn't be in the future, else 19xx.
+      const century = yy <= nowYY ? 2000 : 1900
+      const d = `${century + yy}-${digits.slice(2, 4)}-${digits.slice(4, 6)}`
+      if (isValidDate(d)) return d
+    }
+  }
+  return null
+}
+
+function isValidDate(iso: string): boolean {
+  const t = Date.parse(iso + 'T00:00:00Z')
+  return Number.isFinite(t)
+}
+
+function ageFromBirth(birthIso: string): number {
+  const b = new Date(birthIso + 'T00:00:00Z')
+  const now = new Date()
+  let age = now.getUTCFullYear() - b.getUTCFullYear()
+  const m = now.getUTCMonth() - b.getUTCMonth()
+  if (m < 0 || (m === 0 && now.getUTCDate() < b.getUTCDate())) age--
+  return age
 }
 
 function isoWeekFor(d: Date): string {
