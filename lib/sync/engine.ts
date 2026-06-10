@@ -8,6 +8,7 @@ import { decrypt }           from '@/lib/integrations/encryption'
 import { withTimeout as sharedWithTimeout } from '@/lib/sync/with-timeout'
 import { getFreshFortnoxAccessToken } from '@/lib/fortnox/api/auth'
 import { birthDateFromPersonnummer, ageFromBirthDate } from '@/lib/scheduling/personnummer'
+import { syncCaspecoStaffProfiles } from '@/lib/scheduling/caspeco-sync'
 
 // Per-endpoint timeout for individual PK API calls. Smaller than the
 // integration-level cap (60 s in master-sync) so one slow endpoint can't
@@ -701,6 +702,17 @@ async function syncCaspeco(db: any, integ: any, _fromDate: string, _toDate: stri
       } else {
         employeesUpserted += slice.length
       }
+    }
+
+    // 3b. Mirror the roster into the canonical staff_profiles table so the
+    //     scheduling grid / AI / compliance see Caspeco staff (Phase 1 of
+    //     the Caspeco scheduling integration). Best-effort — never block the
+    //     POS/roster sync on a profile-mirror failure.
+    try {
+      const { upserted } = await syncCaspecoStaffProfiles(db, integ.org_id, integ.business_id)
+      if (upserted > 0) console.log(`[caspeco] mirrored ${upserted} staff_profiles`)
+    } catch (e: any) {
+      console.error('[caspeco] staff_profiles mirror failed:', e?.message ?? e)
     }
   }
 

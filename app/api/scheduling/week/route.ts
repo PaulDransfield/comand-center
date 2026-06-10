@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
   // Business context
   const { data: biz } = await db
     .from('businesses')
-    .select('id, name, country, opening_days, target_food_pct, target_staff_pct, target_margin_pct, business_stage, scheduling_labor_config')
+    .select('id, name, country, opening_days, target_food_pct, target_staff_pct, target_margin_pct, business_stage, scheduling_labor_config, scheduling_source')
     .eq('id', businessId)
     .maybeSingle()
   if (!biz) return NextResponse.json({ error: 'business not found' }, { status: 404 })
@@ -162,7 +162,7 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({
-    business: { id: biz.id, name: biz.name, country: biz.country, target_staff_pct: biz.target_staff_pct },
+    business: { id: biz.id, name: biz.name, country: biz.country, target_staff_pct: biz.target_staff_pct, scheduling_source: (biz as any).scheduling_source ?? null },
     labor_config: laborConfig,
     week:     summary,
     days:     dayHeaders,

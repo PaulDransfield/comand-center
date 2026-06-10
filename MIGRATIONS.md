@@ -6,6 +6,10 @@
 
 ## Applied — 2026-06-10 (scheduling labour compliance)
 
+### M151 — Caspeco scheduling Phase 1 (roster → canonical grid) ✅ applied 2026-06-10
+**File:** `sql/M151-CASPECO-SCHEDULING-SOURCE.sql`
+**Purpose:** Phase 1 of `docs/CASPECO-SCHEDULING-INTEGRATION-PLAN.md`. (1) `businesses.scheduling_source` ('personalkollen'|'caspeco', CHECK-guarded) — drives the source-aware skin + disambiguates dual connections. (2) Mirrors the Caspeco roster (`caspeco_employees`) into the canonical `staff_profiles` (keyed `pk_staff_url='caspeco-<id>'`), so the scheduling grid / AI / compliance see Caspeco staff. `is_minor`/`birth_date` (M150) flow through. Verified: Chicce now `scheduling_source='caspeco'` with **76 active** staff_profiles (84 total, 8 former), 0 minors. Ongoing maintenance: `lib/scheduling/caspeco-sync.ts` (`syncCaspecoStaffProfiles`) called from the Caspeco sync. **Phase 2 (planned shifts → staff_shifts) is still blocked on a Caspeco schedule endpoint.**
+
 ### M150 — caspeco_employees age fields (under-18 detection) ✅ applied 2026-06-10
 **File:** `sql/M150-CASPECO-EMPLOYEE-MINOR.sql`
 **Purpose:** Chicce runs on **Caspeco, not Personalkollen** — so the PK minor auto-flag never applied to it. Caspeco's roster (`caspeco_employees`, 84 rows) already holds the personnummer in `personal_identity`. Added derived `birth_date` + `is_minor` columns, populated on every Caspeco sync (`lib/sync/engine.ts` via shared parser `lib/scheduling/personnummer.ts`) and **backfilled the existing 84** in-migration. Verified: 84/84 birth dates parsed, **0 minors** (youngest 18, oldest 62).
