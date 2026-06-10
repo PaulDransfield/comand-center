@@ -336,6 +336,40 @@ async function refreshStaffProfiles(
 
   if (pkStaff.length === 0) return
 
+  // ── TEMP DIAG (pk-staff-keys) — remove after reading ────────────────
+  // Records ONLY the KEY NAMES PK exposes on a staff object (never the
+  // values) so we can confirm whether a birth-date / personnummer field is
+  // available and its exact name. Read via:
+  //   SELECT metadata->'pk_staff_keys_diag' FROM integrations
+  //   WHERE business_id = '…' AND provider = 'personalkollen';
+  try {
+    const sample: any = pkStaff[0] ?? {}
+    const emp: any = Array.isArray(sample.employments) ? (sample.employments[0] ?? {}) : {}
+    const CANDIDATES = ['social_security_number', 'personal_identity_number', 'personal_number', 'personnummer', 'ssn', 'date_of_birth', 'birth_date', 'birthdate', 'born']
+    const present = CANDIDATES.filter(k => (k in sample) || (k in emp))   // names only
+    let derivable = 0
+    for (const s of pkStaff) if (deriveBirthDate(s) != null) derivable++  // count only
+    const diag = {
+      sampled_at:               new Date().toISOString(),
+      staff_count:              pkStaff.length,
+      staff_keys:               Object.keys(sample).sort(),
+      employment_keys:          Object.keys(emp).sort(),
+      candidate_fields_present: present,
+      birth_dates_derivable:    derivable,
+    }
+    const { data: integ } = await db
+      .from('integrations')
+      .select('id, metadata')
+      .eq('business_id', businessId)
+      .eq('provider', 'personalkollen')
+      .maybeSingle()
+    if (integ?.id) {
+      await db.from('integrations')
+        .update({ metadata: { ...((integ as any).metadata ?? {}), pk_staff_keys_diag: diag } })
+        .eq('id', integ.id)
+    }
+  } catch { /* diagnostic is best-effort — never block the sync */ }
+
   // 2. Load the last 12 weeks of shifts for derived stats
   const cutoff = new Date(); cutoff.setUTCDate(cutoff.getUTCDate() - 12 * 7)
   const { data: shifts } = await db
