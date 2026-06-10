@@ -32,7 +32,8 @@
 -- Idempotent — CREATE OR REPLACE.
 
 -- ── 1. Bucketed horizon view ─────────────────────────────────────────
-CREATE OR REPLACE VIEW public.v_forecast_mape_by_horizon_bucket AS
+CREATE OR REPLACE VIEW public.v_forecast_mape_by_horizon_bucket
+  WITH (security_invoker = on) AS
 WITH bucketed AS (
   SELECT
     business_id,
@@ -68,7 +69,8 @@ GROUP BY business_id, surface, horizon_bucket_days;
 GRANT SELECT ON public.v_forecast_mape_by_horizon_bucket TO service_role;
 
 -- ── 2. Confidence calibration view ───────────────────────────────────
-CREATE OR REPLACE VIEW public.v_forecast_confidence_calibration AS
+CREATE OR REPLACE VIEW public.v_forecast_confidence_calibration
+  WITH (security_invoker = on) AS
 SELECT
   business_id,
   surface,
@@ -90,7 +92,8 @@ GRANT SELECT ON public.v_forecast_confidence_calibration TO service_role;
 -- "Is the forecaster getting better recently?" The all-time view dilutes
 -- recent gains with months of older data. Bound to forecast_date in the
 -- last 28 calendar days; horizon-aware via the same bucket logic.
-CREATE OR REPLACE VIEW public.v_forecast_mape_rolling_28d AS
+CREATE OR REPLACE VIEW public.v_forecast_mape_rolling_28d
+  WITH (security_invoker = on) AS
 WITH bucketed AS (
   SELECT
     business_id,
@@ -134,7 +137,8 @@ GRANT SELECT ON public.v_forecast_mape_rolling_28d TO service_role;
 -- (8 rows) vs consolidated_daily at 26.4% (11 rows). Likely artifact: legacy
 -- weather_demand only captures h=1 ("today's revenue"), while the new
 -- consolidated_daily captures h=1..7. This view confirms or refutes.
-CREATE OR REPLACE VIEW public.v_forecast_horizon_confidence_breakdown AS
+CREATE OR REPLACE VIEW public.v_forecast_horizon_confidence_breakdown
+  WITH (security_invoker = on) AS
 WITH bucketed AS (
   SELECT
     business_id,

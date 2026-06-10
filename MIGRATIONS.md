@@ -4,6 +4,16 @@
 
 ---
 
+## Applied — 2026-06-10 (forecast views security hardening)
+
+### M143 — forecast metric views: SECURITY INVOKER ✅ applied 2026-06-10
+**File:** `sql/M143-FORECAST-VIEWS-SECURITY-INVOKER.sql`
+**Purpose:** Clears Supabase security-advisor "SECURITY DEFINER view" finding on `v_forecast_confidence_calibration` (and its three M070 siblings). `ALTER VIEW … SET (security_invoker = on)` so the views enforce the querying user's RLS/permissions, not the owner's.
+**Views:** `v_forecast_mape_by_horizon_bucket`, `v_forecast_confidence_calibration`, `v_forecast_mape_rolling_28d`, `v_forecast_horizon_confidence_breakdown`.
+**Safe:** only reader is the admin forecasting route via service_role (bypasses RLS regardless). M070 source updated to bake `WITH (security_invoker = on)` into the CREATEs so a re-apply stays compliant. Verified live: all 4 views report `reloptions = {security_invoker=on}`.
+
+---
+
 ## Applied — 2026-06-06 (Session 25: ingestion ledger + bug fix + global enrichment schema)
 
 ### M135 — ingestion_log + fortnox_supplier_invoices.ingestion_status ✅ applied 2026-06-06
