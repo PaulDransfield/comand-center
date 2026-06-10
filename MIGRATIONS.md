@@ -19,10 +19,15 @@
 **File:** `sql/M147-DEPARTMENTS-RLS-AND-METRICS-POLICY-TIGHTEN.sql`
 **Purpose:** (1) ERROR fix — `ALTER TABLE public.departments ENABLE ROW LEVEL SECURITY` (lint 0013). (2) Dropped 4 always-true ALL policies (lint 0024) on `daily_metrics`, `dept_metrics`, `monthly_metrics`, `overhead_drilldown_cache`. All five are service_role-only (verified all readers use createAdminClient), so service_role keeps full access via bypass while anon/authenticated are now denied — closes a cross-tenant metrics read/write hole. Verified live: departments RLS on, 0 leftover always-true policies.
 
-**NOT auto-fixed (reported to owner — out of safe-SQL scope or needs a product decision):**
-- `extension_in_public` (`vector`, `pg_trgm`): moving extensions out of public risks breaking trigram GIN indexes + vector columns. Low reward, high risk — recommend leaving.
-- `public_bucket_allows_listing` (`recipe-images`, `supplier-article-images`): public buckets with broad SELECT/list policy. App never calls `.list()` and serves via public URLs, so the listing policy can be narrowed — deferred as a storage-policy change to do deliberately.
-- `auth_leaked_password_protection`: enable in Supabase dashboard (Authentication → Password security → HaveIBeenPwned) — an Auth setting, not SQL.
+### M148 — drop public-bucket listing policies ✅ applied 2026-06-10
+**File:** `sql/M148-DROP-PUBLIC-BUCKET-LISTING-POLICIES.sql`
+**Purpose:** Clears `public_bucket_allows_listing` (lint 0025). Dropped the broad PUBLIC SELECT policies on `recipe-images` + `supplier-article-images`. Public buckets serve objects via the CDN path (no RLS), and the app never `.list()`s these (verified), so enumeration is closed without breaking image display/upload. Verified live: both buckets still public=true, 0 leftover listing policies.
+
+**Post-remediation advisor state (re-scanned 2026-06-10) — remaining items are accepted/owner-action:**
+- `extension_in_public` (`vector`, `pg_trgm`): **left as-is per recommendation** — moving them risks breaking trigram GIN indexes + vector columns.
+- `anon/authenticated_security_definer_function_executable`: now ONLY the 4 RLS helpers (`current_org_id`, `current_user_org_ids`, `get_my_org_id`, `is_org_admin`) — intentionally kept executable (RLS depends on them); benign.
+- `auth_leaked_password_protection`: **owner one-click** — Supabase dashboard → Authentication → Password security → enable HaveIBeenPwned. Not SQL; can't be toggled via the SQL/MCP tools.
+- `rls_enabled_no_policy` (INFO, ~50 internal/service-role-only tables incl. `departments`, `overhead_drilldown_cache`): **this is the intended secure state** — RLS on + no policy = deny-all for anon/authenticated, while service_role (the app's only accessor) bypasses. Do NOT add permissive policies; that would re-open access.
 
 ---
 
