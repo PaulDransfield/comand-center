@@ -12,10 +12,23 @@ export default function SecurityPage() {
         <a href="/" style={{ fontSize: 13, color: '#6366f1', textDecoration: 'none' }}>← Back to CommandCenter</a>
       </div>
 
-      <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 8 }}>Security</h1>
+      <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 8 }}>Security &amp; trust</h1>
       <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 40 }}>
-        How we protect customer data and how to report a security issue.
+        How we protect your data, where it lives, and how to report a security issue.
       </p>
+
+      {/* Customer-facing FAQ — the questions prospects and customers actually ask. */}
+      <div style={{ marginBottom: 44 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, color: '#1a1f2e' }}>Frequently asked</h2>
+        {FAQ.map(f => (
+          <div key={f.q} style={{ marginBottom: 20, paddingBottom: 20, borderBottom: '1px solid #eef0f4' }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#1a1f2e', marginBottom: 6 }}>{f.q}</div>
+            <div style={{ fontSize: 14, lineHeight: 1.7, color: '#374151', whiteSpace: 'pre-line' as const }}>{f.a}</div>
+          </div>
+        ))}
+      </div>
+
+      <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 20, color: '#1a1f2e', paddingTop: 8 }}>The detail</h2>
 
       {SECTIONS.map(s => (
         <div key={s.title} style={{ marginBottom: 36 }}>
@@ -32,6 +45,49 @@ export default function SecurityPage() {
     </div>
   )
 }
+
+const FAQ = [
+  {
+    q: 'Where is my data stored?',
+    a: `In the EU. Your database (Supabase) and the application (Vercel) both run in Frankfurt, Germany. The only data that ever leaves the EU is the specific text we send to our AI provider (Anthropic) to answer a request — that transfer is covered by Standard Contractual Clauses, and you can switch off storing your AI question text entirely in Settings → Data & Privacy.`,
+  },
+  {
+    q: 'Can other restaurants see my data?',
+    a: `No. Every record is tagged to your organisation and protected by row-level security (RLS) enforced in the database itself — not just in the app. One restaurant's account cannot read another's data, even in the event of an application bug.`,
+  },
+  {
+    q: 'Is my data encrypted?',
+    a: `Yes — in transit (TLS on every connection) and at rest (AES-256). On top of that, the API keys and access tokens for your connected systems (Fortnox, your POS, your scheduling tool) are encrypted again at the application layer before they're stored.`,
+  },
+  {
+    q: 'Are you GDPR-compliant? Do you sign a DPA?',
+    a: `Yes. You remain the controller of your data; we act as your processor and sign a Data Processing Agreement. You can export everything you hold with us as a file, or request deletion, self-service from Settings → Data & Privacy at any time.`,
+  },
+  {
+    q: 'Who are your sub-processors?',
+    a: `Supabase (database, EU), Vercel (hosting, EU), Anthropic (AI), Stripe (billing), and Resend (transactional email). Each is GDPR-covered and runs on SOC 2 Type II / ISO 27001-certified infrastructure. The full list with details is in our Privacy Policy, and we notify customers before adding or replacing any of them.`,
+  },
+  {
+    q: 'Does the AI train on my data?',
+    a: `No. We send only the data needed to answer a given request, and our AI provider does not use it to train models. If you'd rather we didn't even store the text of your questions, there's a one-click toggle for that in Settings → Data & Privacy.`,
+  },
+  {
+    q: 'Are you SOC 2 / ISO 27001 certified?',
+    a: `Not yet as a company — we're a focused team, and a formal information-security management system and external audit are on our roadmap as we scale. What we can point to today is that the platforms we build on — Supabase, Vercel, AWS, Stripe and Anthropic — are themselves SOC 2 Type II / ISO 27001 certified, so your data sits on certified infrastructure.`,
+  },
+  {
+    q: 'What happens to my accounting data?',
+    a: `We read a copy of it to produce insight — we never write back to, or replace, your accounting system. Your originals and your archival obligations under Bokföringslagen stay where they belong, in Fortnox or your bookkeeping system of record.`,
+  },
+  {
+    q: 'Do you back up my data?',
+    a: `Yes — daily backups with point-in-time recovery on the production database, so we can restore to a specific moment if needed.`,
+  },
+  {
+    q: 'What if CommandCenter goes away?',
+    a: `You're never locked in. You can export all of your data as a file at any time, and your source systems (Fortnox, your POS, your scheduling tool) remain your systems of record — CommandCenter is an analysis layer on top of them, not a replacement for them.`,
+  },
+]
 
 const SECTIONS = [
   {

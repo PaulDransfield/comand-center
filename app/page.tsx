@@ -336,6 +336,11 @@ export default function LandingPage() {
           <span style={{ ...logoMark, width: 24, height: 24, fontSize: 13 }}>cc</span>
           <span style={{ fontFamily: F.display, fontSize: 16, fontWeight: 600 }}>CommandCenter</span>
         </Link>
+        <nav style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+          <Link href="/security" style={{ color: C.ink2, textDecoration: 'none' }}>Security &amp; trust</Link>
+          <Link href="/privacy"  style={{ color: C.ink2, textDecoration: 'none' }}>Privacy</Link>
+          <Link href="/terms"    style={{ color: C.ink2, textDecoration: 'none' }}>Terms</Link>
+        </nav>
         <div>© 2026 · comandcenter.se · Stockholm &amp; Örebro · Built by an operator</div>
       </footer>
     </>
