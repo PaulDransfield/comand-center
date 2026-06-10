@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { decrypt }           from '@/lib/integrations/encryption'
 import { withTimeout as sharedWithTimeout } from '@/lib/sync/with-timeout'
 import { getFreshFortnoxAccessToken } from '@/lib/fortnox/api/auth'
+import { birthDateFromPersonnummer, ageFromBirthDate } from '@/lib/scheduling/personnummer'
 
 // Per-endpoint timeout for individual PK API calls. Smaller than the
 // integration-level cap (60 s in master-sync) so one slow endpoint can't
@@ -662,6 +663,9 @@ async function syncCaspeco(db: any, integ: any, _fromDate: string, _toDate: stri
       const latestChange = (current?.changePoints ?? []).slice().sort((a: any, b: any) => {
         return (b.validFrom ?? '').localeCompare(a.validFrom ?? '')
       })[0] ?? null
+      // Derive age fields from the personnummer (M150). Lets us flag under-18
+      // staff for scheduling compliance without re-exposing the PII.
+      const birthDate = birthDateFromPersonnummer(e.personalIdentity)
       return {
         org_id:                  integ.org_id,
         business_id:             integ.business_id,
@@ -671,6 +675,8 @@ async function syncCaspeco(db: any, integ: any, _fromDate: string, _toDate: stri
         first_name:              e.firstName ?? null,
         last_name:               e.lastName  ?? null,
         personal_identity:       e.personalIdentity ?? null,
+        birth_date:              birthDate,
+        is_minor:                birthDate ? ageFromBirthDate(birthDate) < 18 : false,
         email:                   e.email ?? null,
         current_employment_id:   current?.id ?? null,
         current_contract_id:     current?.contractId ?? null,

@@ -6,6 +6,11 @@
 
 ## Applied — 2026-06-10 (scheduling labour compliance)
 
+### M150 — caspeco_employees age fields (under-18 detection) ✅ applied 2026-06-10
+**File:** `sql/M150-CASPECO-EMPLOYEE-MINOR.sql`
+**Purpose:** Chicce runs on **Caspeco, not Personalkollen** — so the PK minor auto-flag never applied to it. Caspeco's roster (`caspeco_employees`, 84 rows) already holds the personnummer in `personal_identity`. Added derived `birth_date` + `is_minor` columns, populated on every Caspeco sync (`lib/sync/engine.ts` via shared parser `lib/scheduling/personnummer.ts`) and **backfilled the existing 84** in-migration. Verified: 84/84 birth dates parsed, **0 minors** (youngest 18, oldest 62).
+**Gap (honest):** the scheduling compliance engine reads `staff_profiles`/`staff_shifts`, which Caspeco does NOT feed (Chicce has 0 shifts, 1 orphan profile — the grid is PK-shaped). So this is the age-data *foundation*; enforcing minor rules in the scheduling grid for Chicce needs a separate Caspeco→grid integration.
+
 ### M149 — per-business labour config + per-staff minor flag ✅ applied 2026-06-10
 **File:** `sql/M149-SCHEDULING-LABOR-CONFIG.sql`
 **Purpose:** Persists the Swedish labour-compliance config. `businesses.scheduling_labor_config JSONB` (which collective agreement binds the business + minor-rule enforcement); `staff_profiles.is_minor boolean` (effective under-18 flag the compliance engine reads); `staff_profiles.birth_date date` (auto-source from PK personnummer / Caspeco `personal_identity` when disclosed). NULL config → DEFAULT_LABOR_CONFIG (Visita–HRF, minors off). Drives `/settings/scheduling`, `/api/settings/labor-rules`, the scheduling AI prompt, and the pre-publish compliance engine. See `docs/SWEDISH-LABOUR-COMPLIANCE.md`.

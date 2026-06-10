@@ -18,6 +18,7 @@
 // Multiple calls during the same window safely upsert.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { birthDateFromPersonnummer, ageFromBirthDate } from './personnummer'
 
 const PK_BASE = 'https://personalkollen.se/api'
 
@@ -336,40 +337,6 @@ async function refreshStaffProfiles(
 
   if (pkStaff.length === 0) return
 
-  // ── TEMP DIAG (pk-staff-keys) — remove after reading ────────────────
-  // Records ONLY the KEY NAMES PK exposes on a staff object (never the
-  // values) so we can confirm whether a birth-date / personnummer field is
-  // available and its exact name. Read via:
-  //   SELECT metadata->'pk_staff_keys_diag' FROM integrations
-  //   WHERE business_id = '…' AND provider = 'personalkollen';
-  try {
-    const sample: any = pkStaff[0] ?? {}
-    const emp: any = Array.isArray(sample.employments) ? (sample.employments[0] ?? {}) : {}
-    const CANDIDATES = ['social_security_number', 'personal_identity_number', 'personal_number', 'personnummer', 'ssn', 'date_of_birth', 'birth_date', 'birthdate', 'born']
-    const present = CANDIDATES.filter(k => (k in sample) || (k in emp))   // names only
-    let derivable = 0
-    for (const s of pkStaff) if (deriveBirthDate(s) != null) derivable++  // count only
-    const diag = {
-      sampled_at:               new Date().toISOString(),
-      staff_count:              pkStaff.length,
-      staff_keys:               Object.keys(sample).sort(),
-      employment_keys:          Object.keys(emp).sort(),
-      candidate_fields_present: present,
-      birth_dates_derivable:    derivable,
-    }
-    const { data: integ } = await db
-      .from('integrations')
-      .select('id, metadata')
-      .eq('business_id', businessId)
-      .eq('provider', 'personalkollen')
-      .maybeSingle()
-    if (integ?.id) {
-      await db.from('integrations')
-        .update({ metadata: { ...((integ as any).metadata ?? {}), pk_staff_keys_diag: diag } })
-        .eq('id', integ.id)
-    }
-  } catch { /* diagnostic is best-effort — never block the sync */ }
-
   // 2. Load the last 12 weeks of shifts for derived stats
   const cutoff = new Date(); cutoff.setUTCDate(cutoff.getUTCDate() - 12 * 7)
   const { data: shifts } = await db
@@ -446,7 +413,7 @@ async function refreshStaffProfiles(
     const existing = flagByUid.get(staffUid)
     const derivedBirth = deriveBirthDate(s)
     const birthDate = derivedBirth ?? existing?.birth_date ?? null
-    const isMinor = birthDate ? (ageFromBirth(birthDate) < 18) : (existing?.is_minor ?? false)
+    const isMinor = birthDate ? (ageFromBirthDate(birthDate) < 18) : (existing?.is_minor ?? false)
     const activeEmp = (s.employments ?? []).find((e: any) =>
       (!e.end || e.end >= today) && (!e.start || e.start <= today),
     ) ?? null
@@ -510,51 +477,17 @@ async function refreshStaffProfiles(
 
 // Best-effort birth-date extraction from a PK staff object. PK may expose a
 // Swedish personnummer or an explicit birth date under one of several field
-// names — probe them all. Returns 'YYYY-MM-DD' or null.
+// names — probe them all and parse via the shared personnummer helper.
 function deriveBirthDate(s: any): string | null {
   const candidates = [
     s?.social_security_number, s?.personal_identity_number, s?.personal_number,
     s?.personnummer, s?.ssn, s?.date_of_birth, s?.birth_date, s?.birthdate, s?.born,
   ]
   for (const raw of candidates) {
-    if (raw == null) continue
-    const str = String(raw).trim()
-    // Explicit ISO date 'YYYY-MM-DD…'
-    const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/)
-    if (iso) {
-      const d = `${iso[1]}-${iso[2]}-${iso[3]}`
-      if (isValidDate(d)) return d
-    }
-    // Swedish personnummer: 12-digit YYYYMMDDXXXX or 10-digit YYMMDDXXXX
-    // (optionally with '-'/'+' before the last 4). Strip non-digits first.
-    const digits = str.replace(/[^\d]/g, '')
-    if (digits.length === 12) {
-      const d = `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`
-      if (isValidDate(d)) return d
-    } else if (digits.length === 10) {
-      const yy = Number(digits.slice(0, 2))
-      const nowYY = new Date().getUTCFullYear() % 100
-      // Two-digit year → 20xx if that wouldn't be in the future, else 19xx.
-      const century = yy <= nowYY ? 2000 : 1900
-      const d = `${century + yy}-${digits.slice(2, 4)}-${digits.slice(4, 6)}`
-      if (isValidDate(d)) return d
-    }
+    const b = birthDateFromPersonnummer(raw)
+    if (b) return b
   }
   return null
-}
-
-function isValidDate(iso: string): boolean {
-  const t = Date.parse(iso + 'T00:00:00Z')
-  return Number.isFinite(t)
-}
-
-function ageFromBirth(birthIso: string): number {
-  const b = new Date(birthIso + 'T00:00:00Z')
-  const now = new Date()
-  let age = now.getUTCFullYear() - b.getUTCFullYear()
-  const m = now.getUTCMonth() - b.getUTCMonth()
-  if (m < 0 || (m === 0 && now.getUTCDate() < b.getUTCDate())) age--
-  return age
 }
 
 function isoWeekFor(d: Date): string {

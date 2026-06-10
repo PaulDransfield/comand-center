@@ -92,9 +92,14 @@ Read defensively from `businesses.scheduling_labor_config` (JSONB) when present,
 - **Wiring** — `/api/scheduling/week` returns `labor_config` + per-staff `is_minor`; the pre-publish review panel (`app/scheduling/page.tsx`) passes both into `runCompliance`, so CHECK 7 (10h/24h) and CHECK 8 (minors) actually fire. `/api/scheduling/ai-recommend` reads `scheduling_labor_config` and renders the matching rules into the prompt.
 - **Auto-flag minors (PK)** — `refreshStaffProfiles` in `lib/scheduling/pk-sync.ts` derives `birth_date` + `is_minor` from the PK staff personnummer/birth field (best-effort, multi-field probe), and **preserves a manual flag** when PK exposes no birth date.
 
+## Auto-flagging minors — by source
+
+- **Personalkollen** — `refreshStaffProfiles` (`lib/scheduling/pk-sync.ts`) derives `birth_date`+`is_minor` onto `staff_profiles` from the PK staff personnummer (best-effort multi-field probe), preserving a manual flag when none is exposed.
+- **Caspeco (M150)** — `birth_date`+`is_minor` derived onto `caspeco_employees` from `personal_identity` on every Caspeco sync (`lib/sync/engine.ts`), via the shared parser `lib/scheduling/personnummer.ts`. **Chicce is a Caspeco shop, not PK** — 84 employees, 0 currently under 18.
+
 ## Follow-ups
 
-1. **Caspeco auto-flag** — `caspeco_employees.personal_identity` carries the personnummer; wire the same derivation when a Caspeco-sourced business populates `staff_profiles` (Chicce is PK-based, so already covered).
+1. **Caspeco → scheduling grid** — the compliance engine reads `staff_profiles`/`staff_shifts`, which Caspeco does not feed (Chicce has 0 shifts). The M150 age data is the foundation; enforcing minor rules on Chicce's roster needs a Caspeco→grid integration (bridge `caspeco_employees` + Caspeco schedule into `staff_profiles`/`staff_shifts`, carrying `is_minor` through).
 2. **UI polish** — surface CHECK 7/8 violations distinctly in the review panel and show per-shift OB share on grid cells (engine + `obBreakdownForShift()` ready).
 3. **Veckovila** — CHECK 2 uses a consecutive-days proxy; a true rolling 36h-continuous-rest check is a refinement.
 4. **OB exactness** — if precise savings ever matter, switch OB from relative to the tariff kr/h (owner-confirmed), keeping the same band logic.
