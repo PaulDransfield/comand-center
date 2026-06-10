@@ -91,9 +91,9 @@ Rare but possible. Each shift carries a provider-prefixed id (`pk_…` / `caspec
 | **1 — Roster → grid** ✅ SHIPPED (M151) | Caspeco `Employees` → `staff_profiles` (+`is_minor`); `businesses.scheduling_source`; `lib/scheduling/caspeco-sync.ts` wired into the sync. Chicce: 76 active staff now in the canonical grid. | none | done |
 | **2 — Schedule → grid** | Caspeco schedule endpoint → `staff_shifts`; cost + breaks; idempotent upsert by `caspeco-<shift_id>`. Lights up grid + AI + compliance for Caspeco. | **Phase 0 (blocked)** | ~1–2 days |
 | **3 — Source-aware skin** ✅ SHIPPED | `lib/scheduling/presets.ts` (PK + Caspeco + generic). Grid reads `scheduling_source`: source badge, view-toggle labels (PK "By shift" / Caspeco "By station"), source-aware default view (Caspeco → staff view), source-aware sync button (Caspeco → resync). | Phase 1 | done |
-| **4 — Polish/"easier"** | Readability pass on both skins; surface CHECK 7/8 + OB-share per cell (engine already computes). | Phase 3 | ~1 day |
+| **4 — Polish/"easier"** ✅ SHIPPED | Per-shift **OB chip** (inconvenient-hours share, night-emphasised) on grid cells via `obBreakdownForShift`; grid-level **compliance badge** in the header (hard/warn counts → opens the pre-publish review). Source-agnostic, shows for any business with shifts. | Phase 3 | done |
 
-Phases 1 + 3 are **done** — a Caspeco customer's grid now shows their real staff with a Caspeco-shaped skin. Phase 2 (actual shifts) is the value unlock and is gated on Phase 0 (Caspeco schedule-endpoint permission).
+Phases 1, 3, 4 are **done** — a Caspeco customer's grid shows their real staff with a Caspeco-shaped skin, and any business with shifts gets per-cell OB cues + an at-a-glance compliance badge. Phase 2 (actual shifts) is the value unlock and is gated on Phase 0 (Caspeco schedule-endpoint permission) — until it lands, the Phase 4 cues simply have no shifts to render on for Caspeco.
 
 ## 10. Already done (foundation)
 

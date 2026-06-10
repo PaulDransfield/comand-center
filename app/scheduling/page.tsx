@@ -26,6 +26,7 @@ import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 import { runCompliance, hasHardFailures, type ComplianceCheck } from '@/lib/scheduling/compliance'
 import { getSchedulingPreset } from '@/lib/scheduling/presets'
+import { obBreakdownForShift } from '@/lib/scheduling/labor-rules-sweden'
 
 interface DayHeader {
   date: string
@@ -184,6 +185,31 @@ export default function SchedulingGridPage() {
     if (preset.defaultView !== view) setView(preset.defaultView)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [(data?.business as any)?.id])
+
+  // Grid-level compliance status (Phase 4) — same engine the pre-publish
+  // ReviewPanel runs, lifted here so the header can show an at-a-glance badge
+  // before the owner opens the panel. Pure + memoised; the panel recomputes
+  // its own copy (cheap) so we don't have to thread it down.
+  const gridChecks = useMemo<ComplianceCheck[]>(() => {
+    if (!data) return []
+    return runCompliance({
+      shifts: data.shifts.map((s: any) => ({
+        id: s.id, staff_uid: s.staff_uid, staff_name: s.staff_name,
+        shift_date: s.shift_date, start_at: s.start_at, end_at: s.end_at,
+        breaks_seconds: s.breaks_seconds ?? 0, shift_kind: s.shift_kind,
+        start_time_local: s.start_time_local ?? null, end_time_local: s.end_time_local ?? null,
+      })),
+      staff: data.profiles.map((p: any) => ({
+        staff_uid: p.staff_uid, display_name: p.display_name,
+        service_grade_pct: p.service_grade_pct, hourly_rate_sek: p.hourly_rate_sek,
+        is_minor: p.is_minor === true,
+      })),
+      business_rules: {},
+      labor_config: (data as any).labor_config,
+    })
+  }, [data])
+  const gridHardCount = gridChecks.filter(c => c.severity === 'HARD').length
+  const gridWarnCount = gridChecks.filter(c => c.severity === 'WARN').length
 
   const load = useCallback(async () => {
     if (!bizId) return
@@ -407,6 +433,22 @@ export default function SchedulingGridPage() {
             <button onClick={syncFromPK} disabled={syncing} style={navBtn()}>
               {syncing ? 'Syncing…' : (preset.sourceLabel ? `Sync from ${preset.sourceLabel}` : 'Sync now')}
             </button>
+            {/* Compliance status badge (Phase 4) — at-a-glance before publish. */}
+            {(gridHardCount > 0 || gridWarnCount > 0) && (
+              <button
+                onClick={() => setReviewOpen(true)}
+                title="Open the pre-publish review to see the labour-rule findings"
+                style={{
+                  ...navBtn(),
+                  border: `0.5px solid ${gridHardCount > 0 ? UXP.rose : UXP.coral}`,
+                  color:   gridHardCount > 0 ? UXP.roseText : UXP.coral,
+                  fontWeight: 600,
+                }}>
+                {gridHardCount > 0
+                  ? `${gridHardCount} block${gridHardCount === 1 ? '' : 's'}${gridWarnCount > 0 ? ` · ${gridWarnCount} warn` : ''}`
+                  : `${gridWarnCount} warning${gridWarnCount === 1 ? '' : 's'}`}
+              </button>
+            )}
           </div>
         </div>
 
@@ -828,6 +870,15 @@ function ShiftBlock({ shift, colour, showStaff, showTemplate, pendingSuggestion,
   const origEnd   = (shift.end_time_local   ?? '').slice(0, 5)
   const diff      = hasSugg ? extractDiff(pendingSuggestion!, origStart, origEnd) : null
 
+  // OB share (Phase 4) — surface how much of this shift falls in the
+  // inconvenient-hours bands so the owner sees the costly hours at a glance.
+  // Holiday-unaware (weekends are detected by weekday); a public holiday on a
+  // weekday is slightly under-counted — fine for a visual cue, not a payroll
+  // figure. See lib/scheduling/labor-rules-sweden.ts.
+  const ob = (shift.shift_kind === 'regular' && origStart && origEnd)
+    ? obBreakdownForShift(shift.shift_date, origStart, origEnd)
+    : null
+
   async function act(action: 'approved' | 'rejected', e: React.MouseEvent) {
     e.stopPropagation()
     if (!pendingSuggestion || !onSuggestionAction || busy) return
@@ -885,6 +936,22 @@ function ShiftBlock({ shift, colour, showStaff, showTemplate, pendingSuggestion,
         <div style={{ fontSize: 9, color: UXP.ink3, fontVariantNumeric: 'tabular-nums' as const }}>
           {origStart}–{origEnd}
           {isAi && <span style={{ color: '#a96a3c', marginLeft: 4, fontWeight: 500 }}>AI</span>}
+        </div>
+      )}
+
+      {/* OB chip — inconvenient-hours share (Phase 4) */}
+      {ob && ob.ob_hours > 0 && (
+        <div style={{ marginTop: 2 }}>
+          <span
+            title={`${ob.ob_hours}h on OB (inconvenient hours)${ob.night_hours > 0 ? ` incl. ${ob.night_hours}h night 01–06` : ''} — these hours carry a premium, so they're the most cost-effective to trim.`}
+            style={{
+              display: 'inline-block', fontSize: 8, fontWeight: 600, letterSpacing: '0.02em',
+              padding: '1px 5px', borderRadius: 3,
+              background: ob.night_hours > 0 ? '#3a2f50' : '#fef3e0',
+              color:      ob.night_hours > 0 ? '#fff'     : UXP.coral,
+            }}>
+            OB {Math.round(ob.ob_hours * 10) / 10}h{ob.night_hours > 0 ? ' · natt' : ''}
+          </span>
         </div>
       )}
 
