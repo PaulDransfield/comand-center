@@ -11,12 +11,14 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { LanguageSelector } from '@/components/LanguageSelector'
 import { UXP } from '@/lib/constants/tokens'
+import ContactSupport from '@/components/ContactSupport'
 
 export default function UserMenu() {
   const ref = useRef<HTMLDivElement | null>(null)
   const router = useRouter()
   const [email,  setEmail]  = useState<string>('')
   const [open,   setOpen]   = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
 
   useEffect(() => {
     const db = createClient()
@@ -120,6 +122,11 @@ export default function UserMenu() {
             onClick={() => { setOpen(false); router.push('/settings') }}
           />
           <MenuItem
+            label="Help & support"
+            icon="?"
+            onClick={() => { setOpen(false); setHelpOpen(true) }}
+          />
+          <MenuItem
             label="Subscription"
             onClick={() => { setOpen(false); router.push('/upgrade') }}
           />
@@ -127,17 +134,23 @@ export default function UserMenu() {
           <MenuItem label="Sign out" onClick={signOut} tone="rose" />
         </div>
       )}
+
+      {/* Contact-support modal, controlled by the Help menu item. Rendered
+          outside the dropdown so it survives the menu closing. */}
+      <ContactSupport open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   )
 }
 
-function MenuItem({ label, onClick, tone }: { label: string; onClick: () => void; tone?: 'rose' }) {
+function MenuItem({ label, onClick, tone, icon }: { label: string; onClick: () => void; tone?: 'rose'; icon?: string }) {
   return (
     <button
       type="button"
       onClick={onClick}
       style={{
-        display:      'block',
+        display:      'flex',
+        alignItems:   'center',
+        gap:          8,
         width:        '100%',
         textAlign:    'left' as const,
         padding:      '7px 9px',
@@ -150,6 +163,13 @@ function MenuItem({ label, onClick, tone }: { label: string; onClick: () => void
         fontFamily:   'inherit',
       }}
     >
+      {icon && (
+        <span aria-hidden style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: 15, height: 15, borderRadius: '50%', flexShrink: 0,
+          border: `1px solid ${UXP.border}`, color: UXP.ink3, fontSize: 9, fontWeight: 700,
+        }}>{icon}</span>
+      )}
       {label}
     </button>
   )

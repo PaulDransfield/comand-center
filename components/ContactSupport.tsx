@@ -25,12 +25,21 @@ export default function ContactSupport({
   defaultCategory = 'support',
   label = 'Contact support',
   style,
+  open,
+  onClose,
 }: {
   defaultCategory?: Category
   label?: string
   style?: React.CSSProperties
+  /** Controlled mode: when `open` is provided the component renders NO trigger
+   *  button and is driven by the parent (e.g. a menu item). Omit for the
+   *  self-contained button + modal. */
+  open?: boolean
+  onClose?: () => void
 }) {
-  const [open, setOpen]       = useState(false)
+  const isControlled = open !== undefined
+  const [internalOpen, setInternalOpen] = useState(false)
+  const isOpen = isControlled ? !!open : internalOpen
   const [category, setCategory] = useState<Category>(defaultCategory)
   const [subject, setSubject] = useState('')
   const [message, setMessage] = useState('')
@@ -38,16 +47,23 @@ export default function ContactSupport({
   const [done, setDone]       = useState(false)
   const [error, setError]     = useState<string | null>(null)
 
+  function close() { if (isControlled) onClose?.(); else setInternalOpen(false) }
+
   useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setOpen(false) }
-    if (open) document.addEventListener('keydown', onKey)
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') close() }
+    if (isOpen) document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [open])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen])
 
   function reset() {
     setCategory(defaultCategory); setSubject(''); setMessage('')
     setBusy(false); setDone(false); setError(null)
   }
+
+  // Reset the form whenever it (re)opens — covers controlled opens from a menu.
+  useEffect(() => { if (isOpen) reset() // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen])
 
   async function submit() {
     if (!message.trim() || busy) return
@@ -76,18 +92,20 @@ export default function ContactSupport({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => { reset(); setOpen(true) }}
-        style={style ?? {
-          padding: '9px 16px', background: UXP.lavDeep, color: '#fff', border: 'none',
-          borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-        }}>
-        {label}
-      </button>
+      {!isControlled && (
+        <button
+          type="button"
+          onClick={() => setInternalOpen(true)}
+          style={style ?? {
+            padding: '9px 16px', background: UXP.lavDeep, color: '#fff', border: 'none',
+            borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+          }}>
+          {label}
+        </button>
+      )}
 
-      {open && (
-        <div onClick={() => setOpen(false)} style={{
+      {isOpen && (
+        <div onClick={close} style={{
           position: 'fixed', inset: 0, background: 'rgba(20,18,40,0.5)', zIndex: 200,
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
         }}>
@@ -102,7 +120,7 @@ export default function ContactSupport({
                 <div style={{ fontSize: 13, color: UXP.ink3, lineHeight: 1.6, marginBottom: 18 }}>
                   Thanks — we've got it and sent a confirmation to your email. We'll reply there.
                 </div>
-                <button onClick={() => setOpen(false)} style={{ padding: '9px 18px', background: UXP.ink1, color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Close</button>
+                <button onClick={close} style={{ padding: '9px 18px', background: UXP.ink1, color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Close</button>
               </div>
             ) : (
               <>
@@ -141,7 +159,7 @@ export default function ContactSupport({
                 )}
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-                  <button type="button" onClick={() => setOpen(false)} disabled={busy}
+                  <button type="button" onClick={close} disabled={busy}
                     style={{ padding: '9px 16px', background: 'transparent', color: UXP.ink2, border: `0.5px solid ${UXP.border}`, borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
                   <button type="button" onClick={submit} disabled={busy || !message.trim()}
                     style={{ padding: '9px 18px', background: UXP.lavDeep, color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: busy || !message.trim() ? 'not-allowed' : 'pointer', opacity: busy || !message.trim() ? 0.5 : 1, fontFamily: 'inherit' }}>
