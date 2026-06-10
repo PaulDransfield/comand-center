@@ -42,6 +42,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .order('position')
   const lines = linesRaw ?? []
 
+  // Accountability (M153) — resolve who completed each line to a display name.
+  // checked_by is a user id; map to full_name / email via public.users.
+  const checkerIds = Array.from(new Set(lines.map((l: any) => l.checked_by).filter(Boolean))) as string[]
+  const checkerById = new Map<string, string>()
+  if (checkerIds.length > 0) {
+    const { data: us } = await db.from('users').select('id, full_name, email').in('id', checkerIds)
+    for (const u of us ?? []) checkerById.set((u as any).id, (u as any).full_name || (u as any).email || 'Unknown')
+  }
+
   // Enrichment pass — attach live `meta` to each line so the kitchen
   // can see HOW to prep, not just how much:
   //
@@ -149,6 +158,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const enrichedLines = lines.map(l => ({
     ...l,
+    checked_by_name: (l as any).checked_by ? (checkerById.get((l as any).checked_by) ?? null) : null,
     meta: l.kind === 'component'
       ? {
           method:      methodById.get(l.entity_id)   ?? null,

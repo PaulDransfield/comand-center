@@ -18,7 +18,7 @@ interface Member {
   user_id:           string
   email:             string | null
   full_name:         string | null
-  role:              'owner' | 'manager' | 'revisor' | 'viewer'
+  role:              'owner' | 'manager' | 'revisor' | 'viewer' | 'staff'
   business_ids:      string[] | null
   business_names:    string[] | null
   can_view_finances: boolean
@@ -36,7 +36,7 @@ export default function TeamPage() {
   const [loading,     setLoading]     = useState(true)
   const [error,       setError]       = useState('')
   const [showInvite,  setShowInvite]  = useState(false)
-  const [inviteRole,  setInviteRole]  = useState<'manager' | 'revisor'>('revisor')
+  const [inviteRole,  setInviteRole]  = useState<'manager' | 'revisor' | 'staff'>('revisor')
 
   async function loadAll() {
     setLoading(true)
@@ -85,11 +85,18 @@ export default function TeamPage() {
               Team & access
             </h1>
             <p style={{ fontSize: 13, color: UXP.ink3, marginTop: 4, lineHeight: 1.5 }}>
-              Invite managers (operations access) or your revisor (read-only month-end view).
-              Each invite sends a branded email; the recipient sets their own password.
+              Invite managers (full operations + financials), staff (prep + recipes, no money),
+              or your revisor (read-only month-end). Each invite sends a branded email; the
+              recipient sets their own password.
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
+            <button
+              onClick={() => { setInviteRole('staff'); setShowInvite(true) }}
+              style={btnStyle('secondary')}
+            >
+              + Invite staff
+            </button>
             <button
               onClick={() => { setInviteRole('manager'); setShowInvite(true) }}
               style={btnStyle('secondary')}
@@ -191,13 +198,13 @@ function MembersTable({ members, onRemove }: { members: Member[]; onRemove: (id:
 function InviteModal({
   initialRole, businesses, onClose, onInvited,
 }: {
-  initialRole: 'manager' | 'revisor'
+  initialRole: 'manager' | 'revisor' | 'staff'
   businesses:  BusinessLite[]
   onClose:     () => void
   onInvited:   () => void
 }) {
   const [email,    setEmail]    = useState('')
-  const [role,     setRole]     = useState<'manager' | 'revisor'>(initialRole)
+  const [role,     setRole]     = useState<'manager' | 'revisor' | 'staff'>(initialRole)
   const [scopeIds, setScopeIds] = useState<string[]>([])
   const [scopeAll, setScopeAll] = useState<boolean>(false)
   const [saving,   setSaving]   = useState(false)
@@ -214,8 +221,8 @@ function InviteModal({
       setError('Valid email required.')
       return
     }
-    if (role === 'revisor' && scopeIds.length === 0) {
-      setError('Revisor invites must be scoped to at least one business.')
+    if ((role === 'revisor' || role === 'staff') && scopeIds.length === 0) {
+      setError(`${role === 'staff' ? 'Staff' : 'Revisor'} invites must be scoped to at least one location.`)
       return
     }
     setSaving(true)
@@ -281,8 +288,9 @@ function InviteModal({
 
         <Field label="Role">
           <select value={role} onChange={e => setRole(e.target.value as any)} style={inputStyle}>
+            <option value="staff">Staff — prep list + recipes (no money)</option>
+            <option value="manager">Manager — full operations + financials</option>
             <option value="revisor">Revisor — read-only month-end view</option>
-            <option value="manager">Manager — operations access (no finance/settings)</option>
           </select>
         </Field>
 
@@ -314,8 +322,8 @@ function InviteModal({
           </Field>
         )}
 
-        {role === 'revisor' && (
-          <Field label="Which businesses can they see?">
+        {(role === 'revisor' || role === 'staff') && (
+          <Field label={role === 'staff' ? 'Which location do they work at?' : 'Which businesses can they see?'}>
             <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 8 }}>
               {businesses.map(b => (
                 <label key={b.id} style={chipStyle(scopeIds.includes(b.id))}>
@@ -330,7 +338,9 @@ function InviteModal({
               ))}
             </div>
             <div style={{ fontSize: 11, color: UXP.ink4, marginTop: 6 }}>
-              Revisor invites require at least one business in scope.
+              {role === 'staff'
+                ? 'Staff are scoped to their location(s) and only see the prep list, recipes (no cost) and stock counts there.'
+                : 'Revisor invites require at least one business in scope.'}
             </div>
           </Field>
         )}
@@ -365,6 +375,7 @@ function RolePill({ role }: { role: string }) {
     owner:   { bg: UXP.lavFill, color: UXP.lavText },
     manager: { bg: UXP.lavFill, color: UXP.coral },
     revisor: { bg: UXP.lavFill, color: UXP.lavDeep },
+    staff:   { bg: UXP.greenFill, color: UXP.greenDeep },
     viewer:  { bg: UXP.subtleBg, color: UXP.ink2 },
   }
   const t = TONE[role] ?? TONE.viewer

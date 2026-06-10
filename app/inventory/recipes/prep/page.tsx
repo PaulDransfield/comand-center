@@ -119,6 +119,7 @@ interface PrepSessionLine {
   uncertain_reason:  string | null
   source_recipe_ids: string[]
   checked_at:        string | null
+  checked_by_name?:  string | null   // who completed it (M153 accountability)
   position:          number
   // Server enrichment. Loaded live by the GET endpoint so owner edits
   // flow through immediately (text is read-side, not frozen).
@@ -1020,6 +1021,12 @@ function PrepListPageInner() {
                           }}>
                             {line.name_snapshot}
                           </div>
+                          {checked && (
+                            <div style={{ fontSize: 10, color: UXP.greenDeep, marginTop: 2 }}>
+                              Done{line.checked_by_name ? ` by ${line.checked_by_name}` : ''}
+                              {line.checked_at ? ` · ${new Date(line.checked_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` : ''}
+                            </div>
+                          )}
                           {line.uncertain && (
                             <div style={{ fontSize: 10, color: UXP.coral, marginTop: 2 }} title={line.uncertain_reason ?? ''}>
                               {line.uncertain_reason ?? 'Set yield to roll up'}
