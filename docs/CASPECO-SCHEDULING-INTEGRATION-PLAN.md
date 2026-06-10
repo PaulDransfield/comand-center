@@ -88,12 +88,12 @@ Rare but possible. Each shift carries a provider-prefixed id (`pk_…` / `caspec
 | Phase | Scope | Depends on | Rough effort |
 |---|---|---|---|
 | **0 — Discovery** | Probe Caspeco for a schedule/shifts endpoint + permission name; confirm shift shape (times, breaks, station, employee). Use `scripts/diag-caspeco-probe.mjs`. Get the customer to grant the permission. | Caspeco partner/customer approval | days (external) |
-| **1 — Roster → grid** | Caspeco `Employees`+`Stations` → `staff_profiles` (+`is_minor` from M150) + `staff_shift_templates`. Add `businesses.scheduling_source`. | none (buildable now) | ~1 day |
-| **2 — Schedule → grid** | Caspeco schedule endpoint → `staff_shifts`; cost + breaks; idempotent upsert by `caspeco-<shift_id>`. Lights up grid + AI + compliance for Caspeco. | Phase 0 | ~1–2 days |
-| **3 — Source-aware skin** | `lib/scheduling/presets.ts`; PK preset (current, polished) + Caspeco preset; wire grid to read it. | Phase 1 | ~1–2 days |
+| **1 — Roster → grid** ✅ SHIPPED (M151) | Caspeco `Employees` → `staff_profiles` (+`is_minor`); `businesses.scheduling_source`; `lib/scheduling/caspeco-sync.ts` wired into the sync. Chicce: 76 active staff now in the canonical grid. | none | done |
+| **2 — Schedule → grid** | Caspeco schedule endpoint → `staff_shifts`; cost + breaks; idempotent upsert by `caspeco-<shift_id>`. Lights up grid + AI + compliance for Caspeco. | **Phase 0 (blocked)** | ~1–2 days |
+| **3 — Source-aware skin** ✅ SHIPPED | `lib/scheduling/presets.ts` (PK + Caspeco + generic). Grid reads `scheduling_source`: source badge, view-toggle labels (PK "By shift" / Caspeco "By station"), source-aware default view (Caspeco → staff view), source-aware sync button (Caspeco → resync). | Phase 1 | done |
 | **4 — Polish/"easier"** | Readability pass on both skins; surface CHECK 7/8 + OB-share per cell (engine already computes). | Phase 3 | ~1 day |
 
-Phase 1 + 3 are buildable today (no Caspeco-permission dependency) and already make a Caspeco customer's grid show their real staff with the right skin. Phase 2 (actual shifts) is the value unlock and is gated on Phase 0.
+Phases 1 + 3 are **done** — a Caspeco customer's grid now shows their real staff with a Caspeco-shaped skin. Phase 2 (actual shifts) is the value unlock and is gated on Phase 0 (Caspeco schedule-endpoint permission).
 
 ## 10. Already done (foundation)
 

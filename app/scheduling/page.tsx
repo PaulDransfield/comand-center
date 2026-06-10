@@ -18,13 +18,14 @@
 
 export const dynamic = 'force-dynamic'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AppShell from '@/components/AppShell'
 import { PageContainer } from '@/components/ui/Layout'
 import { useViewport } from '@/lib/hooks/useViewport'
 import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 import { runCompliance, hasHardFailures, type ComplianceCheck } from '@/lib/scheduling/compliance'
+import { getSchedulingPreset } from '@/lib/scheduling/presets'
 
 interface DayHeader {
   date: string
@@ -132,6 +133,9 @@ export default function SchedulingGridPage() {
   const [bizId,        setBizId]        = useState<string | null>(null)
   const [weekIso,      setWeekIso]      = useState<string>(() => isoWeekToday())
   const [view,         setView]         = useState<ViewMode>('shift')
+  // True once the owner has explicitly picked a view (URL/localStorage or a
+  // click), so the source-aware default never overrides their choice.
+  const viewChosenRef = useRef(false)
   const [data,         setData]         = useState<WeekPayload | null>(null)
   const [loading,      setLoading]      = useState(true)
   const [error,        setError]        = useState<string | null>(null)
@@ -150,7 +154,7 @@ export default function SchedulingGridPage() {
     const s = localStorage.getItem('cc_selected_biz')
     if (s) setBizId(s)
     const v = localStorage.getItem('cc_scheduling_view') as ViewMode | null
-    if (v === 'shift' || v === 'staff') setView(v)
+    if (v === 'shift' || v === 'staff') { setView(v); viewChosenRef.current = true }
     // React to business changes from the toolbar BizPicker — it dispatches
     // a synthetic 'storage' event after writing cc_selected_biz.
     function onStorage() {
@@ -163,8 +167,23 @@ export default function SchedulingGridPage() {
 
   const setViewPersist = (v: ViewMode) => {
     setView(v)
+    viewChosenRef.current = true
     try { localStorage.setItem('cc_scheduling_view', v) } catch {}
   }
+
+  // Source-aware presentation preset (Phase 3). PK customers get a PK-shaped
+  // grid, Caspeco customers a Caspeco-shaped one — same component, different
+  // labels + default view.
+  const preset = getSchedulingPreset((data?.business as any)?.scheduling_source)
+
+  // Apply the source's default view ONCE per business load, unless the owner
+  // has explicitly chosen a view. For Caspeco this lands on the staff view —
+  // which is also the only populated one until Phase 2 brings in shifts.
+  useEffect(() => {
+    if (!data || viewChosenRef.current) return
+    if (preset.defaultView !== view) setView(preset.defaultView)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [(data?.business as any)?.id])
 
   const load = useCallback(async () => {
     if (!bizId) return
@@ -266,7 +285,12 @@ export default function SchedulingGridPage() {
     if (!bizId || syncing) return
     setSyncing(true)
     try {
-      const r = await fetch('/api/scheduling/sync-now', {
+      // PK has a dedicated scheduling sync. Caspeco (and other sources) refresh
+      // via the generic resync, which runs every connected integration —
+      // including the Caspeco roster → staff_profiles mirror. PK/legacy keep
+      // the exact current path so their behaviour is unchanged.
+      const endpoint = preset.source === 'caspeco' ? '/api/resync' : '/api/scheduling/sync-now'
+      const r = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ business_id: bizId }),
@@ -353,9 +377,20 @@ export default function SchedulingGridPage() {
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: UXP.ink1 }}>Scheduling</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const }}>
+              <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: UXP.ink1 }}>Scheduling</h1>
+              {preset.sourceLabel && (
+                <span style={{
+                  fontSize: 10, fontWeight: 600, letterSpacing: '0.03em',
+                  padding: '2px 8px', borderRadius: 999,
+                  background: UXP.lavFill, color: UXP.lavText, textTransform: 'uppercase' as const,
+                }} title={`Roster synced from ${preset.sourceLabel}`}>
+                  {preset.sourceLabel}
+                </span>
+              )}
+            </div>
             <p style={{ margin: '4px 0 0', fontSize: 12, color: UXP.ink3 }}>
-              Live roster from Personalkollen. Week {weekIso}.
+              {preset.sourceLabel ? `Live roster from ${preset.sourceLabel}.` : 'Live roster.'} Week {weekIso}.
               {data && ` ${data.week.staff_scheduled} staff · ${data.week.total_shifts} shifts.`}
             </p>
           </div>
@@ -366,11 +401,11 @@ export default function SchedulingGridPage() {
             <button onClick={() => shiftWeek(+1)} style={navBtn()}>Next &gt;</button>
             <span style={{ width: 14 }} />
             <div style={{ display: 'flex', background: UXP.subtleBg, border: `0.5px solid ${UXP.border}`, borderRadius: 6, padding: 2 }}>
-              <button onClick={() => setViewPersist('shift')} style={viewToggleBtn(view === 'shift')}>By shift</button>
-              <button onClick={() => setViewPersist('staff')} style={viewToggleBtn(view === 'staff')}>By staff</button>
+              <button onClick={() => setViewPersist('shift')} style={viewToggleBtn(view === 'shift')}>{preset.shiftViewLabel}</button>
+              <button onClick={() => setViewPersist('staff')} style={viewToggleBtn(view === 'staff')}>{preset.staffViewLabel}</button>
             </div>
             <button onClick={syncFromPK} disabled={syncing} style={navBtn()}>
-              {syncing ? 'Syncing…' : 'Sync from PK'}
+              {syncing ? 'Syncing…' : (preset.sourceLabel ? `Sync from ${preset.sourceLabel}` : 'Sync now')}
             </button>
           </div>
         </div>
