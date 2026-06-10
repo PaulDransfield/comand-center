@@ -4,7 +4,13 @@
 
 ---
 
-## Applied — 2026-06-10 (forecast views security hardening)
+## Applied — 2026-06-10 (views security hardening — SECURITY INVOKER sweep)
+
+### M144 — remaining public views: SECURITY INVOKER (advisor sweep) ✅ applied 2026-06-10
+**File:** `sql/M144-VIEWS-SECURITY-INVOKER-SWEEP.sql`
+**Purpose:** Clears the advisor's "SECURITY DEFINER view" finding on `invoices_with_status`, then sweeps every remaining public view so the whole class is closed.
+**Views:** `invoices_with_status` (computed status/overdue over `invoices`; its `CREATE VIEW` exists only in the DB, so this ALTER is the option's source of truth), `v_forecast_mape_by_surface` (M065 base MAPE view).
+**Safe:** readers use service_role (bypasses RLS). M065 source updated to bake in `WITH (security_invoker = on)`. **Verified live: 0 public views left without `security_invoker=on`.**
 
 ### M143 — forecast metric views: SECURITY INVOKER ✅ applied 2026-06-10
 **File:** `sql/M143-FORECAST-VIEWS-SECURITY-INVOKER.sql`

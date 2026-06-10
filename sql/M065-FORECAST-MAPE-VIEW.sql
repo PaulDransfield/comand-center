@@ -14,7 +14,8 @@
 --
 -- Idempotent — CREATE OR REPLACE.
 
-CREATE OR REPLACE VIEW public.v_forecast_mape_by_surface AS
+CREATE OR REPLACE VIEW public.v_forecast_mape_by_surface
+  WITH (security_invoker = on) AS
 SELECT
   business_id,
   surface,
