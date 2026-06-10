@@ -23,7 +23,7 @@ import { sendInviteEmail }            from '@/lib/email/sendInviteEmail'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const VALID_INVITE_ROLES = new Set(['manager', 'revisor'])
+const VALID_INVITE_ROLES = new Set(['manager', 'revisor', 'staff'])
 
 export async function GET(req: NextRequest) {
   noStore()
@@ -124,10 +124,11 @@ export async function POST(req: NextRequest) {
       }, { status: 400 })
     }
   } catch { /* best-effort guard; if lookup fails we proceed */ }
-  // Revisor MUST be scoped — the permissions module rejects unscoped revisors anyway.
-  if (role === 'revisor' && (!businessIds || businessIds.length === 0)) {
+  // Revisor + staff MUST be scoped — the permissions module rejects unscoped
+  // ones anyway (a staff/revisor login that sees every location is a leak).
+  if ((role === 'revisor' || role === 'staff') && (!businessIds || businessIds.length === 0)) {
     return NextResponse.json({
-      error: 'Revisor invites require at least one business in scope.',
+      error: `${role === 'staff' ? 'Staff' : 'Revisor'} invites require at least one business in scope.`,
     }, { status: 400 })
   }
 
@@ -218,7 +219,9 @@ export async function POST(req: NextRequest) {
     user_id:           userId,
     role,
     business_ids:      businessIds && businessIds.length > 0 ? businessIds : null,
-    can_view_finances: role === 'revisor' ? true : canViewFinances,
+    // Managers + revisors see financials (managers run service on the numbers);
+    // staff never do, regardless of the flag.
+    can_view_finances: role === 'staff' ? false : (role === 'manager' || role === 'revisor' ? true : canViewFinances),
     accepted_at:       new Date().toISOString(),
     invited_at:        new Date().toISOString(),
     invited_by:        auth.userId,
@@ -227,7 +230,9 @@ export async function POST(req: NextRequest) {
 
   // ── Send the branded invite email ─────────────────────────────────
   const appOrigin = process.env.NEXT_PUBLIC_APP_URL || 'https://comandcenter.se'
-  const redirectNext = role === 'revisor' ? '/revisor' : '/dashboard'
+  const redirectNext = role === 'revisor' ? '/revisor'
+                     : role === 'staff'   ? '/inventory/recipes/prep'
+                     : '/dashboard'
 
   // Get the inviter's name + org name for the greeting copy
   let inviterName: string | null = null

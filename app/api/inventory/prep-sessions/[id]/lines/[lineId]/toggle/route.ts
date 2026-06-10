@@ -69,5 +69,19 @@ export async function POST(
     .single()
   if (uErr) return NextResponse.json({ error: uErr.message }, { status: 500 })
 
+  // Append-only audit (M153) — record WHO did WHAT WHEN so the accountability
+  // survives even when a line is later un-checked. Best-effort: never fail the
+  // toggle on a logging hiccup.
+  try {
+    await db.from('prep_session_line_events').insert({
+      org_id:      (auth as any).orgId ?? null,
+      business_id: parent.business_id,
+      session_id:  params.id,
+      line_id:     line.id,
+      action:      targetChecked ? 'checked' : 'unchecked',
+      user_id:     (auth as any).userId ?? null,
+    })
+  } catch { /* non-fatal */ }
+
   return NextResponse.json({ line: updated }, { headers: { 'Cache-Control': 'no-store' } })
 }

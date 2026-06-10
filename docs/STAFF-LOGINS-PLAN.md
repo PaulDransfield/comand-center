@@ -1,0 +1,40 @@
+# Staff & manager logins — plan
+
+> Owner decisions locked 2026-06-10. Built incrementally; this tracks what's done vs next.
+
+## Roles (final)
+
+- **Owner** — everything (financials, billing, settings, user management). Unchanged.
+- **Manager** — full operations **and full financials** (revenue + P&L + forecast + budget + overheads). Order lists, scheduling, inventory, recipes-with-cost. NOT: billing, settings, user management, AI assistant, group, admin. (The "chef" tier folds into manager.)
+- **Staff** — kitchen/line. Prep list (view + complete, logged per person), recipes as **operational view (method + quantities, no money)**, stock counts (values shown — owner's call), waste. Nothing financial, no other-staff PII, one location only. **Real email login** so every prep completion is attributable.
+- **Revisor** — existing, read-only month-end. Unchanged.
+
+### Locked micro-decisions
+- **Invites: owner only.** User management stays owner-only; owner assigns role + location.
+- **Stock counts for staff: values shown** (no blind-count mode).
+- **Prep accountability: full append-only history** (every check/uncheck, who + when, kept permanently).
+
+## What already existed (foundation)
+- Real RBAC: `lib/auth/permissions.ts` (`canAccessPath`, fail-closed allow-lists), `requireFinanceAccess`/`requireOwnerRole`/`requireBusinessAccess`, `organisation_members.role` + `business_ids` + `can_view_finances`.
+- Prep completions already store `checked_by` + `checked_at` on `prep_session_lines`.
+- Invite flow `/api/settings/team` (owner-only) + `sendInviteEmail`.
+
+## Phase 1 — access model + audit infra ✅ SHIPPED (2026-06-10)
+- `permissions.ts`: added **`staff`** role — tight allow-list (recipes/prep, counts, waste; everything else denied), and `canAccessBusiness` requires explicit scope (like revisor).
+- `/api/settings/team`: `staff` is now invitable; **managers default to `can_view_finances = true`**; staff forced `false`; staff/revisor invites must be scoped; staff land on `/inventory/recipes/prep`.
+- **M153** `prep_session_line_events` (append-only) + the toggle endpoint now records every check/uncheck with user + timestamp.
+
+## Phase 2 — staff-safe UI (NEXT — required before inviting real staff)
+- [ ] **Cost-stripped, read-only recipe view for staff** — method + ingredients + quantities; hide GP/food cost/selling price/margin. Also add role guards on the mutating recipe/prep/ingredient endpoints (the path allow-list isn't method-aware, so staff must not be able to POST edits).
+- [ ] **Prep list = staff home** + a staff-appropriate nav (hide everything they can't reach).
+- [ ] **Surface accountability** in the prep UI — "completed by «Name» · 14:20" per line, plus a per-session history from `prep_session_line_events` (resolve `user_id` → name via `public.users`).
+- [ ] **Team settings UI**: add "Staff" to the invite role picker (with required location scope); show role + location in the member list.
+
+## Phase 3 — polish (later)
+- [ ] Manager view of the prep audit ("who prepped what this week").
+- [ ] Optional: link a staff login to its `staff_profiles` record (so "your shifts" could appear later).
+- [ ] Consider per-location staff dashboards.
+
+## Notes / gotchas
+- The permission allow-list is **path-based, not HTTP-method-aware** — so granting staff the recipe *read* path also technically permits POST/PATCH to it. Phase 2 must add explicit role guards (manager/owner) on mutating recipe/prep endpoints, OR split read vs write paths.
+- No staff users exist yet, so Phase 1 changes are inert until Phase 2 ships + the owner sends the first staff invite. Don't expose "Staff" in the team UI until the cost-strip + read-only recipe view land.

@@ -15,17 +15,23 @@
 //             The /revisor surface composes month-end P&L + BAS line items
 //             + overhead drilldown into a print-friendly close-cycle view.
 //             Unique to the Nordic market — UK ops don't have this relationship.
+//   staff   — kitchen/line staff. Pure allow-list: prep list, recipes
+//             (operational view, no money), stock counts, waste. NEVER sees
+//             financials, billing, settings, scheduling or other locations.
+//             Real email login so every prep completion is attributable.
 //
 // Permission overrides:
 //   can_view_finances=true → allows a manager to see finance pages too.
-//                            Useful for trusted finance-savvy managers.
-//                            Ignored for revisor (they see finance by definition).
+//                            Managers default to TRUE (they run service on the
+//                            numbers); restrict per-manager if needed. Ignored
+//                            for revisor (finance by definition) and staff
+//                            (never finance regardless of the flag).
 //
 // Path matching is prefix-based ("/tracker" → also covers "/tracker/foo").
 // Order doesn't matter — we check all rules and OR the results within a
 // rule type.
 
-export type Role = 'owner' | 'manager' | 'viewer' | 'revisor'
+export type Role = 'owner' | 'manager' | 'viewer' | 'revisor' | 'staff'
 
 export interface AuthSubject {
   role:               Role
@@ -151,6 +157,38 @@ const REVISOR_ALLOW_API_PATHS: string[] = [
   '/api/integrations/fortnox/drilldown',
 ]
 
+// ── Staff allow-list ─────────────────────────────────────────────────────────
+// Kitchen/line staff. Pure allow-list, fail-closed like revisor. Only the
+// operational surfaces they need: prep list, recipes (operational view — the
+// page/API strips cost for this role), stock counts, waste. Never financials,
+// scheduling, items/orders, settings (beyond own profile), or other locations.
+const STAFF_ALLOW_PATHS: string[] = [
+  '/inventory/recipes',   // recipe list + detail (cost-stripped for staff) + /prep
+  '/inventory/counts',    // stock counts
+  '/inventory/waste',     // waste log
+  '/no-access',
+  '/login',
+  '/reset-password',
+  '/terms',
+  '/privacy',
+  '/security',
+  '/settings/profile',
+]
+const STAFF_ALLOW_API_PATHS: string[] = [
+  '/api/auth/',
+  '/api/me/',
+  '/api/businesses',                    // business selector
+  '/api/health',
+  '/api/settings/profile',
+  '/api/support',                       // in-app contact
+  '/api/inventory/recipes',             // recipe read (cost stripped server-side)
+  '/api/inventory/prep-sessions',       // prep list + line toggle (their core action)
+  '/api/inventory/counts',              // stock counts
+  '/api/inventory/waste',               // waste log
+  '/api/inventory/stock-locations',     // count locations
+  '/api/inventory/supplier-article',    // article thumbnails
+]
+
 function pathMatches(path: string, prefixes: string[]): boolean {
   return prefixes.some(p => path === p || path.startsWith(p + '/') || (p.endsWith('/') && path.startsWith(p)))
 }
@@ -172,6 +210,12 @@ export function canAccessPath(subject: AuthSubject | null | undefined, path: str
   if (subject.role === 'revisor') {
     const allowedRevisor = isApi ? REVISOR_ALLOW_API_PATHS : REVISOR_ALLOW_PATHS
     return pathMatches(path, allowedRevisor)
+  }
+
+  // Staff: pure allow-list, fail-closed. Nothing financial is reachable.
+  if (subject.role === 'staff') {
+    const allowedStaff = isApi ? STAFF_ALLOW_API_PATHS : STAFF_ALLOW_PATHS
+    return pathMatches(path, allowedStaff)
   }
 
   const allowed  = isApi ? MANAGER_ALLOW_API_PATHS : MANAGER_ALLOW_PATHS
@@ -207,6 +251,11 @@ export function canAccessBusiness(subject: AuthSubject | null | undefined, busin
   // they serve multiple unrelated clients in the org somehow, the owner
   // should be deliberate about which one.
   if (subject.role === 'revisor') {
+    return subject.business_ids != null && subject.business_ids.includes(businessId)
+  }
+  // Staff MUST be scoped to their location(s) — an unscoped staff login that
+  // sees every business is a leak. Mirror the revisor rule: explicit only.
+  if (subject.role === 'staff') {
     return subject.business_ids != null && subject.business_ids.includes(businessId)
   }
   if (subject.business_ids == null)    return true   // unscoped manager sees all
