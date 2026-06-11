@@ -68,33 +68,41 @@ export function RoleGate({
 
   // Explicit "owner only" override.
   if (require === 'owner' && me.role !== 'owner') {
-    // Revisor on an owner-only page → redirect to their landing.
-    if (me.role === 'revisor' && !pathname.startsWith('/revisor')) {
-      router.replace('/revisor')
-      return null
-    }
+    const home = roleHome(me.role)
+    if (home && !pathname.startsWith(home)) { router.replace(home); return null }
     return <NoAccessFallback role={me.role} />
   }
 
   if (canAccessPath(subject, pathname)) return <>{children}</>
 
-  // Revisor landed on a page they can't access. Their entire app universe
-  // is /revisor; rather than showing an access-restricted message with a
-  // "back to dashboard" button (which loops), auto-redirect them there.
-  if (me.role === 'revisor' && !pathname.startsWith('/revisor')) {
-    router.replace('/revisor')
+  // Landed on a page they can't access. Roles with a dedicated home (revisor,
+  // staff) get auto-redirected there rather than shown a fallback whose
+  // "back to dashboard" link would loop (they can't see the dashboard either).
+  const home = roleHome(me.role)
+  if (home && !pathname.startsWith(home)) {
+    router.replace(home)
     return null
   }
 
   return <NoAccessFallback role={me.role} />
 }
 
+// The landing page for roles whose universe isn't the dashboard. Returns null
+// for owner/manager (their home IS the dashboard).
+function roleHome(role: string): string | null {
+  if (role === 'revisor') return '/revisor'
+  if (role === 'staff')   return '/inventory/recipes/prep'
+  return null
+}
+
 function NoAccessFallback({ role }: { role: string }) {
   const t = useTranslations('misc.roleGate')
-  // Revisor's "home" is /revisor, not /dashboard. Don't link them back to a
-  // page they can't access.
-  const backHref  = role === 'revisor' ? '/revisor' : '/dashboard'
-  const backLabel = role === 'revisor' ? 'Back to your monthly view' : t('backToDash')
+  // Don't link a scoped role back to a page they can't access.
+  const home      = roleHome(role)
+  const backHref  = home ?? '/dashboard'
+  const backLabel = role === 'revisor' ? 'Back to your monthly view'
+                  : role === 'staff'   ? 'Back to the prep list'
+                  : t('backToDash')
   return (
     <div style={{
       minHeight: '60vh',

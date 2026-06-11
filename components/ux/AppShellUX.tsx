@@ -26,6 +26,8 @@ import { useTranslations } from 'next-intl'
 import { UXP } from '@/lib/constants/tokens'
 // pageLabel collides with this component's own `pageLabel` prop; alias on import.
 import { AREAS, areaLabel, pageLabel as pageLabelFor, resolveActiveNav, type Area, type AreaPage } from '@/lib/nav/areas'
+import { canAccessPath } from '@/lib/auth/permissions'
+import { useAuthSubject } from '@/lib/hooks/useAuthSubject'
 import type { ReactNode } from 'react'
 
 export interface AppShellUXProps {
@@ -139,6 +141,8 @@ function AreaDropdown({ activeArea, fallbackLabel }: AreaDropdownProps) {
   const t      = useTranslations('sidebar')
   const ref    = useRef<HTMLDivElement | null>(null)
   const [open, setOpen] = useState(false)
+  const subject = useAuthSubject()
+  const pageAllowed = (href: string) => (subject ? canAccessPath(subject, href) : true)
 
   useEffect(() => {
     if (!open) return
@@ -200,13 +204,13 @@ function AreaDropdown({ activeArea, fallbackLabel }: AreaDropdownProps) {
             boxShadow:    '0 8px 24px rgba(58,53,80,0.12)',
           }}
         >
-          {AREAS.filter(a => a.pages.length > 0).map(area => (
+          {AREAS.filter(a => a.pages.some(p => pageAllowed(p.href))).map(area => (
             <button
               key={area.key}
               type="button"
               onClick={() => {
                 setOpen(false)
-                const dest = area.pages[0]
+                const dest = area.pages.find(p => pageAllowed(p.href)) ?? area.pages[0]
                 if (dest) router.push(dest.href)
               }}
               style={{
@@ -243,6 +247,7 @@ function PageDropdown({ activeArea, activePage, fallbackLabel }: PageDropdownPro
   const t      = useTranslations('sidebar')
   const ref    = useRef<HTMLDivElement | null>(null)
   const [open, setOpen] = useState(false)
+  const subject = useAuthSubject()
 
   useEffect(() => {
     if (!open) return
@@ -253,8 +258,11 @@ function PageDropdown({ activeArea, activePage, fallbackLabel }: PageDropdownPro
     return () => document.removeEventListener('mousedown', onDown)
   }, [open])
 
+  // Only show pages the role can reach (the rest 403/redirect on click).
+  const visiblePages = (activeArea?.pages ?? []).filter(p => (subject ? canAccessPath(subject, p.href) : true))
+
   // No siblings → render a static label (no point in a 1-item dropdown).
-  if (!activeArea || activeArea.pages.length <= 1) {
+  if (!activeArea || visiblePages.length <= 1) {
     return (
       <span style={{
         padding:    '5px 10px',
@@ -307,7 +315,7 @@ function PageDropdown({ activeArea, activePage, fallbackLabel }: PageDropdownPro
             boxShadow:    '0 8px 24px rgba(58,53,80,0.12)',
           }}
         >
-          {activeArea.pages.map(p => (
+          {visiblePages.map(p => (
             <button
               key={p.key}
               type="button"

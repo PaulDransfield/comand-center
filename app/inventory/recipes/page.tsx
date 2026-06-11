@@ -23,6 +23,7 @@ import { DataTable, type DataTableColumn } from '@/components/ui/DataTable'
 import { fmtKr } from '@/lib/format'
 import { FOOD_TYPES, DRINK_TYPES, categoryToken } from '@/lib/categoryColors'
 import { CategoryPill } from '@/components/ui/CategoryPill'
+import { useAuthSubject } from '@/lib/hooks/useAuthSubject'
 
 interface RecipeRow {
   id:               string
@@ -63,6 +64,10 @@ interface ListResponse {
 
 export default function InventoryRecipesPage() {
   const router = useRouter()
+  // Staff see the recipe book read-only (operational view): the API already
+  // strips cost; here we hide the authoring + promote affordances (they'd 403).
+  const authSubject = useAuthSubject()
+  const isStaff = authSubject?.role === 'staff'
   const t = useTranslations('operations.inventory.recipes')
   const [bizId,   setBizId]   = useState<string | null>(null)
   const [data,    setData]    = useState<ListResponse | null>(null)
@@ -305,19 +310,21 @@ export default function InventoryRecipesPage() {
               {t('subtitle')}
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <BulkAiFillButton bizId={bizId} onDone={() => router.refresh()} />
-            <button onClick={() => setImporting(true)} disabled={!bizId}
-              title={!bizId ? 'Select a business in the sidebar first' : 'Bulk-import recipes from your menu text — Sonnet drafts ingredients from your catalogue'}
-              style={{ ...secondaryBtn, opacity: bizId ? 1 : 0.5, cursor: bizId ? 'pointer' : 'not-allowed' }}>
-              Bulk import
-            </button>
-            <button onClick={() => router.push('/inventory/recipes/new')} disabled={!bizId}
-              title={!bizId ? 'Select a business in the sidebar first' : undefined}
-              style={{ ...primaryBtn, opacity: bizId ? 1 : 0.5, cursor: bizId ? 'pointer' : 'not-allowed' }}>
-              {t('addRecipe')}
-            </button>
-          </div>
+          {!isStaff && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <BulkAiFillButton bizId={bizId} onDone={() => router.refresh()} />
+              <button onClick={() => setImporting(true)} disabled={!bizId}
+                title={!bizId ? 'Select a business in the sidebar first' : 'Bulk-import recipes from your menu text — Sonnet drafts ingredients from your catalogue'}
+                style={{ ...secondaryBtn, opacity: bizId ? 1 : 0.5, cursor: bizId ? 'pointer' : 'not-allowed' }}>
+                Bulk import
+              </button>
+              <button onClick={() => router.push('/inventory/recipes/new')} disabled={!bizId}
+                title={!bizId ? 'Select a business in the sidebar first' : undefined}
+                style={{ ...primaryBtn, opacity: bizId ? 1 : 0.5, cursor: bizId ? 'pointer' : 'not-allowed' }}>
+                {t('addRecipe')}
+              </button>
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
@@ -417,7 +424,7 @@ export default function InventoryRecipesPage() {
           />
         )}
 
-        {viewFilter === 'subrecipes' && !loading && rows.length > 0 && (
+        {viewFilter === 'subrecipes' && !loading && rows.length > 0 && !isStaff && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' as const,
             padding: '10px 14px', marginBottom: 10,
@@ -610,7 +617,7 @@ export default function InventoryRecipesPage() {
           // Sub-recipes view: prepend a selection checkbox column and
           // append an inventory-status column so the owner can pick
           // sub-recipes and add them to the stocktake catalogue.
-          if (viewFilter === 'subrecipes') {
+          if (viewFilter === 'subrecipes' && !isStaff) {
             cols.unshift({
               id: 'sel', width: 34,
               header: <SelectCheckbox checked={allSelected} indeterminate={someSelected} onToggle={toggleAll} ariaLabel="Select all sub-recipes" />,

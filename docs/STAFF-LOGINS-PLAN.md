@@ -28,11 +28,17 @@
 - [x] **Cost stripped server-side for staff** on the recipe list (`/api/inventory/recipes` GET) AND detail (`/api/inventory/recipes/[id]` GET) — every money field (price, food cost, GP, per-ingredient cost) nulled before it leaves the server, so it can't leak through the UI.
 - [x] **`requireOperator` guard** (owner/manager only) on every staff-reachable mutation: recipe create/patch/delete, ingredient add/edit/delete, promote, promote-bulk, import-parse, recipe image. Prep: create + patch + delete guarded; **the line toggle stays open** (staff's core action). The path allow-list isn't method-aware, so these per-route guards are what actually stop a staff login writing.
 
-## Phase 2b — staff UI (NEXT — required before inviting real staff)
-- [ ] **Read-only recipe view for staff** — the API already returns no cost; the page should hide the cost/GP columns + the edit affordances (they'd 403 anyway, but it's poor UX).
-- [ ] **Prep list = staff home** + a staff-appropriate nav (hide everything they can't reach).
-- [ ] **Surface accountability** in the prep UI — "completed by «Name» · 14:20" per line, plus a per-session history from `prep_session_line_events` (resolve `user_id` → name via `public.users`).
-- [ ] **Team settings UI**: add "Staff" to the invite role picker (with required location scope); show role + location in the member list.
+## Phase 2b — staff UI ✅ SHIPPED (2026-06-11)
+- [x] **Team settings UI** — "Invite staff" button + Staff role in the invite modal (location-scoped, required) + staff role pill.
+- [x] **Accountability surfaced** — prep GET resolves `checked_by` → name; prep page shows "Done by «Name» · 14:20" per completed line.
+- [x] **Staff nav + landing** — `RoleGate` redirects staff (and revisor) to their home (`/inventory/recipes/prep`) instead of a dead "back to dashboard" loop; the rail + toolbar dropdowns now filter areas/pages by role (`useAuthSubject` + `canAccessPath`) so staff only see what they can reach.
+- [x] **Recipe book read-only for staff** — list page hides the authoring buttons (add/import/AI-fill) + the promote/"Add to inventory" selection; cost was already stripped server-side (Phase 2a).
+
+## Phase 2c — dedicated staff views (polish, before a wide rollout)
+The backend is fully safe to invite staff now (mutations guarded, cost stripped, nav filtered). What's left is UX quality on two owner-shaped pages:
+- [ ] **Focused staff prep view** — the current `/inventory/recipes/prep` page is owner/manager-shaped (create + manage covers/sessions, which 403 for staff). Staff want a stripped "today's active session — tick it off" view. The active-session GET + toggle already work for them; this is a presentation layer.
+- [ ] **Read-only recipe detail** — clicking a recipe row lands staff on the full-page editor (mutations 403, but it's an editor UX). A read-only method+ingredients view for `role==='staff'`.
+- [ ] Manager view of the prep audit ("who prepped what this week") from `prep_session_line_events`.
 
 ## Phase 3 — polish (later)
 - [ ] Manager view of the prep audit ("who prepped what this week").

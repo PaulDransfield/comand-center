@@ -15,7 +15,9 @@
 import { usePathname, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { UXP } from '@/lib/constants/tokens'
-import { AREAS, areaLabel, defaultPageFor, resolveActiveNav, type Area, type AreaIcon } from '@/lib/nav/areas'
+import { AREAS, areaLabel, resolveActiveNav, type Area, type AreaIcon } from '@/lib/nav/areas'
+import { canAccessPath } from '@/lib/auth/permissions'
+import { useAuthSubject } from '@/lib/hooks/useAuthSubject'
 import type { ReactNode } from 'react'
 
 export interface RailNavProps {
@@ -27,15 +29,23 @@ export default function RailNav({ footer }: RailNavProps) {
   const pathname = usePathname()
   const router   = useRouter()
   const t        = useTranslations('sidebar')
+  const subject  = useAuthSubject()
   const { area: activeArea } = resolveActiveNav(pathname)
 
+  // Role filter. While the subject is loading (undefined) treat everything as
+  // allowed to avoid a flash; once loaded, hide areas the role can't reach and
+  // navigate to the first page within an area the role CAN reach.
+  const pageAllowed = (href: string) => (subject ? canAccessPath(subject, href) : true)
+  const firstAccessible = (area: Area) => area.pages.find(p => pageAllowed(p.href)) ?? area.pages[0]
+  const areaVisible = (area: Area) => area.pages.some(p => pageAllowed(p.href))
+
   function handleClick(area: Area) {
-    const dest = defaultPageFor(area)
+    const dest = firstAccessible(area)
     if (dest) router.push(dest.href)
   }
 
-  const top    = AREAS.filter(a => a.pinned !== 'bottom')
-  const bottom = AREAS.filter(a => a.pinned === 'bottom')
+  const top    = AREAS.filter(a => a.pinned !== 'bottom' && areaVisible(a))
+  const bottom = AREAS.filter(a => a.pinned === 'bottom' && areaVisible(a))
 
   return (
     <aside
