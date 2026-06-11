@@ -130,10 +130,19 @@ export default function CountDetailPage() {
   }, [params.id])
   useEffect(() => { load() }, [load])
 
-  // Article thumbnails — one batch round-trip per load. Silent fallback
-  // on error (count walk shouldn't block on image data).
+  // Stable key over the SET of products in the count. Changes only when a
+  // product is added / merged / removed — NOT when a quantity is entered.
+  // Counting edits update state in place (below), so without this gate the
+  // thumbnail batch fetch would re-fire on every keystroke-save.
+  const productIdsKey = useMemo(
+    () => (data?.rows ?? []).map(r => r.product_id).join(','),
+    [data],
+  )
+
+  // Article thumbnails — one batch round-trip per product-set change.
+  // Silent fallback on error (count walk shouldn't block on image data).
   useEffect(() => {
-    const ids = (data?.rows ?? []).map(r => r.product_id).filter(Boolean) as string[]
+    const ids = productIdsKey ? productIdsKey.split(',') : []
     if (ids.length === 0) return
     const ctrl = new AbortController()
     fetch('/api/inventory/supplier-article/batch', {
@@ -152,7 +161,7 @@ export default function CountDetailPage() {
       })
       .catch(() => { /* silent */ })
     return () => ctrl.abort()
-  }, [data])
+  }, [productIdsKey])
 
   async function patchLine(productId: string, patch: { quantity?: number; unit?: string; delete?: boolean }) {
     const r = await fetch(`/api/inventory/counts/${params.id}`, {
@@ -161,7 +170,51 @@ export default function CountDetailPage() {
       body: JSON.stringify({ line: { product_id: productId, ...patch } }),
     })
     if (!r.ok) { alert((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`); return }
-    load()
+    const j = await r.json().catch(() => ({} as any))
+    // Patch only the touched row + recompute totals in place. A full reload
+    // here refetched every product, all live prices and all thumbnails on
+    // each entry, stalling the count between articles. The PATCH response
+    // already carries the new line_value + unit_price, so we have everything
+    // needed to update locally without another round-trip.
+    setData(prev => {
+      if (!prev) return prev
+      const rows = prev.rows.map(row => {
+        if (row.product_id !== productId) return row
+        if (patch.delete) return { ...row, saved: null }
+        const lineValue = j.line_value ?? null
+        return {
+          ...row,
+          saved: {
+            line_id:               row.saved?.line_id ?? 'pending',
+            quantity:              patch.quantity ?? row.saved?.quantity ?? 0,
+            unit:                  patch.unit ?? row.saved?.unit ?? (row.invoice_unit ?? 'st'),
+            unit_price_at_count:   j.unit_price ?? null,
+            line_value_at_count:   lineValue,
+            invoice_unit_at_count: row.invoice_unit,
+            pack_size_at_count:    row.pack_size,
+            base_unit_at_count:    row.base_unit,
+            notes:                 row.saved?.notes ?? null,
+            updated_at:            new Date().toISOString(),
+            // At save time the count price IS the current price, so the live
+            // value equals the snapshot value.
+            current_line_value:    lineValue,
+          },
+        }
+      })
+      const savedRows = rows.filter(r => r.saved)
+      const snapshot = savedRows.reduce((s, r) => s + (r.saved!.line_value_at_count ?? 0), 0)
+      const current  = savedRows.reduce((s, r) => s + (r.saved!.current_line_value ?? 0), 0)
+      return {
+        ...prev,
+        rows,
+        totals: {
+          ...prev.totals,
+          lines_counted:  savedRows.length,
+          snapshot_value: Math.round(snapshot * 100) / 100,
+          current_value:  Math.round(current * 100) / 100,
+        },
+      }
+    })
   }
 
   async function complete() {
