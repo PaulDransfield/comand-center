@@ -126,8 +126,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // raw Node Buffer, though the bytes are identical.
   const body = new Uint8Array(buf)
 
-  const slug = `${count.count_date}${locationName !== 'Global count' ? '-' + locationName.replace(/[^a-zA-Z0-9]+/g, '-') : ''}`
-  const filename = `stock-count-${slug}.xlsx`
+  // Filename leads with the restaurant name so a folder of exports across
+  // locations is self-describing. Slug to ASCII so it's safe in any OS /
+  // Content-Disposition (Swedish chars → dashes, trimmed).
+  const slugify = (s: string) => s.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  const bizSlug = slugify(bizName) || 'business'
+  const locSlug = locationName !== 'Global count' ? '-' + slugify(locationName) : ''
+  const filename = `stock-count-${bizSlug}-${count.count_date}${locSlug}.xlsx`
 
   return new NextResponse(body, {
     status: 200,
