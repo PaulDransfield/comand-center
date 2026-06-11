@@ -81,6 +81,20 @@ export default function StockCountsPage() {
     } catch (e: any) { alert(e.message); setCreating(false) }
   }
 
+  async function deleteCount(id: string, e: React.MouseEvent) {
+    e.stopPropagation()   // don't navigate into the count
+    if (!confirm('Delete this count? It will be removed from the list. Line data is kept in the database for audit.')) return
+    try {
+      const r = await fetch(`/api/inventory/counts/${id}`, {
+        method: 'PATCH', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archive: true }),
+      })
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
+      load()
+    } catch (e: any) { alert(e.message) }
+  }
+
   async function createLocationAndCount() {
     if (!bizId) return
     const name = prompt('Location name (e.g. Walk-in, Bar, Dry store):')?.trim()
@@ -191,13 +205,20 @@ export default function StockCountsPage() {
                       )}
                     </td>
                     <td style={{ ...td(), textAlign: 'right' as const }}>
-                      {!c.in_progress && (
-                        <a href={`/api/inventory/counts/${c.id}/export`}
-                           onClick={e => e.stopPropagation()}
-                           style={{ fontSize: 11, fontWeight: 600, color: UXP.lavText, textDecoration: 'none', whiteSpace: 'nowrap' as const }}>
-                          Export Excel
-                        </a>
-                      )}
+                      <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', alignItems: 'center' }}>
+                        {!c.in_progress && (
+                          <a href={`/api/inventory/counts/${c.id}/export`}
+                             onClick={e => e.stopPropagation()}
+                             style={{ fontSize: 11, fontWeight: 600, color: UXP.lavText, textDecoration: 'none', whiteSpace: 'nowrap' as const }}>
+                            Export Excel
+                          </a>
+                        )}
+                        <button onClick={e => deleteCount(c.id, e)}
+                          style={{ fontSize: 11, fontWeight: 500, color: UXP.roseText, background: 'transparent',
+                                   border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
