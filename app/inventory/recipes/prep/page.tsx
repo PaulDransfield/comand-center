@@ -20,6 +20,8 @@ import { PageErrorBoundary } from '@/components/ui/PageErrorBoundary'
 import { DRINK_TYPES } from '@/lib/categoryColors'
 import { CategoryPill } from '@/components/ui/CategoryPill'
 import { useIsMobile } from '@/lib/hooks/useViewport'
+import { useAuthSubject } from '@/lib/hooks/useAuthSubject'
+import StaffPrepView from '@/components/inventory/StaffPrepView'
 
 interface DishRow {
   id:                  string
@@ -159,7 +161,20 @@ const isDish = (r: any) =>
   || (r.menu_price != null && Number(r.menu_price) > 0)
   || (r.type && DISH_TYPES.has(String(r.type).toLowerCase()))
 
-export default function PrepListPage() {
+// Route by role: staff get the focused tick-off view (StaffPrepView); the
+// owner/manager page below handles the full create + manage flow. Splitting
+// at the component boundary means the owner page's create-flow hooks/fetches
+// never run for staff (and can't 403 them).
+export default function PrepPageRouter() {
+  const subject = useAuthSubject()
+  if (subject === undefined) {
+    return <AppShell><div style={{ padding: 30, color: UXP.ink3 }}>Loading…</div></AppShell>
+  }
+  if (subject?.role === 'staff') return <StaffPrepView />
+  return <PrepListPage />
+}
+
+function PrepListPage() {
   // Wrapping the inner page in a PageErrorBoundary so a render-time
   // exception surfaces the actual error message in-page instead of
   // bubbling to the global "Something went wrong" fallback. Owner sees

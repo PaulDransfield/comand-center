@@ -34,11 +34,16 @@
 - [x] **Staff nav + landing** — `RoleGate` redirects staff (and revisor) to their home (`/inventory/recipes/prep`) instead of a dead "back to dashboard" loop; the rail + toolbar dropdowns now filter areas/pages by role (`useAuthSubject` + `canAccessPath`) so staff only see what they can reach.
 - [x] **Recipe book read-only for staff** — list page hides the authoring buttons (add/import/AI-fill) + the promote/"Add to inventory" selection; cost was already stripped server-side (Phase 2a).
 
-## Phase 2c — dedicated staff views (polish, before a wide rollout)
-The backend is fully safe to invite staff now (mutations guarded, cost stripped, nav filtered). What's left is UX quality on two owner-shaped pages:
-- [ ] **Focused staff prep view** — the current `/inventory/recipes/prep` page is owner/manager-shaped (create + manage covers/sessions, which 403 for staff). Staff want a stripped "today's active session — tick it off" view. The active-session GET + toggle already work for them; this is a presentation layer.
-- [ ] **Read-only recipe detail** — clicking a recipe row lands staff on the full-page editor (mutations 403, but it's an editor UX). A read-only method+ingredients view for `role==='staff'`.
+## Phase 2c — dedicated staff views ✅ SHIPPED (2026-06-11)
+- [x] **Focused staff prep view** — `components/inventory/StaffPrepView.tsx`: loads the active session, shows lines with a big tap target + "Done by «Name» · time", and a read-only method/ingredients modal. The prep route (`/inventory/recipes/prep`) now branches by role (`PrepPageRouter`) so the owner page's create/manage hooks never run for staff.
+- [x] **Scoped staff to prep + counts + waste** — removed the recipe list/detail (owner authoring editor) from the staff allow-list. Staff get method + quantities for what they prep via the prep view's modal; the recipes editor is never reachable. (The recipe cost-strip from Phase 2a stays as defense-in-depth.)
+
+**Staff role is now ready to invite.** Surface = prep view (tick-off + method), stock counts, waste. Everything financial/authoring is denied + filtered out of the nav; every completion is attributed.
+
+## Future options (not needed for launch)
+- [ ] Dedicated read-only recipe *browse* for staff (look up a recipe not in today's prep), if owners want it.
 - [ ] Manager view of the prep audit ("who prepped what this week") from `prep_session_line_events`.
+- [ ] Staff-optimised counts/waste screens (currently the shared pages; usable but owner-shaped).
 
 ## Phase 3 — polish (later)
 - [ ] Manager view of the prep audit ("who prepped what this week").

@@ -162,10 +162,14 @@ const REVISOR_ALLOW_API_PATHS: string[] = [
 // operational surfaces they need: prep list, recipes (operational view — the
 // page/API strips cost for this role), stock counts, waste. Never financials,
 // scheduling, items/orders, settings (beyond own profile), or other locations.
+// Scoped to their daily surfaces only: the prep list (their tick-off view),
+// stock counts, and waste. NOT the recipe list/detail (that's the owner/
+// manager authoring editor) — staff get method + quantities for what they're
+// prepping via the prep view's read-only modal instead.
 const STAFF_ALLOW_PATHS: string[] = [
-  '/inventory/recipes',   // recipe list + detail (cost-stripped for staff) + /prep
-  '/inventory/counts',    // stock counts
-  '/inventory/waste',     // waste log
+  '/inventory/recipes/prep',   // the staff prep view (StaffPrepView)
+  '/inventory/counts',         // stock counts
+  '/inventory/waste',          // waste log
   '/no-access',
   '/login',
   '/reset-password',
@@ -181,12 +185,11 @@ const STAFF_ALLOW_API_PATHS: string[] = [
   '/api/health',
   '/api/settings/profile',
   '/api/support',                       // in-app contact
-  '/api/inventory/recipes',             // recipe read (cost stripped server-side)
   '/api/inventory/prep-sessions',       // prep list + line toggle (their core action)
   '/api/inventory/counts',              // stock counts
   '/api/inventory/waste',               // waste log
   '/api/inventory/stock-locations',     // count locations
-  '/api/inventory/supplier-article',    // article thumbnails
+  '/api/inventory/supplier-article',    // article thumbnails (count rows)
 ]
 
 function pathMatches(path: string, prefixes: string[]): boolean {
