@@ -216,6 +216,7 @@ function DashboardInner() {
   const [recentInv,     setRecentInv]     = useState<any>(null)
   const [reviewThemes,  setReviewThemes]  = useState<any>(null)
   const [dataQuality,   setDataQuality]   = useState<any>(null)
+  const [forecastRecent, setForecastRecent] = useState<any>(null)
   const [loading,       setLoading]       = useState(true)
   const [showUpgrade,   setShowUpgrade]   = useState(false)
   const [upgradePlan,   setUpgradePlan]   = useState('')
@@ -333,7 +334,8 @@ function DashboardInner() {
       fetch(`/api/integrations/fortnox/recent-invoices?business_id=${bizId}&days=14`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
       fetch(`/api/reviews/themes?business_id=${bizId}&window=90`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
       fetch(`/api/data-quality/score?business_id=${bizId}`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([ov, dm, bp, cf, ri, rt, dq]) => {
+      fetch(`/api/forecast/recent?business_id=${bizId}&days=14`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([ov, dm, bp, cf, ri, rt, dq, fr]) => {
       if (cancelled) return
       setOverheadProj(ov && !ov.error ? ov : null)
       setDemand(dm && !dm.error ? dm : null)
@@ -342,6 +344,7 @@ function DashboardInner() {
       setRecentInv(ri && !ri.error ? ri : null)
       setReviewThemes(rt && !rt.error ? rt : null)
       setDataQuality(dq && !dq.error ? dq : null)
+      setForecastRecent(fr && !fr.error ? fr : null)
     })
     return () => { cancelled = true }
   }, [bizId])
@@ -484,6 +487,11 @@ function DashboardInner() {
 
         {/* ── Performance chart ─────────────────────────────────── */}
         <ChartCard days={days} loading={loading} />
+
+        {/* ── Forecast check (predicted vs actual) ──────────────── */}
+        {forecastRecent?.n > 0 && (
+          <ForecastCheckCard recent={forecastRecent} />
+        )}
 
         {/* ── Attention panel ───────────────────────────────────── */}
         {attentionItems.length > 0 && (
@@ -796,6 +804,80 @@ function ChartCard({ days, loading }: { days: any[]; loading: boolean }) {
           )}
         </ResponsiveChart>
       )}
+    </Card>
+  )
+}
+
+// ── Forecast check (predicted vs actual) ─────────────────────────────
+// Backward-looking companion to the forward DemandOutlook strip: shows how
+// our daily revenue forecast did against reality. Headline = the latest
+// resolved day (usually yesterday); below it the last ~7 days; footer the
+// window-average accuracy with a link to the full /forecast breakdown.
+// Data from /api/forecast/recent (resolved daily_forecast_outcomes).
+function ForecastCheckCard({ recent }: { recent: any }) {
+  const rows: any[] = Array.isArray(recent?.rows) ? recent.rows : []
+  const latest = recent?.latest
+  if (!latest) return null
+
+  const today = localDate(new Date())
+  const yest  = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return localDate(d) })()
+  const dLabel = (ds: string) => {
+    const d = new Date(ds + 'T00:00:00')
+    const wd = DAYS[(d.getDay() + 6) % 7]
+    return `${wd} ${d.getDate()} ${MONTHS[d.getMonth()]}`
+  }
+  const relLabel = latest.date === yest ? 'Yesterday' : latest.date === today ? 'Today' : dLabel(latest.date)
+
+  const accTone = (a: number | null) =>
+      a == null ? UXP.ink3 : a >= 90 ? UXP.green : a >= 75 ? UXP.coral : UXP.rose
+  const accBg = (a: number | null) =>
+      a == null ? UXP.subtleBg : a >= 90 ? UXP.greenFill : a >= 75 ? UXP.lavFill : UXP.roseFill
+  const errLabel = (e: number | null) =>
+      e == null ? '—' : Math.abs(e) < 0.5 ? 'spot on' : `${Math.abs(Math.round(e))}% ${e > 0 ? 'over' : 'under'}`
+
+  const last7 = rows.slice(-7)
+
+  return (
+    <Card title="Forecast check" subtitle="What we predicted vs what you actually did">
+      {/* Headline — latest resolved day */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, paddingBottom: 12, borderBottom: `0.5px solid ${UXP.borderSoft}` }}>
+        <div>
+          <div style={{ fontSize: 11, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{relLabel}</div>
+          <div style={{ fontSize: 22, fontWeight: 600, color: UXP.ink1, fontFamily: 'var(--font-display)', fontVariantNumeric: 'tabular-nums' as const, letterSpacing: '-0.02em', lineHeight: 1.1, marginTop: 4 }}>
+            {fmtKr(latest.actual)}
+          </div>
+          <div style={{ fontSize: 11, color: UXP.ink3, marginTop: 2 }}>
+            actual · predicted <span style={{ color: UXP.ink2, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(latest.predicted)}</span>
+          </div>
+        </div>
+        <span style={{ padding: '4px 10px', borderRadius: 999, background: accBg(latest.accuracy_pct), color: accTone(latest.accuracy_pct), fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' as const, fontVariantNumeric: 'tabular-nums' as const }}>
+          {errLabel(latest.error_pct)}
+        </span>
+      </div>
+
+      {/* Last 7 resolved days */}
+      <div style={{ display: 'grid', gap: 0, marginTop: 4 }}>
+        {last7.map((r, idx) => (
+          <div key={r.date} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 10, alignItems: 'center', padding: '6px 0', borderBottom: idx < last7.length - 1 ? `0.5px solid ${UXP.borderSoft}` : 'none' }}>
+            <span style={{ fontSize: 11, color: UXP.ink2 }}>{dLabel(r.date)}</span>
+            <span style={{ fontSize: 10, color: UXP.ink4, fontVariantNumeric: 'tabular-nums' as const, minWidth: 60, textAlign: 'right' as const }} title="predicted">{fmtKr(r.predicted)}</span>
+            <span style={{ fontSize: 11, color: UXP.ink1, fontWeight: 500, fontVariantNumeric: 'tabular-nums' as const, minWidth: 64, textAlign: 'right' as const }} title="actual">{fmtKr(r.actual)}</span>
+            <span style={{ fontSize: 10, fontWeight: 600, color: accTone(r.accuracy_pct), fontVariantNumeric: 'tabular-nums' as const, minWidth: 48, textAlign: 'right' as const }}>
+              {r.error_pct == null ? '—' : `${r.error_pct > 0 ? '+' : ''}${Math.round(r.error_pct)}%`}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Footer — window accuracy + link to full breakdown */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 10, borderTop: `0.5px solid ${UXP.borderSoft}` }}>
+        <span style={{ fontSize: 11, color: UXP.ink3 }}>
+          {recent.window_accuracy_pct != null
+            ? <>Last {recent.n} days · <span style={{ color: UXP.ink1, fontWeight: 600 }}>{fmtPct(recent.window_accuracy_pct)}</span> avg accuracy</>
+            : `Last ${recent.n} days`}
+        </span>
+        <a href="/forecast" style={{ fontSize: 11, fontWeight: 600, color: UXP.lavText, textDecoration: 'none' }}>Full accuracy →</a>
+      </div>
     </Card>
   )
 }
