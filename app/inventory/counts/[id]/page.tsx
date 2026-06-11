@@ -168,14 +168,17 @@ export default function CountDetailPage() {
     if (!data) return
     const unsaved = data.totals.products_total - data.totals.lines_counted
     if (unsaved > 0) {
-      if (!confirm(`Complete this count? ${unsaved} product(s) have no count yet — they'll be excluded from the snapshot value. You can re-open by creating a new count later.`)) return
+      if (!confirm(`${unsaved} item(s) haven't been counted.\n\nThey'll be recorded as 0 (zero stock) and the count will be locked. Complete the count?`)) return
     } else {
       if (!confirm('Complete this count? After completion lines are locked.')) return
     }
     const r = await fetch(`/api/inventory/counts/${params.id}`, {
       method: 'PATCH', cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ complete: true }),
+      // zero_uncounted: any product not counted is recorded as 0, so the
+      // count reads "we have none" rather than "we didn't look", and the
+      // export covers the whole catalogue.
+      body: JSON.stringify({ complete: true, zero_uncounted: true }),
     })
     if (!r.ok) { alert((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`); return }
     load()

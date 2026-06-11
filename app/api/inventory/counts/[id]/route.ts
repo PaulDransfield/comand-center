@@ -196,7 +196,50 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // Complete --------------------------------------------------------
   if (body.complete === true) {
     if (count.completed_at) return NextResponse.json({ ok: true, already_completed: true })
-    // Freeze totals from saved lines
+
+    let zeroedCount = 0
+    // zero_uncounted: record every product without a line as explicit 0
+    // stock ("we have none") rather than excluding it ("we didn't look").
+    // The snapshot value is unchanged (0 adds nothing) but the count now
+    // accounts for the whole catalogue and the export lists every product.
+    if (body.zero_uncounted === true) {
+      const { data: allProducts } = await db
+        .from('products')
+        .select('id, invoice_unit, base_unit, pack_size')
+        .eq('business_id', count.business_id)
+        .is('archived_at', null)
+      const { data: existing } = await db
+        .from('stock_count_lines')
+        .select('product_id')
+        .eq('count_id', params.id)
+      const counted = new Set((existing ?? []).map((l: any) => l.product_id))
+      const missing = (allProducts ?? []).filter((p: any) => !counted.has(p.id))
+      if (missing.length > 0) {
+        // Snapshot current unit price for the record (value is 0 regardless).
+        const fxIndex  = await loadFxIndex(db, ['EUR', 'USD', 'NOK', 'DKK', 'GBP'])
+        const priceMap = await getProductLatestPrices(db, count.business_id, missing.map((p: any) => p.id), fxIndex)
+        const zeroRows = missing.map((p: any) => ({
+          count_id:              params.id,
+          product_id:            p.id,
+          quantity:              0,
+          unit:                  p.base_unit || p.invoice_unit || 'st',
+          unit_price_at_count:   priceMap.get(p.id)?.latest_price_sek ?? null,
+          line_value_at_count:   0,
+          pack_size_at_count:    p.pack_size,
+          base_unit_at_count:    p.base_unit,
+          invoice_unit_at_count: p.invoice_unit,
+          notes:                 null,
+        }))
+        // Chunk inserts to stay well within request limits on big catalogues.
+        for (let i = 0; i < zeroRows.length; i += 200) {
+          const { error: insErr } = await db.from('stock_count_lines').insert(zeroRows.slice(i, i + 200))
+          if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 })
+        }
+        zeroedCount = missing.length
+      }
+    }
+
+    // Freeze totals from saved lines (now including any zero rows just added)
     const { data: lines } = await db
       .from('stock_count_lines')
       .select('id, line_value_at_count')
@@ -210,7 +253,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       })
       .eq('id', params.id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, zeroed_count: zeroedCount })
   }
 
   // Edit header -----------------------------------------------------
