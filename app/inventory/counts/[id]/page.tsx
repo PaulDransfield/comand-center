@@ -19,8 +19,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
-import { fmtKr } from '@/lib/format'
+import { fmtKr, fmtDuration } from '@/lib/format'
 import { ProductThumb } from '@/components/ui/ProductThumb'
+import { useAuthSubject } from '@/lib/hooks/useAuthSubject'
 
 interface Row {
   product_id:             string
@@ -56,6 +57,8 @@ interface DetailResponse {
     location_name:        string | null
     notes:                string | null
     completed_at:         string | null
+    counted_by_name:      string | null
+    duration_seconds:     number | null
     total_value_at_count: number | null
     total_lines:          number
   }
@@ -74,9 +77,19 @@ const UNIT_OPTIONS = ['g', 'kg', 'ml', 'cl', 'dl', 'l', 'st', 'portion', 'pack',
 export default function CountDetailPage() {
   const params  = useParams() as { id: string }
   const router  = useRouter()
+  const subject = useAuthSubject()
+  // Only owners/managers may consolidate the catalogue. Staff (who can run
+  // counts) must never restructure products. The merge endpoint is also
+  // path-blocked for staff, so this is UI-layer defence-in-depth.
+  const canMerge = subject?.role === 'owner' || subject?.role === 'manager'
   const [data,    setData]    = useState<DetailResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
+  // Merge-duplicate state: the row being merged AWAY (source/loser); the
+  // owner then picks the article to keep (target/winner).
+  const [mergeSource, setMergeSource] = useState<Row | null>(null)
+  const [mergeSearch, setMergeSearch] = useState('')
+  const [mergeBusy,   setMergeBusy]   = useState(false)
   // Article thumbnails — same supplier-article batch fetch the order /
   // prep / recipe pages use, keyed by product_id. Silent fallback when
   // a product has no scraped image yet. Keeps article presentation
@@ -195,6 +208,34 @@ export default function CountDetailPage() {
     }
   }
 
+  // Merge the open source product INTO the chosen target (winner). Repoints
+  // every supplier alias from source → target via the shared merge-into
+  // endpoint, then the source auto-archives (unless a recipe still uses it).
+  // Afterwards the kept article shows the most-recent purchase price across
+  // all merged suppliers — i.e. "the last bought-in price".
+  async function mergeInto(targetId: string) {
+    if (!mergeSource) return
+    setMergeBusy(true)
+    try {
+      const r = await fetch(`/api/inventory/products/${mergeSource.product_id}/merge-into`, {
+        method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_product_id: targetId }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      setMergeSource(null); setMergeSearch('')
+      if (!j.source_archived && j.source_archive_blocked_reason === 'used_by_recipes') {
+        alert(`Prices merged into the kept article. The old article is still used by ${j.source_recipe_count} recipe(s), so it wasn't removed — repoint those recipes to remove it fully.`)
+      }
+      load()
+    } catch (e: any) {
+      alert(e.message)
+    } finally {
+      setMergeBusy(false)
+    }
+  }
+
   async function archive() {
     if (!confirm('Archive this count? It hides from the list (lines stay in DB for audit).')) return
     const r = await fetch(`/api/inventory/counts/${params.id}`, {
@@ -254,23 +295,39 @@ export default function CountDetailPage() {
               Stock count
               {completed && <span style={{ marginLeft: 8, fontSize: 10, padding: '2px 8px', background: UXP.greenFill, color: UXP.greenDeep, borderRadius: 4, fontWeight: 600, letterSpacing: '0.04em' }}>COMPLETED</span>}
             </div>
+            {completed && (count.counted_by_name || count.duration_seconds != null) && (
+              <div style={{ fontSize: 11, color: UXP.ink3, marginTop: 4 }}>
+                {count.counted_by_name && <>Counted by <span style={{ color: UXP.ink2, fontWeight: 500 }}>{count.counted_by_name}</span></>}
+                {count.counted_by_name && count.duration_seconds != null && ' · '}
+                {count.duration_seconds != null && <>took <span style={{ color: UXP.ink2, fontWeight: 500 }}>{fmtDuration(count.duration_seconds)}</span></>}
+              </div>
+            )}
           </div>
-          {!completed && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => { setShowAdd(true); setAddErr(null) }} style={{
+          <div style={{ display: 'flex', gap: 8 }}>
+            {completed && (
+              <a href={`/api/inventory/counts/${params.id}/export`} style={{
                 padding: '6px 10px', fontSize: 11, fontWeight: 600,
-                background: UXP.lavDeep, color: '#fff',
-                border: 'none', borderRadius: 5,
-                cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' as const,
-              }}>+ Add article</button>
-              <button onClick={archive} style={{
-                padding: '6px 10px', fontSize: 11, fontWeight: 500,
-                background: 'transparent', color: UXP.roseText,
-                border: `0.5px solid ${UXP.rose}`, borderRadius: 5,
-                cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' as const,
-              }}>Discard</button>
-            </div>
-          )}
+                background: UXP.lavDeep, color: '#fff', textDecoration: 'none',
+                border: 'none', borderRadius: 5, fontFamily: 'inherit', whiteSpace: 'nowrap' as const,
+              }}>Export Excel</a>
+            )}
+            {!completed && (
+              <>
+                <button onClick={() => { setShowAdd(true); setAddErr(null) }} style={{
+                  padding: '6px 10px', fontSize: 11, fontWeight: 600,
+                  background: UXP.lavDeep, color: '#fff',
+                  border: 'none', borderRadius: 5,
+                  cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' as const,
+                }}>+ Add article</button>
+                <button onClick={archive} style={{
+                  padding: '6px 10px', fontSize: 11, fontWeight: 500,
+                  background: 'transparent', color: UXP.roseText,
+                  border: `0.5px solid ${UXP.rose}`, borderRadius: 5,
+                  cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' as const,
+                }}>Discard</button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Add-article modal */}
@@ -314,6 +371,79 @@ export default function CountDetailPage() {
                 <button onClick={addProduct} disabled={addBusy}
                   style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: UXP.lavDeep, color: '#fff', border: 'none', borderRadius: 6, cursor: addBusy ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
                   {addBusy ? 'Adding…' : 'Add article'}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Merge-duplicate modal — pick the article to KEEP; the source is
+            merged into it and removed. Candidates come from the already-
+            loaded count rows (same-category first), so no extra fetch. */}
+        {mergeSource && (
+          <>
+            <div onClick={() => { if (!mergeBusy) { setMergeSource(null); setMergeSearch('') } }}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 199 }} />
+            <div style={{
+              position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+              background: '#fff', borderRadius: 12, width: 460, maxWidth: '94vw', maxHeight: '84vh',
+              zIndex: 200, padding: 22, boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
+              border: `1px solid ${UXP.border}`, display: 'flex', flexDirection: 'column' as const,
+            }}>
+              <h2 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 600, color: UXP.ink1 }}>Merge duplicate article</h2>
+              <p style={{ margin: '0 0 4px', fontSize: 12, color: UXP.ink3, lineHeight: 1.5 }}>
+                <span style={{ color: UXP.ink1, fontWeight: 600 }}>{mergeSource.product_name}</span> will be merged
+                into the article you pick and removed. The kept article keeps all purchase history and shows the
+                most recent (last bought-in) price.
+              </p>
+              <input autoFocus value={mergeSearch} onChange={e => setMergeSearch(e.target.value)}
+                placeholder="Search for the article to keep…" style={{ ...inp, margin: '8px 0' }} />
+              <div style={{ overflowY: 'auto' as const, flex: 1, border: `0.5px solid ${UXP.border}`, borderRadius: 8 }}>
+                {(() => {
+                  const q = mergeSearch.trim().toLowerCase()
+                  const candidates = (data.rows ?? [])
+                    .filter(r => r.product_id !== mergeSource.product_id)
+                    .filter(r => !q || r.product_name.toLowerCase().includes(q))
+                    // Same category first (the dup is almost always in the same shelf)
+                    .sort((a, b) => {
+                      const aSame = a.category === mergeSource.category ? 0 : 1
+                      const bSame = b.category === mergeSource.category ? 0 : 1
+                      if (aSame !== bSame) return aSame - bSame
+                      return a.product_name.localeCompare(b.product_name)
+                    })
+                    .slice(0, 60)
+                  if (candidates.length === 0) {
+                    return <div style={{ padding: 20, textAlign: 'center' as const, color: UXP.ink3, fontSize: 12 }}>No matching articles.</div>
+                  }
+                  return candidates.map(c => (
+                    <button key={c.product_id} disabled={mergeBusy}
+                      onClick={() => {
+                        if (confirm(`Merge "${mergeSource.product_name}" into "${c.product_name}"?\n\n"${mergeSource.product_name}" will be removed and its purchase history folded into "${c.product_name}".`)) {
+                          mergeInto(c.product_id)
+                        }
+                      }}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+                        width: '100%', padding: '10px 12px', textAlign: 'left' as const,
+                        background: 'transparent', border: 'none', borderTop: `0.5px solid ${UXP.borderSoft}`,
+                        cursor: mergeBusy ? 'wait' : 'pointer', fontFamily: 'inherit',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = UXP.subtleBg)}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                      <span style={{ fontSize: 13, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                        {c.product_name}
+                      </span>
+                      <span style={{ fontSize: 10, color: UXP.ink4, whiteSpace: 'nowrap' as const }}>
+                        {c.current_unit_price_sek != null ? `${fmtKr(c.current_unit_price_sek)}/${c.invoice_unit ?? '?'}` : 'no price'}
+                      </span>
+                    </button>
+                  ))
+                })()}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+                <button onClick={() => { setMergeSource(null); setMergeSearch('') }} disabled={mergeBusy}
+                  style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', color: UXP.ink2, border: `0.5px solid ${UXP.border}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Cancel
                 </button>
               </div>
             </div>
@@ -378,6 +508,8 @@ export default function CountDetailPage() {
                   row={r}
                   thumbUrl={imageByProduct[r.product_id]}
                   disabled={completed}
+                  canMerge={canMerge && !completed}
+                  onMerge={() => { setMergeSource(r); setMergeSearch('') }}
                   onPatch={(p) => patchLine(r.product_id, p)}
                 />
               ))}
@@ -434,10 +566,12 @@ export default function CountDetailPage() {
 }
 
 // ── Single product row — mobile-first ─────────────────────────────────
-function CountRow({ row, thumbUrl, disabled, onPatch }: {
+function CountRow({ row, thumbUrl, disabled, canMerge, onMerge, onPatch }: {
   row: Row
   thumbUrl: string | null | undefined
   disabled: boolean
+  canMerge: boolean
+  onMerge: () => void
   onPatch: (p: { quantity?: number; unit?: string; delete?: boolean }) => void
 }) {
   // Default count unit. Recipe-sourced products (promoted sub-recipes) are
@@ -502,6 +636,17 @@ function CountRow({ row, thumbUrl, disabled, onPatch }: {
               ? `${fmtKr(row.current_unit_price_sek)}/${row.invoice_unit ?? '?'}${row.pack_size ? ` · ${row.pack_size}${row.base_unit ?? ''}/pack` : ''}`
               : 'no price yet'}
           </div>
+          {canMerge && (
+            <button onClick={onMerge}
+              style={{
+                marginTop: 4, padding: 0, background: 'transparent', border: 'none',
+                color: UXP.ink4, fontSize: 10, cursor: 'pointer', fontFamily: 'inherit',
+                textDecoration: 'underline', textUnderlineOffset: 2,
+              }}
+              title="Same article as another row? Merge them into one.">
+              Duplicate? Merge
+            </button>
+          )}
         </div>
         {isCounted && (
           <div style={{ textAlign: 'right' as const, minWidth: 80 }}>

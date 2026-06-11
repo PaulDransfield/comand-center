@@ -28,7 +28,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
-import { requireBusinessAccess } from '@/lib/auth/require-role'
+import { requireBusinessAccess, requireOperator } from '@/lib/auth/require-role'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -37,6 +37,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   noStore()
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  // Merging restructures the catalogue (archives a product, repoints its
+  // supplier history) — operators only. Staff can run counts but must never
+  // reshape products. Defence-in-depth on top of the path allow-list.
+  const notOperator = requireOperator(auth)
+  if (notOperator) return notOperator
 
   let body: any
   try { body = await req.json() } catch { body = {} }

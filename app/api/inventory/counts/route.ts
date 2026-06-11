@@ -31,18 +31,28 @@ export async function GET(req: NextRequest) {
     .limit(100)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const out = (data ?? []).map((c: any) => ({
-    id:                   c.id,
-    count_date:           c.count_date,
-    location_id:          c.location_id,
-    location_name:        (c.location as any)?.name ?? null,
-    notes:                c.notes,
-    started_at:           c.started_at,
-    completed_at:         c.completed_at,
-    total_value_at_count: c.total_value_at_count != null ? Number(c.total_value_at_count) : null,
-    total_lines:          c.total_lines ?? 0,
-    in_progress:          !c.completed_at,
-  }))
+  const out = (data ?? []).map((c: any) => {
+    // Duration = wall-clock from when the count was created (started_at) to
+    // when it was completed. Only meaningful once completed; null otherwise.
+    let durationSeconds: number | null = null
+    if (c.started_at && c.completed_at) {
+      const ms = new Date(c.completed_at).getTime() - new Date(c.started_at).getTime()
+      if (Number.isFinite(ms) && ms >= 0) durationSeconds = Math.round(ms / 1000)
+    }
+    return {
+      id:                   c.id,
+      count_date:           c.count_date,
+      location_id:          c.location_id,
+      location_name:        (c.location as any)?.name ?? null,
+      notes:                c.notes,
+      started_at:           c.started_at,
+      completed_at:         c.completed_at,
+      duration_seconds:     durationSeconds,
+      total_value_at_count: c.total_value_at_count != null ? Number(c.total_value_at_count) : null,
+      total_lines:          c.total_lines ?? 0,
+      in_progress:          !c.completed_at,
+    }
+  })
 
   return NextResponse.json({ counts: out }, { headers: { 'Cache-Control': 'no-store' } })
 }
@@ -68,7 +78,10 @@ export async function POST(req: NextRequest) {
     count_date:  body.count_date ? String(body.count_date) : undefined,   // default to CURRENT_DATE
     location_id: body.location_id ? String(body.location_id) : null,
     notes:       body.notes ? String(body.notes).trim() : null,
-    created_by:  (auth as any).user?.id ?? null,
+    // auth shape is { userId, orgId, ... } — there is no `.user.id`, so the
+    // old `(auth as any).user?.id` was always null and no count recorded who
+    // ran it. Use auth.userId so the Excel export can name the counter.
+    created_by:  auth.userId ?? null,
   }
   const { data, error } = await db
     .from('stock_counts')

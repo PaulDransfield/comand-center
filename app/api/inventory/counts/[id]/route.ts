@@ -38,13 +38,28 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const db = createAdminClient()
   const { data: count, error: cErr } = await db
     .from('stock_counts')
-    .select('id, business_id, count_date, location_id, notes, started_at, completed_at, total_value_at_count, total_lines, location:stock_locations(name)')
+    .select('id, business_id, count_date, location_id, notes, started_at, completed_at, created_by, total_value_at_count, total_lines, location:stock_locations(name)')
     .eq('id', params.id)
     .maybeSingle()
   if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 })
   if (!count) return NextResponse.json({ error: 'count not found' }, { status: 404 })
   const forbidden = requireBusinessAccess(auth, count.business_id)
   if (forbidden) return forbidden
+
+  // Resolve who ran the count (created_by → public.users) so the header +
+  // Excel export can show accountability. Same resolver the prep view uses.
+  let countedByName: string | null = null
+  if (count.created_by) {
+    const { data: u } = await db.from('users').select('full_name, email').eq('id', count.created_by).maybeSingle()
+    countedByName = (u as any)?.full_name || (u as any)?.email || null
+  }
+
+  // Duration = started_at → completed_at (only once completed).
+  let durationSeconds: number | null = null
+  if (count.started_at && count.completed_at) {
+    const ms = new Date(count.completed_at).getTime() - new Date(count.started_at).getTime()
+    if (Number.isFinite(ms) && ms >= 0) durationSeconds = Math.round(ms / 1000)
+  }
 
   // All non-archived products for the business. M130 — also pull
   // created_via so the recipe-import-draft tag flows through to the
@@ -137,6 +152,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     count: {
       ...count,
       location_name: (count.location as any)?.name ?? null,
+      counted_by_name: countedByName,
+      duration_seconds: durationSeconds,
       total_value_at_count: count.total_value_at_count != null ? Number(count.total_value_at_count) : null,
     },
     rows,

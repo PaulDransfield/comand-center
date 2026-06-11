@@ -96,3 +96,20 @@ export function fmtHrs(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return '—'
   return (Math.round(n * 10) / 10) + 'h'
 }
+
+/**
+ * Human elapsed time from a number of seconds: "45s", "12m", "1h 23m",
+ * "2h". Used for stock-count duration (how long a count took to walk).
+ * Drops the seconds part once we're past a minute — owners care about
+ * "how much of someone's shift went into this", not stopwatch precision.
+ */
+export function fmtDuration(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return '—'
+  const s = Math.round(seconds)
+  if (s < 60) return `${s}s`
+  const mins = Math.round(s / 60)
+  if (mins < 60) return `${mins}m`
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m === 0 ? `${h}h` : `${h}h ${m}m`
+}

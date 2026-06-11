@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
-import { fmtKr } from '@/lib/format'
+import { fmtKr, fmtDuration } from '@/lib/format'
 
 interface CountRow {
   id:                    string
@@ -21,6 +21,7 @@ interface CountRow {
   notes:                 string | null
   started_at:            string
   completed_at:          string | null
+  duration_seconds:      number | null
   total_value_at_count:  number | null
   total_lines:           number
   in_progress:           boolean
@@ -158,7 +159,9 @@ export default function StockCountsPage() {
                   <Th label="Location" />
                   <Th label="Lines" align="right" />
                   <Th label="Value at count" align="right" />
+                  <Th label="Time to count" align="right" />
                   <Th label="Status" />
+                  <Th label="" />
                 </tr>
               </thead>
               <tbody>
@@ -174,6 +177,9 @@ export default function StockCountsPage() {
                     <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, fontWeight: 500, color: UXP.ink1 }}>
                       {c.total_value_at_count != null ? fmtKr(c.total_value_at_count) : '—'}
                     </td>
+                    <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: UXP.ink2 }}>
+                      {c.duration_seconds != null ? fmtDuration(c.duration_seconds) : '—'}
+                    </td>
                     <td style={td()}>
                       {c.in_progress ? (
                         <span style={{ padding: '2px 8px', background: UXP.lavFill, color: UXP.lavText,
@@ -182,6 +188,15 @@ export default function StockCountsPage() {
                         </span>
                       ) : (
                         <span style={{ fontSize: 11, color: UXP.ink3 }}>Completed {c.completed_at?.slice(0, 10)}</span>
+                      )}
+                    </td>
+                    <td style={{ ...td(), textAlign: 'right' as const }}>
+                      {!c.in_progress && (
+                        <a href={`/api/inventory/counts/${c.id}/export`}
+                           onClick={e => e.stopPropagation()}
+                           style={{ fontSize: 11, fontWeight: 600, color: UXP.lavText, textDecoration: 'none', whiteSpace: 'nowrap' as const }}>
+                          Export Excel
+                        </a>
                       )}
                     </td>
                   </tr>
