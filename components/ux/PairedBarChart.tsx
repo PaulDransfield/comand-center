@@ -46,11 +46,25 @@ export interface LineOverlay {
   dashed?: boolean
 }
 
+/**
+ * Extra rows shown ONLY in the hover tooltip — not drawn on the chart.
+ * Used to surface per-day context (e.g. the AI revenue forecast + variance
+ * vs actual) without adding a bar/line that would distort the axes.
+ */
+export interface TooltipExtra {
+  label:   string
+  data:    (number | null)[]
+  color?:  string
+  fmt?:    'kr' | 'num' | 'pct'   // default 'kr'
+  signed?: boolean                // prefix '+' for positive (deltas)
+}
+
 export interface PairedBarChartProps {
   /** Group labels along the X-axis. */
   groups:        string[]
   series:        ClusterSeries[]    // 1–3 clustered bars per group
   lines?:        LineOverlay[]      // 0–2 lines on the right axis
+  tooltipExtras?: TooltipExtra[]    // extra hover-only rows (forecast, etc.)
   /** Bar height = leftMax. Default: auto-derived from series. */
   leftMax?:      number
   rightMax?:     number
@@ -65,7 +79,7 @@ export interface PairedBarChartProps {
 const LAV_PALETTE = ['#a99ce6', '#c4b8ec', '#d8d2f0']  // UXP.lav / lavMid / lavPale
 
 export default function PairedBarChart({
-  groups, series, lines = [],
+  groups, series, lines = [], tooltipExtras = [],
   leftMax, rightMax,
   leftAxisUnit = 'kr',
   width = 640, height = 220, legend = true,
@@ -288,6 +302,25 @@ export default function PairedBarChart({
                 <span style={{ fontVariantNumeric: 'tabular-nums' as const, color: UXP.ink1, fontWeight: 500 }}>
                   {v != null && Number.isFinite(v) ? `${Math.round(Number(v))}` : '—'}
                 </span>
+              </div>
+            )
+          })}
+          {tooltipExtras.length > 0 && (series.length > 0 || lines.length > 0) && (
+            <div style={{ height: 0.5, background: UXP.borderSoft, margin: '1px 0' }} />
+          )}
+          {tooltipExtras.map((ex, ei) => {
+            const v = ex.data[hoverIdx]
+            const has = v != null && Number.isFinite(v as any)
+            const n = Number(v)
+            const txt = !has ? '—'
+              : ex.fmt === 'pct' ? `${ex.signed && n > 0 ? '+' : ''}${Math.round(n)}%`
+              : ex.fmt === 'num' ? fmtNum(Math.round(n))
+              : fmtKr(Math.round(n))
+            return (
+              <div key={`tt-x-${ei}`} style={{ display: 'grid', gridTemplateColumns: '8px 1fr auto', gap: 6, alignItems: 'center' }}>
+                <span style={{ width: 6, height: 6, borderRadius: 2, background: ex.color ?? UXP.ink4, opacity: 0.75 }} />
+                <span style={{ color: UXP.ink2 }}>{ex.label}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' as const, color: UXP.ink1, fontWeight: 500 }}>{txt}</span>
               </div>
             )
           })}

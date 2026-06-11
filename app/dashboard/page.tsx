@@ -217,6 +217,7 @@ function DashboardInner() {
   const [reviewThemes,  setReviewThemes]  = useState<any>(null)
   const [dataQuality,   setDataQuality]   = useState<any>(null)
   const [forecastRecent, setForecastRecent] = useState<any>(null)
+  const [forecastByDay, setForecastByDay] = useState<Record<string, number>>({})
   const [loading,       setLoading]       = useState(true)
   const [showUpgrade,   setShowUpgrade]   = useState(false)
   const [upgradePlan,   setUpgradePlan]   = useState('')
@@ -323,6 +324,21 @@ function DashboardInner() {
     return () => { cancelled = true }
   }, [bizId, viewMode, weekOffset, monthOffset])
 
+  // ── Per-day AI forecast for the viewed period (for the chart tooltip) ──
+  // Unlike the scheduling AI suggestion above (current/future only), this
+  // reads daily_forecast_outcomes, so hovering any day — including past
+  // months — shows what we predicted for it.
+  useEffect(() => {
+    if (!bizId) return
+    let cancelled = false
+    const period = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
+    fetch(`/api/forecast/by-period?business_id=${bizId}&from=${period.from}&to=${period.to}`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (!cancelled) setForecastByDay(j && j.days && !j.error ? j.days : {}) })
+      .catch(() => { if (!cancelled) setForecastByDay({}) })
+    return () => { cancelled = true }
+  }, [bizId, viewMode, weekOffset, monthOffset])
+
   useEffect(() => {
     if (!bizId) return
     let cancelled = false
@@ -405,6 +421,7 @@ function DashboardInner() {
           isToday:  ds === localDate(now),
           isFuture: d > now,
           pred:     predByDate[ds] ?? null,
+          predicted: forecastByDay[ds] ?? null,
         }
       })
     }
@@ -420,9 +437,10 @@ function DashboardInner() {
         isToday:  ds === localDate(now),
         isFuture: d > now,
         pred:     predByDate[ds] ?? null,
+        predicted: forecastByDay[ds] ?? null,
       }
     })
-  }, [viewMode, weekOffset, monthOffset, dailyRows, aiSched])
+  }, [viewMode, weekOffset, monthOffset, dailyRows, aiSched, forecastByDay])
 
   const selectedBiz = businesses.find(b => b.id === bizId)
 
@@ -756,6 +774,22 @@ function ChartCard({ days, loading }: { days: any[]; loading: boolean }) {
   const LAB_TODAY_STROKE = '#d68b58'
   const labourColors = days.map(d => d.isToday && Number(d.staff_cost ?? 0) > 0 ? LAB_TODAY_FILL   : null)
   const labourStroke = days.map(d => d.isToday && Number(d.staff_cost ?? 0) > 0 ? LAB_TODAY_STROKE : null)
+
+  // AI forecast for the hover tooltip. `predicted` per day comes from
+  // daily_forecast_outcomes (covers past months too). We also compute the
+  // actual-vs-forecast variance for days that already have real revenue, so
+  // looking back you can see at a glance whether you beat or missed forecast.
+  const hasForecast = days.some(d => d.predicted != null)
+  const forecastData = days.map(d => (d.predicted != null ? Number(d.predicted) : null))
+  const varianceData = days.map(d => {
+    const rev = Number(d.revenue ?? 0)
+    return (d.predicted && rev > 0) ? ((rev - Number(d.predicted)) / Number(d.predicted)) * 100 : null
+  })
+  const tooltipExtras = hasForecast ? [
+    { label: 'AI forecast', data: forecastData, color: UXP.lavDeep, fmt: 'kr' as const },
+    { label: 'vs forecast', data: varianceData, fmt: 'pct' as const, signed: true },
+  ] : []
+
   return (
     <Card title="Revenue & labour" subtitle="Daily bars · labour as % of revenue · today in peach (scheduled, not final)">
       {loading ? (
@@ -797,6 +831,7 @@ function ChartCard({ days, loading }: { days: any[]; loading: boolean }) {
                 color:  UXP.coral,
                 dashed: false,
               }]}
+              tooltipExtras={tooltipExtras}
               rightMax={100}
               width={width}
               height={260}
