@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
+import { countDuration } from '@/lib/inventory/count-duration'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
   const db = createAdminClient()
   const { data, error } = await db
     .from('stock_counts')
-    .select('id, count_date, location_id, notes, started_at, completed_at, total_value_at_count, total_lines, location:stock_locations(name)')
+    .select('id, count_date, location_id, notes, started_at, completed_at, active_seconds, total_value_at_count, total_lines, location:stock_locations(name)')
     .eq('business_id', businessId)
     .is('archived_at', null)
     .order('count_date', { ascending: false })
@@ -32,13 +33,9 @@ export async function GET(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const out = (data ?? []).map((c: any) => {
-    // Duration = wall-clock from when the count was created (started_at) to
-    // when it was completed. Only meaningful once completed; null otherwise.
-    let durationSeconds: number | null = null
-    if (c.started_at && c.completed_at) {
-      const ms = new Date(c.completed_at).getTime() - new Date(c.started_at).getTime()
-      if (Number.isFinite(ms) && ms >= 0) durationSeconds = Math.round(ms / 1000)
-    }
+    // Time to count = active counting time (preferred) or, for pre-tracking
+    // counts, the created->completed wall-clock. See count-duration.ts.
+    const durationSeconds = countDuration(c)
     return {
       id:                   c.id,
       count_date:           c.count_date,

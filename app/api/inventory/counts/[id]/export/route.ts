@@ -19,6 +19,7 @@ import * as XLSX from 'xlsx'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
 import { fmtDuration } from '@/lib/format'
+import { countDuration } from '@/lib/inventory/count-duration'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const db = createAdminClient()
   const { data: count, error: cErr } = await db
     .from('stock_counts')
-    .select('id, business_id, count_date, location_id, notes, started_at, completed_at, created_by, total_value_at_count, total_lines, location:stock_locations(name)')
+    .select('id, business_id, count_date, location_id, notes, started_at, completed_at, created_by, active_seconds, total_value_at_count, total_lines, location:stock_locations(name)')
     .eq('id', params.id)
     .maybeSingle()
   if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 })
@@ -67,11 +68,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const countedByName = (userRes.data as any)?.full_name || (userRes.data as any)?.email || '—'
   const locationName  = (count.location as any)?.name ?? 'Global count'
 
-  let durationSeconds: number | null = null
-  if (count.started_at && count.completed_at) {
-    const ms = new Date(count.completed_at).getTime() - new Date(count.started_at).getTime()
-    if (Number.isFinite(ms) && ms >= 0) durationSeconds = Math.round(ms / 1000)
-  }
+  const durationSeconds = countDuration(count)
 
   const lines = (linesRes.data ?? [])
     .map((l: any) => ({

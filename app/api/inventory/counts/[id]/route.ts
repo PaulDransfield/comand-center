@@ -26,6 +26,7 @@ import { requireBusinessAccess } from '@/lib/auth/require-role'
 import { getProductLatestPrices } from '@/lib/inventory/recipe-cost'
 import { loadFxIndex } from '@/lib/inventory/fx'
 import { convertQuantity } from '@/lib/inventory/unit-conversion'
+import { countDuration } from '@/lib/inventory/count-duration'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const db = createAdminClient()
   const { data: count, error: cErr } = await db
     .from('stock_counts')
-    .select('id, business_id, count_date, location_id, notes, started_at, completed_at, created_by, total_value_at_count, total_lines, location:stock_locations(name)')
+    .select('id, business_id, count_date, location_id, notes, started_at, completed_at, created_by, active_seconds, total_value_at_count, total_lines, location:stock_locations(name)')
     .eq('id', params.id)
     .maybeSingle()
   if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 })
@@ -54,12 +55,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     countedByName = (u as any)?.full_name || (u as any)?.email || null
   }
 
-  // Duration = started_at → completed_at (only once completed).
-  let durationSeconds: number | null = null
-  if (count.started_at && count.completed_at) {
-    const ms = new Date(count.completed_at).getTime() - new Date(count.started_at).getTime()
-    if (Number.isFinite(ms) && ms >= 0) durationSeconds = Math.round(ms / 1000)
-  }
+  const durationSeconds = countDuration(count)
 
   // All non-archived products for the business. M130 — also pull
   // created_via so the recipe-import-draft tag flows through to the
@@ -183,6 +179,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   let body: any
   try { body = await req.json() } catch { body = {} }
+
+  // Accumulate active counting time ---------------------------------
+  // The count page pings deltas while it's open + visible. Each ping is
+  // clamped (defence against clock jumps / wake-from-sleep deltas) and
+  // ignored once the count is completed.
+  if (body.add_active_seconds != null) {
+    const secs = Math.max(0, Math.min(3600, Math.round(Number(body.add_active_seconds) || 0)))
+    if (secs > 0 && !count.completed_at) {
+      const { data: cur } = await db.from('stock_counts').select('active_seconds').eq('id', params.id).maybeSingle()
+      const next = (Number((cur as any)?.active_seconds) || 0) + secs
+      await db.from('stock_counts').update({ active_seconds: next }).eq('id', params.id)
+    }
+    return NextResponse.json({ ok: true })
+  }
 
   // Archive ---------------------------------------------------------
   if (body.archive === true) {

@@ -15,7 +15,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
@@ -90,6 +90,9 @@ export default function CountDetailPage() {
   const [mergeSource, setMergeSource] = useState<Row | null>(null)
   const [mergeSearch, setMergeSearch] = useState('')
   const [mergeBusy,   setMergeBusy]   = useState(false)
+  // Timestamp (ms) of the current active segment's start, or null when paused
+  // (page hidden / count completed). Active counting time is banked from this.
+  const activeStartRef = useRef<number | null>(null)
   // Article thumbnails — same supplier-article batch fetch the order /
   // prep / recipe pages use, keyed by product_id. Silent fallback when
   // a product has no scraped image yet. Keeps article presentation
@@ -163,6 +166,54 @@ export default function CountDetailPage() {
     return () => ctrl.abort()
   }, [productIdsKey])
 
+  // Bank the current active segment to the server. Computes the delta since
+  // the segment started, resets the segment (continuing if still visible),
+  // and POSTs the seconds. Used by the interval, the visibility handler, the
+  // unmount cleanup, and by complete() so the final segment isn't lost.
+  const flushActive = useCallback(async (keepalive = false) => {
+    if (activeStartRef.current == null) return
+    const delta = Math.round((Date.now() - activeStartRef.current) / 1000)
+    const stillVisible = typeof document !== 'undefined' && document.visibilityState === 'visible'
+    activeStartRef.current = stillVisible ? Date.now() : null
+    if (delta <= 0) return
+    try {
+      await fetch(`/api/inventory/counts/${params.id}`, {
+        method: 'PATCH', cache: 'no-store', keepalive,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ add_active_seconds: delta }),
+      })
+    } catch { /* best-effort; next flush retries the remaining time */ }
+  }, [params.id])
+
+  // Active-time tracking. Accumulate wall-time only while the count page is
+  // open AND visible AND not yet completed — so "time to count" is the time
+  // actually spent counting. It pauses when the page is hidden/closed and
+  // resumes when reopened; idle time with the page closed never counts.
+  useEffect(() => {
+    if (loading || error || !data || data.count.completed_at) return
+
+    activeStartRef.current = (typeof document !== 'undefined' && document.visibilityState === 'visible') ? Date.now() : null
+
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        activeStartRef.current = Date.now()           // resume
+      } else {
+        flushActive(true)                              // bank + pause
+      }
+    }
+    document.addEventListener('visibilitychange', onVis)
+    const interval = setInterval(() => { flushActive(false) }, 30_000)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVis)
+      flushActive(true)                                // bank remaining on leave
+    }
+    // Re-runs only when load state or completion flips — NOT on count entries
+    // (data.count.completed_at is stable while counting), so the clock isn't
+    // reset every time a quantity is typed.
+  }, [loading, error, data?.count.completed_at, flushActive])
+
   async function patchLine(productId: string, patch: { quantity?: number; unit?: string; delete?: boolean }) {
     const r = await fetch(`/api/inventory/counts/${params.id}`, {
       method: 'PATCH', cache: 'no-store',
@@ -225,6 +276,9 @@ export default function CountDetailPage() {
     } else {
       if (!confirm('Complete this count? After completion lines are locked.')) return
     }
+    // Bank the final active-time segment BEFORE marking complete — the server
+    // ignores active-time pings once completed_at is set.
+    await flushActive()
     const r = await fetch(`/api/inventory/counts/${params.id}`, {
       method: 'PATCH', cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
