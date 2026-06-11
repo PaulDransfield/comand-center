@@ -126,12 +126,12 @@ export async function POST(req: NextRequest) {
       .eq('business_id', businessId)
       .gte('forecast_date', days[0]).lte('forecast_date', days[6]),
     db.from('schedule_ai_suggestions')
-      .select('action, before, proposed, reasoning, status, owner_reason, modified_to')
+      .select('action, before, proposed, reasoning, status, owner_reason, reason_code, modified_to')
       .eq('business_id', businessId)
-      .in('status', ['rejected', 'modified'])
+      .in('status', ['rejected', 'modified', 'approved', 'applied'])
       .gte('created_at', new Date(Date.now() - 60 * 86_400_000).toISOString())
       .order('created_at', { ascending: false })
-      .limit(20),
+      .limit(200),
     db.from('hourly_metrics')
       .select('business_date, hour, revenue, covers')
       .eq('business_id', businessId)
@@ -149,6 +149,24 @@ export async function POST(req: NextRequest) {
   const forecast  = forecastRes.data  ?? []
   const recent    = recentOutcomesRes.data ?? []
   const hourly    = hourlyRes.data    ?? []
+
+  // Split owner feedback into NEGATIVE (don't repeat / learn the tweak) and
+  // POSITIVE (these landed — do more of this) examples. Previously only the
+  // negative half reached the prompt, so the model learned from failure but
+  // never from success. Also tally WHY suggestions get rejected so the AI can
+  // see its own failure distribution (e.g. mostly "busier_than_forecast" =>
+  // it's over-cutting).
+  const rejectedModified = recent.filter((r: any) => r.status === 'rejected' || r.status === 'modified').slice(0, 15)
+  const approvedApplied  = recent.filter((r: any) => r.status === 'approved' || r.status === 'applied').slice(0, 12)
+  const reasonTally: Record<string, number> = {}
+  for (const r of recent) {
+    if (r.status === 'rejected' && r.reason_code) {
+      reasonTally[r.reason_code] = (reasonTally[r.reason_code] ?? 0) + 1
+    }
+  }
+  const rejectionBreakdown = Object.entries(reasonTally)
+    .sort((a, b) => b[1] - a[1])
+    .map(([reason, count]) => ({ reason, count }))
 
   // ── Build per-(weekday × hour) demand profile from 12-week history ─
   //
@@ -253,8 +271,11 @@ export async function POST(req: NextRequest) {
 - Cite the actual hourly figures when explaining a cut. Owners trust reasoning that quotes their own data over reasoning that sounds plausible.
 - An empty hours list for a weekday means we have no POS data — be more conservative there (lower confidence on cuts).
 - Cover-count tells you whether the trough is light traffic or just low spend (e.g. coffee crowd). Don't cut staff on a high-cover hour even if revenue is modest.`,
-    `LEARNING:
-- Recent owner overrides are included below. When the owner rejected a suggestion, do NOT propose the same change again. When they MODIFIED a suggestion, learn the pattern — they like X kind of change, not Y.
+    `LEARNING — this owner's own history is your strongest signal:
+- REJECTED suggestions (recent_owner_overrides): do NOT propose the same change again, and read owner_reason to understand why it was wrong.
+- rejection_reason_breakdown is the tally of WHY this owner rejects, most common first. Use it to correct course: if "busier_than_forecast" dominates, your cuts are too aggressive — trust the forecast less and lean harder on the hourly demand profile before cutting. If "min_staffing" or "service_quality" dominate, you are cutting below the floor the owner needs — raise your bar for proposing a cut. If "wrong_role_section" dominates, you are misreading who covers what — be more careful matching staff to section.
+- MODIFIED suggestions: they liked the idea but changed the amount — aim for where they landed (owner_modified_to), not your original number.
+- APPROVED / APPLIED suggestions (recent_owner_approvals): these LANDED. Favour the same KIND of change — same action type, similar day / shift / section pattern. Repeating what the owner has already accepted builds trust and acceptance rate.
 - You can suggest fewer, higher-quality changes rather than many marginal ones. Confidence < 0.65 → omit the suggestion entirely.`,
     `OUTPUT FORMAT — return a JSON object with a "suggestions" array. Each suggestion:
 {
@@ -319,13 +340,24 @@ Return at most 8 suggestions per week — prioritise highest-impact (largest SEK
       est_cost: s.estimated_cost,
       published: s.is_published,
     })),
-    recent_owner_overrides: recent.map((r: any) => ({
+    recent_owner_overrides: rejectedModified.map((r: any) => ({
       ai_action: r.action,
       ai_proposed: r.proposed,
       owner_decision: r.status,
       owner_reason: r.owner_reason ?? null,
+      owner_reason_code: r.reason_code ?? null,
       owner_modified_to: r.modified_to ?? null,
     })),
+    // Positive examples — suggestions the owner accepted. The model should
+    // reinforce these patterns, not just avoid the rejected ones.
+    recent_owner_approvals: approvedApplied.map((r: any) => ({
+      ai_action: r.action,
+      ai_proposed: r.proposed,
+      owner_decision: r.status,
+    })),
+    // Distribution of rejection reasons (controlled vocab) so the model can
+    // self-correct its systematic bias.
+    rejection_reason_breakdown: rejectionBreakdown,
   })
 
   // ── Per-org AI quota gate ───────────────────────────────────────
