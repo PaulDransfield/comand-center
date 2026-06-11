@@ -30,6 +30,16 @@ export async function POST(req: NextRequest) {
   const action       = String(body.action ?? '').trim()
   const reason       = body.reason ? String(body.reason).slice(0, 500) : null
   const modifiedTo   = body.modified_to ?? null
+  // Controlled-vocab rejection category (see scheduling page REJECT_REASONS).
+  // Allow-listed so the analytics field stays clean; unknown codes drop to
+  // null rather than polluting the aggregation.
+  const REASON_CODES = [
+    'busier_than_forecast', 'booking_or_event', 'service_quality',
+    'training_or_new', 'min_staffing', 'staff_availability',
+    'wrong_role_section', 'other',
+  ]
+  const rawCode      = body.reason_code ? String(body.reason_code).trim() : null
+  const reasonCode   = rawCode && REASON_CODES.includes(rawCode) ? rawCode : null
 
   if (!suggestionId) return NextResponse.json({ error: 'suggestion_id required' }, { status: 400 })
   if (!['approved', 'modified', 'rejected', 'applied'].includes(action)) {
@@ -56,6 +66,7 @@ export async function POST(req: NextRequest) {
       owner_action_at: new Date().toISOString(),
       owner_action_by: auth.userId ?? null,
       owner_reason:    reason,
+      reason_code:     reasonCode,
       modified_to:     modifiedTo,
     })
     .eq('id', suggestionId)

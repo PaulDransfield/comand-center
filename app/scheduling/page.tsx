@@ -81,6 +81,22 @@ interface Shift {
   is_published: boolean
   is_ai_suggested: boolean
 }
+// Controlled-vocab rejection reasons. Picking from a fixed list (not free
+// text) keeps the training signal clean: the next ai-recommend run reads the
+// label back as an in-context example, and reason_code lets us aggregate WHY
+// owners reject so we can tell whether the model is e.g. systematically
+// over-cutting. Keep these codes in sync with the learn route's allow-list.
+const REJECT_REASONS: { code: string; label: string }[] = [
+  { code: 'busier_than_forecast', label: 'Busier than the forecast expects' },
+  { code: 'booking_or_event',     label: 'Booking or event that day' },
+  { code: 'service_quality',      label: 'Need the cover for service quality' },
+  { code: 'training_or_new',      label: 'Training / new starter on shift' },
+  { code: 'min_staffing',         label: 'Below safe minimum staffing' },
+  { code: 'staff_availability',   label: 'Staff availability / contract hours' },
+  { code: 'wrong_role_section',   label: 'AI misread the role or section' },
+  { code: 'other',                label: 'Other (add a note)' },
+]
+
 interface AISuggestion {
   id: string
   week_iso: string
@@ -144,6 +160,8 @@ export default function SchedulingGridPage() {
   const [generatingAi, setGeneratingAi] = useState(false)
   const [reviewOpen,   setReviewOpen]   = useState(false)
   const [applying,     setApplying]     = useState(false)
+  // Suggestion awaiting a rejection reason (drives the reason-picker modal).
+  const [rejectTarget, setRejectTarget] = useState<string | null>(null)
   // Mobile: which day's roster the owner is currently viewing.
   // null = falls back to today (or the first day of the week if today
   // is outside the loaded week).
@@ -351,6 +369,13 @@ export default function SchedulingGridPage() {
   }
 
   async function actOnSuggestion(suggestionId: string, action: 'approved' | 'rejected', reason?: string) {
+    // Rejecting without a reason → open the reason picker instead of posting.
+    // Every reject site already calls this with no reason, so this single
+    // intercept routes them all through the modal (no per-button changes).
+    if (action === 'rejected' && !reason) {
+      setRejectTarget(suggestionId)
+      return
+    }
     try {
       const r = await fetch('/api/scheduling/learn', {
         method: 'POST',
@@ -362,6 +387,25 @@ export default function SchedulingGridPage() {
         const j = await r.json().catch(() => ({}))
         alert(`Action failed: ${j.error ?? r.status}`)
       }
+      await load()
+    } catch (e: any) { alert(e.message) }
+  }
+
+  // Post a rejection with the chosen controlled-vocab reason + optional note.
+  async function submitReject(suggestionId: string, code: string, label: string, note?: string) {
+    const reason = note?.trim() ? `${label} — ${note.trim()}` : label
+    try {
+      const r = await fetch('/api/scheduling/learn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ suggestion_id: suggestionId, action: 'rejected', reason, reason_code: code }),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}))
+        alert(`Action failed: ${j.error ?? r.status}`)
+      }
+      setRejectTarget(null)
       await load()
     } catch (e: any) { alert(e.message) }
   }
@@ -652,7 +696,105 @@ export default function SchedulingGridPage() {
           onApply={async () => { setReviewOpen(false); await applyApproved() }}
         />
       )}
+
+      {rejectTarget && (
+        <RejectReasonModal
+          onCancel={() => setRejectTarget(null)}
+          onSubmit={(code, label, note) => submitReject(rejectTarget, code, label, note)}
+        />
+      )}
     </AppShell>
+  )
+}
+
+// ── Reject-reason picker ─────────────────────────────────────────────
+// Controlled-vocab feedback on why an AI suggestion was rejected. The list
+// keeps the input clean (better training signal than free text); "Other"
+// reveals a note box. Cancel aborts the rejection entirely — so every
+// recorded rejection carries a reason.
+function RejectReasonModal({ onCancel, onSubmit }: {
+  onCancel: () => void
+  onSubmit: (code: string, label: string, note?: string) => void
+}) {
+  const [otherNote, setOtherNote] = useState('')
+  const [showNote,  setShowNote]  = useState(false)
+  const [busy,      setBusy]      = useState(false)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onCancel])
+
+  function choose(code: string, label: string) {
+    if (code === 'other') { setShowNote(true); return }
+    setBusy(true)
+    onSubmit(code, label)
+  }
+
+  return (
+    <div onClick={onCancel}
+      style={{ position: 'fixed' as const, inset: 0, background: 'rgba(20,18,40,0.55)',
+               display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ width: 'min(460px, 100%)', background: '#fff', borderRadius: 12,
+                 border: `1px solid ${UXP.border}`, boxShadow: '0 25px 60px rgba(0,0,0,0.3)', padding: 22 }}>
+        <h2 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 600, color: UXP.ink1 }}>Why are you rejecting this?</h2>
+        <p style={{ margin: '0 0 14px', fontSize: 12, color: UXP.ink3, lineHeight: 1.5 }}>
+          Your reason trains the AI to schedule better — it learns what it got wrong and stops suggesting it.
+        </p>
+
+        <div style={{ display: 'grid', gap: 6 }}>
+          {REJECT_REASONS.map(r => (
+            <button key={r.code} disabled={busy}
+              onClick={() => choose(r.code, r.label)}
+              style={{
+                textAlign: 'left' as const, padding: '10px 12px', fontSize: 13,
+                background: showNote && r.code === 'other' ? UXP.lavFill : '#fff',
+                color: UXP.ink1, border: `0.5px solid ${UXP.border}`, borderRadius: 8,
+                cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit',
+              }}
+              onMouseEnter={e => { if (!busy) e.currentTarget.style.background = UXP.subtleBg }}
+              onMouseLeave={e => { e.currentTarget.style.background = (showNote && r.code === 'other') ? UXP.lavFill : '#fff' }}>
+              {r.label}
+            </button>
+          ))}
+        </div>
+
+        {showNote && (
+          <div style={{ marginTop: 10 }}>
+            <textarea autoFocus value={otherNote} onChange={e => setOtherNote(e.target.value)}
+              maxLength={500} rows={3} placeholder="Tell the AI what it got wrong…"
+              style={{ width: '100%', padding: '8px 10px', fontSize: 13, color: UXP.ink1,
+                       border: `1px solid ${UXP.border}`, borderRadius: 8, fontFamily: 'inherit',
+                       boxSizing: 'border-box' as const, resize: 'vertical' as const }} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+              <button onClick={() => setShowNote(false)} disabled={busy}
+                style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', color: UXP.ink2,
+                         border: `0.5px solid ${UXP.border}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Back
+              </button>
+              <button disabled={busy || !otherNote.trim()}
+                onClick={() => { setBusy(true); onSubmit('other', 'Other', otherNote) }}
+                style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600,
+                         background: otherNote.trim() ? UXP.lavDeep : UXP.subtleBg,
+                         color: otherNote.trim() ? '#fff' : UXP.ink4, border: 'none', borderRadius: 6,
+                         cursor: otherNote.trim() ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>
+                Reject with note
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14, paddingTop: 12, borderTop: `0.5px solid ${UXP.borderSoft}` }}>
+          <button onClick={onCancel} disabled={busy}
+            style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', color: UXP.ink3,
+                     border: 'none', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Cancel — keep the suggestion
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
