@@ -27,8 +27,8 @@ export async function GET(req: NextRequest) {
   // applied in this environment). Without this fallback the entire
   // dashboard goes empty because Supabase returns null on column-not-
   // found and downstream code has no bizId → no data fetched.
-  const SELECT_FULL = 'id, name, type, city, org_number, colour, target_staff_pct, target_food_pct, target_rent_pct, target_margin_pct, is_active, vat_filing_cadence, setup_health_summary, setup_health_updated_at, created_at'
-  const SELECT_LEGACY = 'id, name, type, city, org_number, colour, target_staff_pct, target_food_pct, target_rent_pct, target_margin_pct, is_active, created_at'
+  const SELECT_FULL = 'id, name, type, city, org_number, legal_name, address, country, colour, target_staff_pct, target_food_pct, target_rent_pct, target_margin_pct, is_active, vat_filing_cadence, setup_health_summary, setup_health_updated_at, created_at'
+  const SELECT_LEGACY = 'id, name, type, city, org_number, legal_name, address, country, colour, target_staff_pct, target_food_pct, target_rent_pct, target_margin_pct, is_active, created_at'
 
   let { data: businesses, error: selectErr } = await adminDb
     .from('businesses')
@@ -90,6 +90,7 @@ export async function GET(req: NextRequest) {
     return {
       id: biz.id, name: biz.name, type: biz.type,
       city: biz.city, org_number: biz.org_number,
+      legal_name: biz.legal_name ?? null, address: biz.address ?? null, country: biz.country ?? null,
       colour: biz.colour ?? colourForIndex(i),
       is_active: biz.is_active,
       target_staff_pct:  Number(biz.target_staff_pct  ?? 40),

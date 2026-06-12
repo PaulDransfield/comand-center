@@ -35,6 +35,14 @@ export default function OnboardingPage() {
   const [error,   setError]   = useState('')
   const [businessId, setBusinessId] = useState<string | null>(null)
 
+  // Connect-first onboarding (docs/ONBOARDING-CONNECT-FIRST-PLAN.md). Step 0
+  // starts as a "How do you do your books?" choice; picking Fortnox connects
+  // immediately and the form opens prefilled from the Fortnox company record.
+  const [mode, setMode] = useState<'choose' | 'form'>('choose')
+  const [fortnoxConnected, setFortnoxConnected] = useState(false)
+  const [legalInfo, setLegalInfo] = useState<{ legal_name: string | null; org_number: string | null } | null>(null)
+  const [connecting, setConnecting] = useState(false)
+
   // M046 follow-up: org_number is currently collected at /api/auth/signup
   // (look at the signup form on /login). The wizard would be asking for
   // it twice. On mount, peek at /api/settings/company-info — if the org
@@ -57,6 +65,56 @@ export default function OnboardingPage() {
       .catch(() => {})
     return () => { cancelled = true }
   }, [])
+
+  // Returning from the Fortnox OAuth round-trip (?fortnox=connected&business_id).
+  // The callback already pulled org-nr / legal name / address / city / country
+  // into the businesses row and started the backfill — prefill the form from it.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    if (p.get('fortnox') !== 'connected') return
+    const bid = p.get('business_id')
+    if (!bid) return
+    setBusinessId(bid)
+    setFortnoxConnected(true)
+    setMode('form')
+    setSystems(s => ({ ...s, accounting: 'Fortnox' }))
+    fetch('/api/businesses', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then((list: any[]) => {
+        const biz = Array.isArray(list) ? list.find(b => b.id === bid) : null
+        if (!biz) return
+        setForm(f => ({
+          ...f,
+          restaurantName: f.restaurantName || biz.legal_name || biz.name || '',
+          city:           f.city || biz.city || '',
+          address:        f.address || biz.address || '',
+          country:        biz.country || f.country,
+          orgNumber:      biz.org_number || f.orgNumber,
+        }))
+        setLegalInfo({ legal_name: biz.legal_name ?? biz.name ?? null, org_number: biz.org_number ?? null })
+      })
+      .catch(() => {})
+    // Clean the query string so a refresh doesn't re-trigger.
+    window.history.replaceState(null, '', '/onboarding')
+  }, [])
+
+  // Create a stub business then hand off to the Fortnox OAuth flow, asking it
+  // to return here. On return the effect above prefills from the company record.
+  async function connectFortnox() {
+    setConnecting(true); setError('')
+    try {
+      const r = await fetch('/api/businesses/add', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'New restaurant', country: form.country }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j?.id) throw new Error(j?.error || 'Could not start Fortnox setup')
+      window.location.href =
+        `/api/integrations/fortnox?action=connect&business_id=${encodeURIComponent(j.id)}&return_to=onboarding`
+    } catch (e: any) {
+      setError(e?.message || 'Something went wrong'); setConnecting(false)
+    }
+  }
 
   const [form, setForm] = useState({
     restaurantName:  '',
@@ -109,9 +167,9 @@ export default function OnboardingPage() {
     if (!form.address.trim()) {
       setError(t('restaurant.errors.missingAddress')); return
     }
-    // Skip org-nr validation when it was already collected during signup
-    // (the field is hidden in that case — see orgAlreadySet effect above).
-    if (!orgAlreadySet) {
+    // Skip org-nr validation when it was already collected during signup OR
+    // when it came from Fortnox (locked, authoritative — see fortnoxConnected).
+    if (!orgAlreadySet && !fortnoxConnected) {
       const orgCheck = validateOrgNr(form.orgNumber)
       if (!orgCheck.ok) {
         setError(form.orgNumber.trim()
@@ -128,37 +186,41 @@ export default function OnboardingPage() {
     }
     setError('')
 
-    if (businessId) { setStep(1); return }
-
     setLoading(true)
     try {
-      const r = await fetch('/api/businesses/add', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name:              form.restaurantName.trim(),
-          city:              form.city.trim(),
-          type:              form.type,
-          country:           form.country,    // Phase 1: just stored. Drives lib/holidays today; future phases will localise org-nr validation, currency, integrations.
-          address:           form.address.trim(),
-          // We DON'T set org_number on the business row here — the
-          // org-level org_number written via /api/onboarding/complete
-          // is the authoritative one (drives invoicing). Per-business
-          // org_number is reserved for restaurant groups with multiple
-          // legal entities, which they can fill in later.
-          opening_days:      openDays,
-          business_stage:    form.businessStage,
-          target_food_pct:   parseFloat(form.targetFoodCost)  || 31,
-          target_staff_pct:  parseFloat(form.targetStaffCost) || 35,
-          target_margin_pct: parseFloat(form.targetMargin)    || 15,
-        }),
-      })
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}))
-        throw new Error(j?.error || 'Failed to create restaurant')
+      // We DON'T set org_number on the business row here — the org-level
+      // org_number written via /api/onboarding/complete is the authoritative
+      // one (drives invoicing). For Fortnox-connected businesses the per-
+      // business org_number is already set by the identity sync on connect.
+      const payload: Record<string, any> = {
+        name:              form.restaurantName.trim(),
+        city:              form.city.trim(),
+        type:              form.type,
+        country:           form.country,
+        address:           form.address.trim(),
+        opening_days:      openDays,
+        business_stage:    form.businessStage,
+        target_food_pct:   parseFloat(form.targetFoodCost)  || 31,
+        target_staff_pct:  parseFloat(form.targetStaffCost) || 35,
+        target_margin_pct: parseFloat(form.targetMargin)    || 15,
       }
-      const j = await r.json()
-      setBusinessId(j?.id ?? null)
+      if (businessId) {
+        // Connect-first stub (or a business created on a prior pass) — fill in
+        // the rest rather than creating a duplicate.
+        const r = await fetch('/api/businesses/update', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ business_id: businessId, ...payload }),
+        })
+        if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j?.error || 'Failed to save restaurant') }
+      } else {
+        const r = await fetch('/api/businesses/add', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j?.error || 'Failed to create restaurant') }
+        const j = await r.json()
+        setBusinessId(j?.id ?? null)
+      }
       setStep(1)
     } catch (e: any) {
       setError(e?.message || 'Something went wrong')
@@ -270,10 +332,83 @@ export default function OnboardingPage() {
         </div>
 
         {/* ── Step 0: Restaurant details ───────────────────────── */}
-        {step === 0 && (
+        {/* ── Step 0a: How do you do your books? (connect-first) ── */}
+        {step === 0 && mode === 'choose' && (
+          <div>
+            <h1 style={{ margin: '0 0 10px', fontSize: 22, fontWeight: 700, color: '#111' }}>How do you do your books?</h1>
+            <p style={{ margin: '0 0 24px', fontSize: 14, color: '#6b7280', lineHeight: 1.6 }}>
+              Connect your accounting and we'll pull your company details and last 12 months of figures automatically — less typing, correct from day one, and syncing starts straight away.
+            </p>
+
+            {/* Fortnox — connect now */}
+            <button type="button" onClick={connectFortnox} disabled={connecting}
+              style={{
+                width: '100%', textAlign: 'left' as const, padding: '16px 18px',
+                background: '#f9fafb', border: '1.5px solid #e5e7eb', borderRadius: 12,
+                cursor: connecting ? 'wait' : 'pointer', marginBottom: 10,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+              }}>
+              <span>
+                <span style={{ display: 'block', fontSize: 15, fontWeight: 700, color: '#111' }}>Fortnox</span>
+                <span style={{ display: 'block', fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                  Connect now — we auto-fill your details and start syncing.
+                </span>
+              </span>
+              <span style={{ padding: '8px 14px', background: '#1a1f2e', color: 'white', borderRadius: 8, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' as const }}>
+                {connecting ? 'Connecting…' : 'Connect →'}
+              </span>
+            </button>
+
+            {/* Other / manual */}
+            <button type="button" onClick={() => { setMode('form'); setError('') }}
+              style={{
+                width: '100%', textAlign: 'left' as const, padding: '14px 18px',
+                background: 'transparent', border: '1.5px solid #e5e7eb', borderRadius: 12, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+              }}>
+              <span>
+                <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#374151' }}>Another system, or not yet</span>
+                <span style={{ display: 'block', fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
+                  Enter your details manually — connect later from Settings.
+                </span>
+              </span>
+              <span style={{ fontSize: 13, color: '#9ca3af', whiteSpace: 'nowrap' as const }}>Enter manually →</span>
+            </button>
+
+            {error && (
+              <div style={{ fontSize: 13, color: '#dc2626', padding: '10px 12px', background: '#fef2f2', borderRadius: 8, marginTop: 14 }}>{error}</div>
+            )}
+          </div>
+        )}
+
+        {/* ── Step 0b: Restaurant details ─────────────────────── */}
+        {step === 0 && mode === 'form' && (
           <div>
             <h1 style={{ margin: '0 0 10px', fontSize: 22, fontWeight: 700, color: '#111' }}>{t('restaurant.title')}</h1>
             <p style={{ margin: '0 0 24px', fontSize: 14, color: '#6b7280', lineHeight: 1.6 }}>{t('restaurant.subtitle')}</p>
+
+            {/* Connected-to-Fortnox panel — legal identity is locked (Fortnox is
+                the source of truth); the rest of the form is prefilled + editable. */}
+            {fortnoxConnected && (
+              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 10, padding: '14px 16px', marginBottom: 18 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#047857', marginBottom: 8, textTransform: 'uppercase' as const, letterSpacing: '.04em' }}>
+                  ✓ Connected to Fortnox
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13 }}>
+                    <span style={{ color: '#6b7280' }}>Legal name</span>
+                    <span style={{ color: '#111', fontWeight: 600, textAlign: 'right' as const }}>{legalInfo?.legal_name ?? '—'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13 }}>
+                    <span style={{ color: '#6b7280' }}>Org-nr</span>
+                    <span style={{ color: '#111', fontWeight: 600, fontVariantNumeric: 'tabular-nums' as const }}>{legalInfo?.org_number ? formatOrgNr(legalInfo.org_number) : '—'}</span>
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: '#059669', marginTop: 8, lineHeight: 1.5 }}>
+                  From your Fortnox account — your figures are already syncing. Just confirm the details below.
+                </div>
+              </div>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 14, marginBottom: 20 }}>
               <div>
@@ -336,7 +471,7 @@ export default function OnboardingPage() {
               {/* Org-nr field — only shown when the value isn't already on
                   the org row (signup may have already captured it; double-
                   asking is a known papercut). */}
-              {!orgAlreadySet && (
+              {!orgAlreadySet && !fortnoxConnected && (
                 <div>
                   <label style={label}>{t('restaurant.orgNumber')}</label>
                   <input
@@ -424,7 +559,11 @@ export default function OnboardingPage() {
             <button onClick={saveAndContinue} disabled={loading} style={btnP}>
               {loading ? t('done.loading') : t('restaurant.continue')}
             </button>
-            {/* No "back" — Restaurant is the first step now. */}
+            {/* Back to the "how do you do your books?" choice (manual path only —
+                a connected business can't trivially un-connect here). */}
+            {!fortnoxConnected && (
+              <button onClick={() => { setMode('choose'); setError('') }} style={btnS}>← Back</button>
+            )}
           </div>
         )}
 
