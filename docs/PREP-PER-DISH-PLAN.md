@@ -46,8 +46,14 @@ Owner request: "all of this under 1 dropdown instead of two tabs", a type pill p
 ### Cleanup TODO (non-blocking)
 - The owner page's *old* tab+table render (desktop) and segmented-tabs+cards render (mobile) are wrapped in `{false && (…)}` (dead but valid) rather than deleted, to avoid reproducing ~250 lines of exact JSX in one edit. Delete those guarded blocks (and the now-unused `DishHeader`, `TabPill` in the saved-session path) in a follow-up. The create-mode **preview** still uses the components/ingredients tabs — fine for a pre-save summary, but could move to the accordion later for full consistency.
 
-### Intentionally NOT changed on the owner page
-- **Per-line waste stays staff-only.** The owner page keeps its end-of-session waste modal (with "Skip & complete"). The "popup is hard when many chefs share the list" problem is specific to the staff tick-off view, which now has per-line tap-to-log. The owner completes the session solo, so the completion modal is fine there (it just lists per-dish rows now).
+## Phase 4 — waste moves to per-dish completion ✅ SHIPPED (2026-06-12)
+Owner request: the waste prompt should fire **when a dish is finished**, not as one big modal at the very end of the whole list.
+- The shared `PrepDishAccordion` now watches for a dish becoming fully checked and pops an **"<Dish> — anything go in the bin?"** prompt for THAT dish (once per completion; re-opening + re-completing re-arms it). Each item shows its prepped qty + a qty input + reason; "Skip" or "Log N waste & done".
+- Logged via `onLogWasteBatch` (one batched POST to `/api/inventory/waste` with `prep_session_id`), and attributed to whoever is signed in (`waste_log.created_by` = `auth.userId`, the bug fixed earlier).
+- **Owner "Complete" is now a plain confirm** — the old end-of-session waste modal (`completeSession` → `setWasteModal`) is gone; `completeSession` just calls `finaliseSession([])`. (The old `wasteModal` state + `WasteModal` render are now dead — cleanup TODO.)
+- Both views also keep the per-line "+ log waste" link for ad-hoc waste outside a dish completion.
+
+### Notes
 - **Create-mode preview** stays aggregated (the engine `result`), and already shows each line's source dishes (`source_recipes` → names). It's a pre-save summary, not the working list, so per-dish grouping isn't needed there.
 
 ## Notes / gotchas

@@ -19,7 +19,7 @@ import { PageContainer } from '@/components/ui/Layout'
 import { PageErrorBoundary } from '@/components/ui/PageErrorBoundary'
 import { DRINK_TYPES } from '@/lib/categoryColors'
 import { CategoryPill } from '@/components/ui/CategoryPill'
-import PrepDishAccordion, { type PrepAccLine } from '@/components/inventory/PrepDishAccordion'
+import PrepDishAccordion, { type PrepAccLine, type WasteEntry } from '@/components/inventory/PrepDishAccordion'
 import { useIsMobile } from '@/lib/hooks/useViewport'
 import { useAuthSubject } from '@/lib/hooks/useAuthSubject'
 import StaffPrepView from '@/components/inventory/StaffPrepView'
@@ -591,34 +591,34 @@ function PrepListPageInner() {
     }>
   }>(null)
 
-  // Mark the whole session done. Two paths:
-  //   1. Open waste modal first (default) so the chef can log waste
-  //   2. Modal "Skip & complete" → close without logging
+  // Mark the whole session done — PLAIN complete. Waste is now logged
+  // per-dish (the "anything go in the bin?" prompt fires as each dish is
+  // finished, via PrepDishAccordion), so there's no end-of-session waste
+  // modal to fill in for the whole list anymore.
   const completeSession = useCallback(async () => {
     if (!activeSession) return
-    // Pre-fill the modal with one row per session line. Empty qty
-    // string means "nothing wasted here" — only rows with a positive
-    // qty get POSTed.
-    const rows = sessionLines
-      .filter(l => l.total_qty > 0)
-      .map(l => ({
-        line_id:    l.id,
-        kind:       l.kind,
-        entity_id:  l.entity_id,
-        name:       l.name_snapshot,
-        prep_qty:   l.total_qty,
-        unit:       l.unit,
-        wasted_qty: '',
-        reason:     'overproduction',
-      }))
-    if (rows.length === 0) {
-      // No lines to log against — fall back to a simple confirm + complete.
-      if (!window.confirm('Mark this prep list as complete? It moves to history and lines become read-only.')) return
-      await finaliseSession([])
-      return
+    if (!window.confirm('Mark this prep list as complete? It moves to history and lines become read-only.')) return
+    await finaliseSession([])
+  }, [activeSession])
+
+  // Batch waste from the per-dish completion prompt. Logged against whoever
+  // is signed in (waste_log.created_by) with the cost snapshotted server-side.
+  const logWasteBatch = useCallback(async (events: WasteEntry[]) => {
+    if (!activeSession || !bizId || events.length === 0) return
+    const body = {
+      business_id: bizId,
+      events: events.map(e => ({
+        ...(e.line.kind === 'component' ? { recipe_id: e.line.entity_id } : { product_id: e.line.entity_id }),
+        quantity: e.qty, unit: e.line.unit, reason: e.reason, prep_session_id: activeSession.id,
+      })),
     }
-    setWasteModal({ rows })
-  }, [activeSession, sessionLines])
+    const r = await fetch('/api/inventory/waste', {
+      method: 'POST', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error ?? `HTTP ${r.status}`) }
+  }, [activeSession, bizId])
 
   // Actually close the session + (optionally) batch-post waste events.
   // Called from the modal's two CTAs.
@@ -982,6 +982,8 @@ function PrepListPageInner() {
               completed={!!activeSession.completed_at}
               onToggle={(l) => toggleLine(l as unknown as PrepSessionLine)}
               onOpenLine={(l) => setOpenModal({ line: l as unknown as PrepSessionLine, session_line_id: l.id })}
+              onLogWaste={(l, qty, reason) => logWasteBatch([{ line: l, qty, reason }])}
+              onLogWasteBatch={logWasteBatch}
             />
             {false && (<>
             {/* Tab strip — same shape as create-mode. */}
@@ -1208,6 +1210,8 @@ function PrepListPageInner() {
                 completed={!!activeSession.completed_at}
                 onToggle={(l) => toggleLine(l as unknown as PrepSessionLine)}
                 onOpenLine={(l) => setOpenModal({ line: l as unknown as PrepSessionLine, session_line_id: l.id })}
+                onLogWaste={(l, qty, reason) => logWasteBatch([{ line: l, qty, reason }])}
+                onLogWasteBatch={logWasteBatch}
               />
               {false && (<>
               {/* (2) SEGMENTED TABS — "To prepare" / "To pull" with count chips. */}

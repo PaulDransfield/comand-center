@@ -18,6 +18,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { UXP } from '@/lib/constants/tokens'
 
+export interface WasteEntry { line: PrepAccLine; qty: number; reason: string }
+
 export interface PrepAccLine {
   id: string
   kind: 'component' | 'product'
@@ -72,18 +74,24 @@ function TypePill({ type }: { type: string | null | undefined }) {
 }
 
 export default function PrepDishAccordion({
-  lines, completed, onToggle, onOpenLine, onLogWaste,
+  lines, completed, onToggle, onOpenLine, onLogWaste, onLogWasteBatch,
 }: {
   lines: PrepAccLine[]
   completed: boolean
   onToggle: (line: PrepAccLine) => void
   onOpenLine: (line: PrepAccLine) => void
   onLogWaste?: (line: PrepAccLine, qty: number, reason: string) => Promise<void>
+  // Batch waste — fired from the per-dish "anything go in the bin?" prompt
+  // that pops when a dish is finished. When provided, completing a dish
+  // opens that prompt.
+  onLogWasteBatch?: (events: WasteEntry[]) => Promise<void>
 }) {
   const [tab, setTab]           = useState<'dishes' | 'totals'>('dishes')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [wasteFor, setWasteFor] = useState<string | null>(null)
   const [wasted, setWasted]     = useState<Set<string>>(new Set())
+  const [wasteDishKey, setWasteDishKey] = useState<string | null>(null)  // dish whose completion prompt is open
+  const promptedRef = useRef<Set<string>>(new Set())
   const didInit = useRef(false)
 
   // Group by dish, preserving the stored (dish-by-dish, components-then-
@@ -105,6 +113,23 @@ export default function PrepDishAccordion({
     didInit.current = true
     setExpanded(groups.length === 1 ? new Set(groups.map(g => g.key)) : new Set())
   }, [groups])
+
+  // When a dish becomes fully checked, pop the "anything go in the bin?"
+  // prompt for THAT dish — once per completion. This replaces the old
+  // end-of-session modal: waste is logged dish-by-dish, attributed to
+  // whoever is logged in. Re-opening then re-completing a dish re-arms it.
+  useEffect(() => {
+    if (completed || !onLogWasteBatch) return
+    for (const g of groups) {
+      const allDone = g.lines.length > 0 && g.lines.every(l => l.checked_at != null)
+      if (allDone && !promptedRef.current.has(g.key)) {
+        promptedRef.current.add(g.key)
+        setWasteDishKey(g.key)
+        return
+      }
+      if (!allDone) promptedRef.current.delete(g.key)
+    }
+  }, [groups, completed, onLogWasteBatch])
 
   const totals = useMemo(() => {
     const m = new Map<string, { key: string; kind: 'component' | 'product'; name: string; unit: string; total: number; uncertain: boolean; dishes: number }>()
@@ -191,6 +216,20 @@ export default function PrepDishAccordion({
           ))}
         </div>
       )}
+
+      {/* Per-dish "anything go in the bin?" prompt, fired on dish completion */}
+      {wasteDishKey && onLogWasteBatch && (() => {
+        const g = groups.find(x => x.key === wasteDishKey)
+        if (!g) return null
+        return (
+          <DishWasteModal
+            dishName={g.name}
+            lines={g.lines}
+            onClose={() => setWasteDishKey(null)}
+            onSubmit={async (events) => { await onLogWasteBatch(events); setWasteDishKey(null) }}
+          />
+        )
+      })()}
     </div>
   )
 }
@@ -287,6 +326,74 @@ function PrepRow({ line, completed, wasted, wasteOpen, onToggle, onOpenMethod, o
           {wErr && <div style={{ fontSize: 11, color: UXP.roseText }}>{wErr}</div>}
         </div>
       )}
+    </div>
+  )
+}
+
+// Per-dish waste prompt, fired when a dish is finished. Lists the dish's
+// prepped items; the cook enters a qty for anything that went in the bin
+// (or skips). The qty is logged against whoever is signed in (created_by).
+function DishWasteModal({ dishName, lines, onClose, onSubmit }: {
+  dishName: string
+  lines: PrepAccLine[]
+  onClose: () => void
+  onSubmit: (events: WasteEntry[]) => Promise<void>
+}) {
+  const [rows, setRows] = useState(() =>
+    lines.filter(l => l.total_qty > 0).map(l => ({ line: l, qty: '', reason: 'overproduction' })))
+  const [busy, setBusy] = useState(false)
+  const [err, setErr]   = useState<string | null>(null)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const filled = rows.filter(r => Number(r.qty) > 0)
+
+  async function submit() {
+    setBusy(true); setErr(null)
+    try {
+      await onSubmit(filled.map(r => ({ line: r.line, qty: Number(r.qty), reason: r.reason })))
+    } catch (e: any) { setErr(e.message); setBusy(false) }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20,18,40,0.55)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: '14px 14px 0 0', width: 'min(640px, 100%)', maxHeight: '85vh', overflowY: 'auto', padding: 22, boxShadow: '0 -8px 40px rgba(0,0,0,0.3)' }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: UXP.ink1 }}>{dishName} — anything go in the bin?</div>
+        <p style={{ margin: '6px 0 14px', fontSize: 12, color: UXP.ink3, lineHeight: 1.5 }}>
+          Log waste for any item below. Leave qty empty if nothing was wasted. Recorded against you, with the cost snapshotted so reports stay accurate.
+        </p>
+        {rows.map((r, i) => (
+          <div key={r.line.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderTop: i === 0 ? 'none' : `0.5px solid ${UXP.borderSoft}`, flexWrap: 'wrap' as const }}>
+            <div style={{ flex: 1, minWidth: 140 }}>
+              <div style={{ fontSize: 13, color: UXP.ink1 }}>{r.line.name_snapshot}</div>
+              <div style={{ fontSize: 10, color: UXP.ink4 }}>prepped {fmtQty(r.line.total_qty, r.line.unit)}</div>
+            </div>
+            <input type="number" min="0" step="0.01" inputMode="decimal" value={r.qty} placeholder="0"
+              onChange={e => setRows(prev => prev.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))}
+              style={{ width: 70, padding: '7px 9px', fontSize: 14, border: `1px solid ${UXP.border}`, borderRadius: 6, fontFamily: 'inherit' }} />
+            <span style={{ fontSize: 12, color: UXP.ink3, width: 24 }}>{r.line.unit}</span>
+            <select value={r.reason} onChange={e => setRows(prev => prev.map((x, j) => j === i ? { ...x, reason: e.target.value } : x))}
+              style={{ padding: '7px 9px', fontSize: 12, border: `1px solid ${UXP.border}`, borderRadius: 6, fontFamily: 'inherit', background: '#fff' }}>
+              {WASTE_REASONS.map(w => <option key={w.v} value={w.v}>{w.l}</option>)}
+            </select>
+          </div>
+        ))}
+        {err && <div style={{ fontSize: 11, color: UXP.roseText, marginTop: 8 }}>{err}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          <button onClick={onClose} disabled={busy}
+            style={{ padding: '8px 14px', fontSize: 12, background: 'transparent', color: UXP.ink3, border: `0.5px solid ${UXP.border}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Skip
+          </button>
+          <button onClick={submit} disabled={busy}
+            style={{ padding: '8px 16px', fontSize: 12, fontWeight: 600, background: filled.length > 0 ? UXP.coral : UXP.lavDeep, color: '#fff', border: 'none', borderRadius: 6, cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
+            {busy ? 'Saving…' : filled.length > 0 ? `Log ${filled.length} waste & done` : 'Nothing wasted'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

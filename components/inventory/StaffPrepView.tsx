@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
-import PrepDishAccordion, { type PrepAccLine } from '@/components/inventory/PrepDishAccordion'
+import PrepDishAccordion, { type PrepAccLine, type WasteEntry } from '@/components/inventory/PrepDishAccordion'
 
 interface SubIngredient { product_name: string | null; quantity: number; unit: string | null; notes: string | null; position: number }
 interface UseRef { recipe_name: string | null; notes: string | null; quantity: number; unit: string | null }
@@ -89,6 +89,24 @@ export default function StaffPrepView() {
     if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error ?? `HTTP ${r.status}`) }
   }
 
+  // Batch waste from the per-dish "anything go in the bin?" prompt.
+  async function logWasteBatch(events: WasteEntry[]) {
+    if (!bizId || !data || events.length === 0) return
+    const body = {
+      business_id: bizId,
+      events: events.map(e => ({
+        ...(e.line.kind === 'component' ? { recipe_id: e.line.entity_id } : { product_id: e.line.entity_id }),
+        quantity: e.qty, unit: e.line.unit, reason: e.reason, prep_session_id: data.session.id,
+      })),
+    }
+    const r = await fetch('/api/inventory/waste', {
+      method: 'POST', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error ?? `HTTP ${r.status}`) }
+  }
+
   const lines = data?.lines ?? []
   const done  = lines.filter(l => l.checked_at != null).length
   const completed = !!data?.session.completed_at
@@ -124,6 +142,7 @@ export default function StaffPrepView() {
               onToggle={toggle}
               onOpenLine={(l) => setModal(l as Line)}
               onLogWaste={logWaste}
+              onLogWasteBatch={logWasteBatch}
             />
           </>
         )}
