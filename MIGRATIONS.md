@@ -4,6 +4,28 @@
 
 ---
 
+## Applied — 2026-06-12 (stock-count timing, scheduling feedback, per-dish prep + waste)
+
+> All four applied via the Supabase migration tool during the session (not the SQL editor), so the DB already has them. SQL files added afterwards for the repo record.
+
+### M157 — waste_log recipe + prep-waste columns ✅ applied 2026-06-12
+**File:** `sql/M157-WASTE-LOG-RECIPE-PREP-COLUMNS.sql`
+**Purpose:** `waste_log` was product-only — the recipe/prep-waste features the app already assumed (recipe waste, the per-dish "anything go in the bin?" prompt, cost snapshot) had no columns, so those inserts failed and the `recipe:recipes` embed errored. Made `product_id` nullable; added `recipe_id`, `cost_estimate_sek`, `prep_session_id`, `archived_at`; FKs `recipe_id→recipes` (ON DELETE RESTRICT) + `prep_session_id→prep_sessions` (ON DELETE SET NULL); a product-XOR-recipe CHECK; indexes. Table was EMPTY (0 rows) so zero orphans / nothing to migrate. This was effectively the never-applied "M139" waste schema the code referenced.
+
+### M156 — prep_session_lines per-dish columns ✅ applied 2026-06-12
+**File:** `sql/M156-PREP-LINES-PER-DISH.sql`
+**Purpose:** `dish_recipe_id` + `dish_name_snapshot` so prep lines belong to a parent dish (frozen at save) and the prep list groups per dish (with derived Totals). Nullable → legacy sessions render as "All items". Powers `PrepDishAccordion` across the staff + owner prep views.
+
+### M155 — schedule_ai_suggestions.reason_code ✅ applied 2026-06-12
+**File:** `sql/M155-SCHEDULE-AI-SUGGESTIONS-REASON-CODE.sql`
+**Purpose:** Controlled-vocab rejection category for AI scheduling suggestions (busier_than_forecast, booking_or_event, …). Lets us aggregate WHY owners reject and feed cleaner signal into `ai-recommend`. Paired with the reject-reason picker UI + the confirmed/rejected feedback now in the prompt.
+
+### M154 — stock_counts.active_seconds ✅ applied 2026-06-12
+**File:** `sql/M154-STOCK-COUNTS-ACTIVE-SECONDS.sql`
+**Purpose:** Accumulated active counting time; the count page pings it up while open+visible, so "time to count" pauses when the owner leaves and resumes on return (replaces the inflated created→completed wall-clock).
+
+---
+
 ## Applied — 2026-06-10 (in-app support contact)
 
 ### M152 — support_tickets fields ✅ applied 2026-06-10
