@@ -51,6 +51,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     for (const u of us ?? []) checkerById.set((u as any).id, (u as any).full_name || (u as any).email || 'Unknown')
   }
 
+  // M156 — resolve each line's parent-dish TYPE (pizza/pasta/…) so the prep
+  // accordion can show a type pill next to the dish name.
+  const dishIds = Array.from(new Set(lines.map((l: any) => l.dish_recipe_id).filter(Boolean))) as string[]
+  const dishTypeById = new Map<string, string | null>()
+  if (dishIds.length > 0) {
+    const { data: ds } = await db.from('recipes').select('id, type').in('id', dishIds)
+    for (const d of ds ?? []) dishTypeById.set((d as any).id, (d as any).type ?? null)
+  }
+
   // Enrichment pass — attach live `meta` to each line so the kitchen
   // can see HOW to prep, not just how much:
   //
@@ -159,6 +168,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const enrichedLines = lines.map(l => ({
     ...l,
     checked_by_name: (l as any).checked_by ? (checkerById.get((l as any).checked_by) ?? null) : null,
+    dish_type: (l as any).dish_recipe_id ? (dishTypeById.get((l as any).dish_recipe_id) ?? null) : null,
     meta: l.kind === 'component'
       ? {
           method:      methodById.get(l.entity_id)   ?? null,

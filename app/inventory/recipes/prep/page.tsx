@@ -19,6 +19,7 @@ import { PageContainer } from '@/components/ui/Layout'
 import { PageErrorBoundary } from '@/components/ui/PageErrorBoundary'
 import { DRINK_TYPES } from '@/lib/categoryColors'
 import { CategoryPill } from '@/components/ui/CategoryPill'
+import PrepDishAccordion, { type PrepAccLine } from '@/components/inventory/PrepDishAccordion'
 import { useIsMobile } from '@/lib/hooks/useViewport'
 import { useAuthSubject } from '@/lib/hooks/useAuthSubject'
 import StaffPrepView from '@/components/inventory/StaffPrepView'
@@ -122,6 +123,7 @@ interface PrepSessionLine {
   source_recipe_ids: string[]
   dish_recipe_id?:    string | null   // M156 — the parent dish this line belongs to
   dish_name_snapshot?: string | null
+  dish_type?:         string | null   // dish type (pizza/pasta/…) for the accordion pill
   checked_at:        string | null
   checked_by_name?:  string | null   // who completed it (M153 accountability)
   position:          number
@@ -975,6 +977,13 @@ function PrepListPageInner() {
               </div>
             </div>
 
+            <PrepDishAccordion
+              lines={sessionLines as unknown as PrepAccLine[]}
+              completed={!!activeSession.completed_at}
+              onToggle={(l) => toggleLine(l as unknown as PrepSessionLine)}
+              onOpenLine={(l) => setOpenModal({ line: l as unknown as PrepSessionLine, session_line_id: l.id })}
+            />
+            {false && (<>
             {/* Tab strip — same shape as create-mode. */}
             <div style={{ display: 'flex', gap: 6, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' as const }}>
               <TabPill
@@ -1005,7 +1014,7 @@ function PrepListPageInner() {
                   {(tab === 'components' ? sessionComponents : sessionProducts).map((line, _i, _arr) => {
                     const f = formatPrepQty(line.total_qty, line.unit)
                     const checked = line.checked_at != null
-                    const disabled = !!activeSession.completed_at
+                    const disabled = !!activeSession?.completed_at
                     const showDishHeader = !!line.dish_name_snapshot && (_i === 0 || _arr[_i - 1]?.dish_name_snapshot !== line.dish_name_snapshot)
                     return (
                       <Fragment key={line.id}>
@@ -1101,6 +1110,7 @@ function PrepListPageInner() {
                 </div>
               )}
             </Section>
+            </>)}
           </>
         )}
 
@@ -1193,6 +1203,13 @@ function PrepListPageInner() {
                 </div>
               </div>
 
+              <PrepDishAccordion
+                lines={sessionLines as unknown as PrepAccLine[]}
+                completed={!!activeSession.completed_at}
+                onToggle={(l) => toggleLine(l as unknown as PrepSessionLine)}
+                onOpenLine={(l) => setOpenModal({ line: l as unknown as PrepSessionLine, session_line_id: l.id })}
+              />
+              {false && (<>
               {/* (2) SEGMENTED TABS — "To prepare" / "To pull" with count chips. */}
               <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
                 {([
@@ -1244,7 +1261,7 @@ function PrepListPageInner() {
                   {currentLines.map((line, _i, _arr) => {
                     const f = formatPrepQty(line.total_qty, line.unit)
                     const checked = line.checked_at != null
-                    const disabled = !!activeSession.completed_at
+                    const disabled = !!activeSession?.completed_at
                     const showDishHeader = !!line.dish_name_snapshot && (_i === 0 || _arr[_i - 1]?.dish_name_snapshot !== line.dish_name_snapshot)
                     return (
                       <Fragment key={line.id}>
@@ -1352,6 +1369,7 @@ function PrepListPageInner() {
                   })}
                 </div>
               )}
+              </>)}
 
               {/* Bottom spacer — clears the sticky Complete bar. Same math as
                   create-mode (Phase 1.2 lesson): 60px nav + 14px gap + ~70px

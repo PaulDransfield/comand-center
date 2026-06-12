@@ -30,6 +30,22 @@
 - [x] **Dish section headers** in the saved-session line lists — both the desktop table (`sessionComponents` / `sessionProducts`) and the mobile cards (`currentLines`). Rendered via a shared `DishHeader` when the dish changes within the position-ordered list (lines are stored dish by dish, so no regrouping needed).
 - [x] **Per-dish "Prepped by X"** — each `DishHeader` shows `done/total` and, once every item under that dish is checked, the names of who prepped it.
 
+## Phase 3 — unified per-dish accordion (both views) ✅ SHIPPED (2026-06-12)
+Owner request: "all of this under 1 dropdown instead of two tabs", a type pill per dish, and the **same layout for owner/manager and staff**.
+- **`components/inventory/PrepDishAccordion.tsx`** — one shared layout used by BOTH views, so they can't diverge again:
+  - One **collapsible dropdown per dish**; expanding shows that dish's sub-recipes ("make") AND raw ingredients ("pull") together — no more components/ingredients tabs.
+  - **Type pill** (pizza / pasta / starter / …) next to each dish name (colour-coded).
+  - Per-dish `done/total` in the header, and **"Prepped by X"** once all its items are checked.
+  - Default: collapsed when ≥2 dishes (clean scannable list, click to open), expanded when a single dish.
+  - Keeps the **Totals** tab (summed pull-once view).
+  - Optional per-line waste (`onLogWaste`) — passed by the staff view; the owner keeps its completion waste modal, so the *layout* is identical but the owner doesn't double-log.
+- **`dish_type`** added to the prep GET enrichment (resolved from `recipes.type` for each line's `dish_recipe_id`) so the pill works in both views.
+- **StaffPrepView** rewritten to render `<PrepDishAccordion>` (kept its data load + read-only method modal).
+- **Owner page** desktop + mobile saved-session renders now render `<PrepDishAccordion>` (kept the session header, complete/discard, and the editor modal).
+
+### Cleanup TODO (non-blocking)
+- The owner page's *old* tab+table render (desktop) and segmented-tabs+cards render (mobile) are wrapped in `{false && (…)}` (dead but valid) rather than deleted, to avoid reproducing ~250 lines of exact JSX in one edit. Delete those guarded blocks (and the now-unused `DishHeader`, `TabPill` in the saved-session path) in a follow-up. The create-mode **preview** still uses the components/ingredients tabs — fine for a pre-save summary, but could move to the accordion later for full consistency.
+
 ### Intentionally NOT changed on the owner page
 - **Per-line waste stays staff-only.** The owner page keeps its end-of-session waste modal (with "Skip & complete"). The "popup is hard when many chefs share the list" problem is specific to the staff tick-off view, which now has per-line tap-to-log. The owner completes the session solo, so the completion modal is fine there (it just lists per-dish rows now).
 - **Create-mode preview** stays aggregated (the engine `result`), and already shows each line's source dishes (`source_recipes` → names). It's a pre-save summary, not the working list, so per-dish grouping isn't needed there.
