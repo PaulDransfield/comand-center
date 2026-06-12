@@ -37,7 +37,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const { data: linesRaw } = await db
     .from('prep_session_lines')
-    .select('id, kind, entity_id, name_snapshot, total_qty, unit, uncertain, uncertain_reason, source_recipe_ids, checked_at, checked_by, position')
+    .select('id, kind, entity_id, name_snapshot, total_qty, unit, uncertain, uncertain_reason, source_recipe_ids, dish_recipe_id, dish_name_snapshot, checked_at, checked_by, position')
     .eq('session_id', session.id)
     .order('position')
   const lines = linesRaw ?? []

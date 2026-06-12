@@ -129,10 +129,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No recognised recipes in items' }, { status: 400 })
   }
 
-  const result = aggregatePrepRequirements(safeItems, recipeIndex, recipeNames)
+  // M156 — per-dish breakdown. Run the engine once PER DISH so each line
+  // carries the quantity for THAT dish and is grouped under it. Multiple
+  // chefs can then each own a dish and pull exactly its share, instead of
+  // staring at one shared aggregate line with no idea what it's for. The
+  // aggregate "Totals" view is derived (summed) at read time.
+  const perDish = safeItems.map(item => ({
+    recipeId: item.recipe_id,
+    dishName: recipeNames.get(item.recipe_id) ?? null,
+    result:   aggregatePrepRequirements([item], recipeIndex, recipeNames),
+  }))
 
-  // Look up product names for the products part of the lines.
-  const productIds = result.products.map(p => p.product_id)
+  // Look up product names across ALL dishes' product lines.
+  const productIds = Array.from(new Set(perDish.flatMap(d => d.result.products.map(p => p.product_id))))
   const nameByProductId = new Map<string, string | null>()
   if (productIds.length > 0) {
     const { data: prods } = await db
@@ -141,6 +150,15 @@ export async function POST(req: NextRequest) {
       .in('id', productIds)
     for (const p of prods ?? []) nameByProductId.set(p.id, p.name ?? null)
   }
+
+  // Flags aggregated across dishes (dedup by message).
+  const flagSet = new Map<string, any>()
+  for (const d of perDish) {
+    for (const f of d.result.flags ?? []) {
+      flagSet.set(JSON.stringify(f), f)
+    }
+  }
+  const allFlags = Array.from(flagSet.values())
 
   // Insert the session header. H1: catch the 23505 unique-violation
   // race (two concurrent POSTs both passed the pre-check) and return
@@ -171,37 +189,44 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: sErr?.message ?? 'Failed to create session' }, { status: 500 })
   }
 
-  // Materialise lines. Components first (the higher-value aggregation
-  // payoff), then products. position assigned in display order.
+  // Materialise lines, grouped per dish. Within each dish: components first
+  // (sub-recipes to make), then products (raw ingredients to pull). position
+  // runs continuously across dishes so the display order is stable.
   const lineRows: any[] = []
   let pos = 0
-  for (const c of result.components) {
-    lineRows.push({
-      session_id:        session.id,
-      kind:              'component',
-      entity_id:         c.subrecipe_id,
-      name_snapshot:     c.name ?? c.subrecipe_id.slice(0, 8),
-      total_qty:         c.total_qty,
-      unit:              c.unit,
-      uncertain:         c.uncertain,
-      uncertain_reason:  c.uncertain_reason,
-      source_recipe_ids: c.source_recipes,
-      position:          pos++,
-    })
-  }
-  for (const p of result.products) {
-    lineRows.push({
-      session_id:        session.id,
-      kind:              'product',
-      entity_id:         p.product_id,
-      name_snapshot:     p.name ?? nameByProductId.get(p.product_id) ?? p.product_id.slice(0, 8),
-      total_qty:         p.total_qty,
-      unit:              p.unit,
-      uncertain:         null,
-      uncertain_reason:  null,
-      source_recipe_ids: p.source_recipes,
-      position:          pos++,
-    })
+  for (const d of perDish) {
+    for (const c of d.result.components) {
+      lineRows.push({
+        session_id:         session.id,
+        kind:               'component',
+        entity_id:          c.subrecipe_id,
+        name_snapshot:      c.name ?? c.subrecipe_id.slice(0, 8),
+        total_qty:          c.total_qty,
+        unit:               c.unit,
+        uncertain:          c.uncertain,
+        uncertain_reason:   c.uncertain_reason,
+        source_recipe_ids:  c.source_recipes,
+        dish_recipe_id:     d.recipeId,
+        dish_name_snapshot: d.dishName,
+        position:           pos++,
+      })
+    }
+    for (const p of d.result.products) {
+      lineRows.push({
+        session_id:         session.id,
+        kind:               'product',
+        entity_id:          p.product_id,
+        name_snapshot:      p.name ?? nameByProductId.get(p.product_id) ?? p.product_id.slice(0, 8),
+        total_qty:          p.total_qty,
+        unit:               p.unit,
+        uncertain:          null,
+        uncertain_reason:   null,
+        source_recipe_ids:  p.source_recipes,
+        dish_recipe_id:     d.recipeId,
+        dish_name_snapshot: d.dishName,
+        position:           pos++,
+      })
+    }
   }
 
   if (lineRows.length > 0) {
@@ -215,11 +240,11 @@ export async function POST(req: NextRequest) {
 
   const { data: lines } = await db
     .from('prep_session_lines')
-    .select('id, kind, entity_id, name_snapshot, total_qty, unit, uncertain, uncertain_reason, source_recipe_ids, checked_at, position')
+    .select('id, kind, entity_id, name_snapshot, total_qty, unit, uncertain, uncertain_reason, source_recipe_ids, dish_recipe_id, dish_name_snapshot, checked_at, position')
     .eq('session_id', session.id)
     .order('position')
 
-  return NextResponse.json({ session, lines: lines ?? [], flags: result.flags }, {
+  return NextResponse.json({ session, lines: lines ?? [], flags: allFlags }, {
     headers: { 'Cache-Control': 'no-store' },
   })
 }

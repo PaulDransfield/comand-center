@@ -249,7 +249,7 @@ export async function POST(req: NextRequest) {
         unit_price_at_entry: unitPriceSek,
         value_at_entry:      value,
         cost_estimate_sek:   null,
-        created_by:  (auth as any).user?.id ?? null,
+        created_by:  (auth as any).userId ?? null,
       })
     } else if (e.recipe_id) {
       // Recipe path — cost = (per-portion cost) × portions wasted.
@@ -288,7 +288,7 @@ export async function POST(req: NextRequest) {
         unit_price_at_entry: null,
         value_at_entry:      null,
         cost_estimate_sek:   costSek,
-        created_by:  (auth as any).user?.id ?? null,
+        created_by:  (auth as any).userId ?? null,
       })
     }
   }
