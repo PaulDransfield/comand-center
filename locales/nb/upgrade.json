@@ -44,6 +44,47 @@
       "group":      "2–5 restauranter — beste verdi",
       "chain":      "6+ restauranter",
       "enterprise": "Tilpasset prising for store kjeder"
+    },
+    "features": {
+      "solo": [
+        "1 restaurant",
+        "Fortnox + Personalkollen / Caspeco-integrasjoner",
+        "Daglig dashbord — omsetning, bemanning & prognose mot faktisk",
+        "Resultatregnskap, budsjett, prognose, faste kostnader & kassaposisjon",
+        "Oppskriftskalkyle & menymarginer (råvarekostnad %, bruttofortjeneste)",
+        "Lager, lagertelling (per vekt) & svinnregistrering",
+        "Prep-lister, smarte innkjøpslister & forhåndsbestillinger",
+        "AI-vaktplanlegging med svensk arbeidsrettsetterlevelse",
+        "Innsikt fra Google-anmeldelser + AI-svarforslag",
+        "Månedsavslutning for regnskapsføreren din",
+        "Ask CC AI-assistent + nedlastbare rapporter — 30 spørringer/dag",
+        "E-poststøtte · ansatt- & lederinnlogginger (5 brukere)"
+      ],
+      "group": [
+        "2–5 restauranter",
+        "Alt i Solo",
+        "Sammenstilling av flere enheter + Avdelingsvisning",
+        "Automatisk ukentlig vaktplanoptimalisering",
+        "Varsler om leverandørprisøkninger",
+        "Månedlig prognosekalibrering",
+        "Prioritert støtte (24t SLA) + kvartalsvis gjennomgang",
+        "100 AI-spørringer/dag · teamtilgang (25 brukere)"
+      ],
+      "chain": [
+        "6+ restauranter",
+        "Alt i Group",
+        "Ubegrenset AI-bruk & ubegrenset antall teammedlemmer",
+        "Concierge-onboarding + tilpasset Fortnox OAuth-oppsett",
+        "Dedikert kontaktperson",
+        "API-tilgang (når tilgjengelig)"
+      ],
+      "enterprise": [
+        "Ubegrenset antall enheter",
+        "Ubegrenset AI-bruk",
+        "Tilpassede integrasjoner",
+        "SLA-garanti",
+        "Dedikert kontoansvarlig"
+      ]
     }
   },
   "booster": {

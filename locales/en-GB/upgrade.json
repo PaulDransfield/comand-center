@@ -44,6 +44,47 @@
       "group":      "2–5 restaurants — best value",
       "chain":      "6+ restaurants",
       "enterprise": "Custom pricing for large chains"
+    },
+    "features": {
+      "solo": [
+        "1 restaurant location",
+        "Fortnox + Personalkollen / Caspeco integrations",
+        "Daily dashboard — revenue, labour & forecast vs actual",
+        "P&L tracker, budget, forecast, overheads & cash position",
+        "Recipe costing & menu margins (food cost %, gross profit)",
+        "Inventory, stock counts (by weight) & waste tracking",
+        "Prep lists, smart order lists & pre-orders",
+        "AI scheduling with Swedish labour-law compliance",
+        "Google review insights + AI reply drafts",
+        "Month-end Revisor close for your accountant",
+        "Ask CC AI assistant + downloadable reports — 30 queries/day",
+        "Email support · staff & manager logins (5 users)"
+      ],
+      "group": [
+        "2–5 restaurants",
+        "Everything in Solo",
+        "Multi-location rollup + Departments view",
+        "Automated weekly scheduling optimisation",
+        "Supplier price-creep alerts",
+        "Monthly forecast calibration",
+        "Priority support (24h SLA) + quarterly review call",
+        "100 AI queries/day · team access (25 users)"
+      ],
+      "chain": [
+        "6+ restaurants",
+        "Everything in Group",
+        "Unlimited AI usage & unlimited team members",
+        "Concierge onboarding + custom Fortnox OAuth setup",
+        "Dedicated account contact",
+        "API access (when available)"
+      ],
+      "enterprise": [
+        "Unlimited locations",
+        "Unlimited AI usage",
+        "Custom integrations",
+        "SLA guarantee",
+        "Dedicated account manager"
+      ]
     }
   },
   "booster": {

@@ -221,6 +221,15 @@ export default function UpgradePage() {
           // Swedish spacing: "1 995 kr" not "1,995" or "1995".
           const fmtSek = (n: number) => n.toLocaleString('sv-SE').replace(/,/g, ' ')
 
+          // Feature bullets are translated (plans.features.<plan> is an array
+          // per locale). Fall back to the English config list if a locale
+          // hasn't translated them yet, so a missing key never blanks the card.
+          let features: string[] = plan.features
+          try {
+            const raw = t.raw(`plans.features.${planKey}`)
+            if (Array.isArray(raw) && raw.length) features = raw as string[]
+          } catch { /* keep config fallback */ }
+
           return (
             <div key={planKey} style={{
               ...S.planCard,
@@ -255,7 +264,7 @@ export default function UpgradePage() {
               <div style={S.planDesc}>{t(`plans.desc.${planKey}`)}</div>
 
               <ul style={S.featureList}>
-                {plan.features.map(f => (
+                {features.map(f => (
                   <li key={f} style={S.featureItem}>
                     <span style={{ color: '#15803d', flexShrink: 0 }}>✓</span>
                     {f}
