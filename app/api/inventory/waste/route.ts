@@ -45,7 +45,10 @@ export async function GET(req: NextRequest) {
   const db = createAdminClient()
   let q = db
     .from('waste_log')
-    .select('id, product_id, recipe_id, prep_session_id, waste_date, quantity, unit, unit_price_at_entry, value_at_entry, cost_estimate_sek, reason, notes, created_at, created_by, product:products(name, category, invoice_unit), recipe:recipes(name, type)')
+    // NOTE: recipe is NOT embedded — waste_log.recipe_id has no FK to recipes,
+    // so PostgREST can't auto-join it (product_id does, so that embed is fine).
+    // Recipe names/types are resolved explicitly below.
+    .select('id, product_id, recipe_id, prep_session_id, waste_date, quantity, unit, unit_price_at_entry, value_at_entry, cost_estimate_sek, reason, notes, created_at, created_by, product:products(name, category, invoice_unit)')
     .eq('business_id', businessId)
     .order('waste_date', { ascending: false })
     .order('created_at', { ascending: false })
@@ -63,6 +66,14 @@ export async function GET(req: NextRequest) {
     for (const u of us ?? []) loggerById.set((u as any).id, (u as any).full_name || (u as any).email || 'Unknown')
   }
 
+  // Resolve recipe name/type explicitly (no FK → no embed; see select note).
+  const recipeIds = Array.from(new Set((data ?? []).map((e: any) => e.recipe_id).filter(Boolean))) as string[]
+  const recipeById = new Map<string, { name: string | null; type: string | null }>()
+  if (recipeIds.length > 0) {
+    const { data: rs } = await db.from('recipes').select('id, name, type').in('id', recipeIds)
+    for (const r of rs ?? []) recipeById.set((r as any).id, { name: (r as any).name ?? null, type: (r as any).type ?? null })
+  }
+
   const entries = (data ?? []).map((e: any) => {
     // Cost surface for both paths — recipe rows store cost_estimate_sek,
     // product rows store value_at_entry. Expose ONE field
@@ -78,8 +89,8 @@ export async function GET(req: NextRequest) {
       product_name:   (e.product as any)?.name ?? null,
       category:       (e.product as any)?.category ?? null,
       recipe_id:      e.recipe_id,
-      recipe_name:    (e.recipe as any)?.name ?? null,
-      recipe_type:    (e.recipe as any)?.type ?? null,
+      recipe_name:    e.recipe_id ? (recipeById.get(e.recipe_id)?.name ?? null) : null,
+      recipe_type:    e.recipe_id ? (recipeById.get(e.recipe_id)?.type ?? null) : null,
       prep_session_id: e.prep_session_id ?? null,
       waste_date:     e.waste_date,
       quantity:       Number(e.quantity),
