@@ -98,18 +98,27 @@ export async function GET(req: NextRequest) {
     const mo = Number(from.slice(5, 7))
     const { data: td } = await db
       .from('tracker_data')
-      .select('revenue, staff_cost')
+      .select('revenue, staff_cost, food_cost, other_cost, depreciation, financial, net_profit, margin_pct')
       .eq('business_id', businessId)
       .eq('period_year', y)
       .eq('period_month', mo)
       .or('is_provisional.is.null,is_provisional.eq.false')   // closed/official only
       .maybeSingle()
     if (td && (Number(td.revenue) > 0 || Number(td.staff_cost) > 0)) {
-      summary.total_revenue    = Number(td.revenue)    || 0
+      const rev = Number(td.revenue) || 0
+      summary.total_revenue    = rev
       summary.total_staff_cost = Number(td.staff_cost) || 0
-      summary.avg_labour_pct   = summary.total_revenue > 0
-        ? Math.round((summary.total_staff_cost / summary.total_revenue) * 1000) / 10
+      summary.avg_labour_pct   = rev > 0
+        ? Math.round((summary.total_staff_cost / rev) * 1000) / 10
         : null
+      // Full-P&L net margin — deducts food + labour + overheads + depreciation,
+      // adds back financial. This is the REAL margin (not just rev minus labour).
+      const np = td.net_profit != null ? Number(td.net_profit) : null
+      ;(summary as any).net_profit     = np
+      ;(summary as any).net_margin_pct = td.margin_pct != null ? Number(td.margin_pct)
+        : (np != null && rev > 0 ? Math.round((np / rev) * 1000) / 10 : null)
+      ;(summary as any).food_cost      = td.food_cost  != null ? Number(td.food_cost)  : null
+      ;(summary as any).other_cost     = td.other_cost != null ? Number(td.other_cost) : null
       // covers stay from POS — the Fortnox P&L doesn't carry a cover count.
       ;(summary as any).source = 'fortnox_closed'
     }

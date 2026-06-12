@@ -416,6 +416,10 @@ function DashboardInner() {
   const totalLabour = fortnoxMonthly ? Number(currSummary?.total_staff_cost ?? 0)
     : (dailyLabour > 0 ? dailyLabour : Number(currSummary?.total_staff_cost ?? 0))
   const hasDailyShape = dailyRev > 0
+  // Real net margin from the closed Fortnox P&L (after ALL costs). Null for
+  // POS/open months, where we only have revenue + labour to work with.
+  const fortnoxNetMargin = (fortnoxMonthly && (currSummary as any)?.net_margin_pct != null)
+    ? Number((currSummary as any).net_margin_pct) : null
   const labourPct   = totalRev > 0 ? (totalLabour / totalRev) * 100 : 0
   const totalHours  = depts?.summary?.total_hours ?? 0
   const totalCovers = Number(currSummary?.total_covers ?? 0)
@@ -551,6 +555,7 @@ function DashboardInner() {
           prevCovers={prevCovers}
           depts={depts?.departments ?? []}
           periodLabel={periodLabel}
+          netMarginPct={fortnoxNetMargin}
           bizId={bizId}
           from={period.from}
           to={period.to}
@@ -608,7 +613,7 @@ function DashboardInner() {
 // ── KPI strip ────────────────────────────────────────────────────────
 function KpiStrip({
   totalRev, prevRev, totalLabour, labourPct, prevLabPct, totalCovers, prevCovers, depts, periodLabel,
-  bizId, from, to,
+  netMarginPct, bizId, from, to,
 }: any) {
   const channels = (depts && depts.length > 0
     ? [...depts]
@@ -623,7 +628,16 @@ function KpiStrip({
     : [{ label: 'Total', value: totalRev, share: 1, color: UXP.lav }]
   )
 
-  const grossMargin = totalRev > 0 ? ((totalRev - totalLabour) / totalRev) * 100 : 0
+  // Two very different things:
+  //   · netMarginPct (when present) = the REAL net margin from the closed
+  //     Fortnox P&L — after food, labour, overheads, depreciation. This is the
+  //     true bottom-line margin.
+  //   · grossMargin = revenue − labour only (the best we can do from POS data
+  //     alone, when there's no closed P&L). Labelled so it's never mistaken
+  //     for net margin.
+  const grossMargin   = totalRev > 0 ? ((totalRev - totalLabour) / totalRev) * 100 : 0
+  const marginIsNet   = netMarginPct != null
+  const marginValue   = marginIsNet ? Number(netMarginPct) : grossMargin
   const TARGET_MARGIN = 12
 
   const tier = labourTier(totalRev > 0 ? labourPct : null)
@@ -685,14 +699,15 @@ function KpiStrip({
       )}
       {provWrap(
         <KpiCardUX
-          title="Margin"
-          value={totalRev > 0 ? fmtPct(grossMargin) : '—'}
-          delta={marginDelta}
+          title={marginIsNet ? 'Net margin' : 'Margin'}
+          value={totalRev > 0 ? fmtPct(marginValue) : '—'}
+          delta={marginIsNet ? null : marginDelta}
           deltaGood
           variant="stacked"
+          microLabel={marginIsNet ? 'After all costs (Fortnox)' : 'Revenue − labour only'}
           stackedBars={[
-            { label: 'Current', value: grossMargin,   max: 100, color: UXP.lav   },
-            { label: 'Target',  value: TARGET_MARGIN, max: 100, color: UXP.green },
+            { label: 'Current', value: Math.max(0, marginValue), max: 100, color: UXP.lav   },
+            { label: 'Target',  value: TARGET_MARGIN,            max: 100, color: UXP.green },
           ]}
         />,
         'net_profit', 'Margin',
