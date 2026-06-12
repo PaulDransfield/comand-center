@@ -372,8 +372,15 @@ function DashboardInner() {
   const period   = viewMode === 'week' ? curr : currM
   const dayCount = viewMode === 'week' ? 7 : currM.daysInMonth
 
-  const totalRev    = dailyRows.reduce((s, r) => s + r.revenue,    0)
-  const totalLabour = dailyRows.reduce((s, r) => s + r.staff_cost, 0)
+  const dailyRev    = dailyRows.reduce((s, r) => s + r.revenue,    0)
+  const dailyLabour = dailyRows.reduce((s, r) => s + r.staff_cost, 0)
+  // Fortnox-monthly fallback: businesses with no daily POS/staff feed (e.g.
+  // Caspeco-only) have empty daily_metrics, so the API returns the month's
+  // Fortnox P&L total instead (summary.source='fortnox_monthly'). Use it so
+  // the dashboard isn't blank for them.
+  const fortnoxMonthly = (currSummary as any)?.source === 'fortnox_monthly'
+  const totalRev    = dailyRev    > 0 ? dailyRev    : Number(currSummary?.total_revenue    ?? 0)
+  const totalLabour = dailyLabour > 0 ? dailyLabour : Number(currSummary?.total_staff_cost ?? 0)
   const labourPct   = totalRev > 0 ? (totalLabour / totalRev) * 100 : 0
   const totalHours  = depts?.summary?.total_hours ?? 0
   const totalCovers = Number(currSummary?.total_covers ?? 0)
@@ -481,6 +488,19 @@ function DashboardInner() {
             writeUrl({ view: v, offset: v === 'month' ? monthOffset : weekOffset })
           }} />
         </div>
+
+        {/* Fortnox-monthly source note — shown when the figures come from the
+            monthly P&L (no daily POS/staff feed for this business). */}
+        {fortnoxMonthly && (
+          <div style={{
+            padding: '8px 14px', background: UXP.lavFill, border: `0.5px solid ${UXP.lavMid}`,
+            borderRadius: 8, fontSize: 11.5, color: UXP.lavText, lineHeight: 1.5,
+          }}>
+            Showing this month's <strong>Fortnox monthly P&amp;L</strong> total — daily revenue/labour and covers
+            need a POS or staff system. The day-by-day chart fills in once that's connected; the full monthly
+            breakdown is on <a href="/financials/performance" style={{ color: UXP.lavText, fontWeight: 600 }}>Financials → Performance</a>.
+          </div>
+        )}
 
         {/* ── KPI strip ─────────────────────────────────────────── */}
         <KpiStrip

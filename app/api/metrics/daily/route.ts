@@ -83,6 +83,35 @@ export async function GET(req: NextRequest) {
     worst_day: worstDay ? { date: worstDay.date, pct: worstDay.labour_pct, staff_cost: worstDay.staff_cost, revenue: worstDay.revenue } : null,
   }
 
+  // ── Fortnox monthly fallback ──────────────────────────────────────
+  // Businesses with Fortnox but no POS/staff feed (e.g. Caspeco-only) have
+  // NO daily_metrics rows, so the dashboard reads empty even though the
+  // monthly P&L exists. When the range is a whole calendar month (from =
+  // the 1st) and there's no daily revenue/cost, surface that month's
+  // Fortnox figure from monthly_metrics so the dashboard isn't blank.
+  // rows stay empty (no daily breakdown without a POS); summary.source
+  // flags the origin so the UI can label it.
+  ;(summary as any).source = 'daily'
+  if (totalRev === 0 && totalCost === 0 && /^\d{4}-\d{2}-01$/.test(from)) {
+    const y  = Number(from.slice(0, 4))
+    const mo = Number(from.slice(5, 7))
+    const { data: mm } = await db
+      .from('monthly_metrics')
+      .select('revenue, staff_cost, covers, labour_pct')
+      .eq('business_id', businessId)
+      .eq('year', y)
+      .eq('month', mo)
+      .maybeSingle()
+    if (mm && (Number(mm.revenue) > 0 || Number(mm.staff_cost) > 0)) {
+      summary.total_revenue    = Number(mm.revenue) || 0
+      summary.total_staff_cost = Number(mm.staff_cost) || 0
+      summary.total_covers     = Number(mm.covers) || 0
+      summary.avg_labour_pct   = mm.labour_pct != null ? Number(mm.labour_pct)
+        : (summary.total_revenue > 0 ? Math.round((summary.total_staff_cost / summary.total_revenue) * 1000) / 10 : null)
+      ;(summary as any).source = 'fortnox_monthly'
+    }
+  }
+
   // FIXES §0bb (Sprint 1.5): swapped no-store for bounded SWR. private =
   // browser cache only (per-user data, never CDN); 15s max-age makes
   // back-button + tab-switch instant; SWR=60s serves cached while
