@@ -1268,6 +1268,10 @@ function MoneyFlowRow({ bankPos, cashFlow, recentInv, bizId }: any) {
   const cashPosition = Number(bankPos?.summary?.current_position_since_tracking ?? 0)
   const cashMtd      = Number(bankPos?.summary?.this_month_change ?? 0)
   const absBalance   = bankPos?.summary?.absolute_balance != null ? Number(bankPos.summary.absolute_balance) : null
+  const vatOwed      = bankPos?.summary?.vat_owed          != null ? Number(bankPos.summary.vat_owed)          : null
+  const payables     = bankPos?.summary?.supplier_payables != null ? Number(bankPos.summary.supplier_payables) : null
+  const spendable    = bankPos?.summary?.spendable_cash    != null ? Number(bankPos.summary.spendable_cash)    : null
+  const hasCommitments = (vatOwed ?? 0) > 0 || (payables ?? 0) > 0
 
   const cashFlowDays = Array.isArray(cashFlow?.daily) ? cashFlow.daily : []
   const cashFlowEnd  = cashFlowDays.length > 0 ? Number(cashFlowDays[cashFlowDays.length - 1].cumulative ?? 0) : null
@@ -1298,6 +1302,26 @@ function MoneyFlowRow({ bankPos, cashFlow, recentInv, bizId }: any) {
           <div>
             <BigNumber value={fmtKr(absBalance ?? cashPosition)} tone={(absBalance ?? cashPosition) >= 0 ? 'ink' : 'rose'} />
             <DeltaRow label="This month" value={cashMtd} />
+            {/* Spendable-cash breakdown — the headline balance includes money
+                already owed out (VAT to Skatteverket, unpaid supplier invoices). */}
+            {hasCommitments && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: `0.5px solid ${UXP.borderSoft}`, display: 'grid', gap: 5 }}>
+                {vatOwed != null && vatOwed > 0 && (
+                  <CommitRow label="VAT owed (Skatteverket)" value={vatOwed} />
+                )}
+                {payables != null && payables > 0 && (
+                  <CommitRow label="Supplier payables" value={payables} />
+                )}
+                {spendable != null && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 3, paddingTop: 6, borderTop: `0.5px solid ${UXP.borderSoft}` }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: UXP.ink1 }}>Spendable ≈</span>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: spendable >= 0 ? UXP.ink1 : UXP.rose, fontVariantNumeric: 'tabular-nums' as const }}>
+                      {fmtKr(spendable)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           <Empty>No bank data yet.</Empty>
@@ -1834,6 +1858,16 @@ function DeltaRow({ label, value }: { label: string; value: number }) {
       <span style={{ color: tone, fontVariantNumeric: 'tabular-nums' as const }}>
         {value >= 0 ? '+' : '−'}{fmtKr(Math.abs(value))}
       </span>
+    </div>
+  )
+}
+
+// One "− amount owed" row in the cash-position breakdown.
+function CommitRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: 11 }}>
+      <span style={{ color: UXP.ink3 }}>{label}</span>
+      <span style={{ color: UXP.coral, fontVariantNumeric: 'tabular-nums' as const }}>−{fmtKr(value)}</span>
     </div>
   )
 }

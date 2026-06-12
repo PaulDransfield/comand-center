@@ -254,6 +254,35 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── VAT owed + supplier payables → "spendable" cash ──────────────────
+  // The headline bank balance includes money that's already spoken for: VAT
+  // collected from customers but not yet remitted to Skatteverket, and supplier
+  // invoices booked but not yet paid. Subtract both for a true spendable figure.
+  // Same per-account balance path as the bank accounts (15-min cached).
+  // Sign convention (confirmed against Fortnox): assets/receivables positive,
+  // liabilities negative. VAT net = Σ 2600-2659 (output credit − input debit);
+  // a net credit (negative) is owed. Payables (2440-2449) credit = owed.
+  let vatOwed: number | null = null
+  let supplierPayables: number | null = null
+  if (balanceFetchOk && absoluteBalance != null) {
+    try {
+      const LIABILITY_ACCOUNTS = [2440, 2441, 2443, 2448, 2610, 2611, 2612, 2613, 2620, 2621, 2630, 2631, 2640, 2641, 2645, 2650]
+      const liab = await fetchBankAccountBalances(db, auth.orgId, businessId, LIABILITY_ACCOUNTS)
+      let vatNet = 0, pay = 0, sawVat = false, sawPay = false
+      for (const [acc, b] of Object.entries(liab.balances)) {
+        const n = Number(acc)
+        const cur = Number((b as any).current_balance ?? 0)
+        if (n >= 2600 && n <= 2659)       { vatNet += cur; sawVat = true }
+        else if (n >= 2440 && n <= 2449)  { pay += -cur;   sawPay = true }
+      }
+      if (sawVat) vatOwed = vatNet < 0 ? Math.round(-vatNet) : 0   // net credit = owed; net debit = refund due
+      if (sawPay) supplierPayables = Math.max(0, Math.round(pay))
+    } catch { /* soft-fail — tile just omits the breakdown */ }
+  }
+  const spendableCash = absoluteBalance != null
+    ? Math.round(absoluteBalance - (vatOwed ?? 0) - (supplierPayables ?? 0))
+    : null
+
   // ── Bookkeeping-lag detection ────────────────────────────────────────
   // Cross-reference recent bank activity against POS revenue presence:
   // a credits-only month on the primary checking account during a
@@ -301,6 +330,10 @@ export async function GET(req: NextRequest) {
       // Null = Fortnox's /3/accounts endpoint unreachable (then UI falls
       // back to "since tracking began" net change).
       absolute_balance:           absoluteBalance,
+      // What's already committed out of that balance + what's actually spendable.
+      vat_owed:                   vatOwed,
+      supplier_payables:          supplierPayables,
+      spendable_cash:             spendableCash,
       opening_balance_by_account: balanceFetchOk ? openingBalancesByAccount : null,
       current_balance_by_account: balanceFetchOk ? currentBalancesByAccount : null,
       fiscal_year_from:           fiscalYearFrom,
