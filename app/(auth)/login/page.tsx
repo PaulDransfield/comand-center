@@ -159,12 +159,14 @@ function LoginForm() {
               </button>
             )}
 
+            {/* Back to the signup form with the email pre-filled, so a mistyped
+                address is a one-tap fix (name/org/password persist in state too). */}
             <button
               type="button"
-              onClick={() => { setVerifySent(null); setResend('idle'); setMode('login'); setMessage(''); setError('') }}
+              onClick={() => { setEmail(verifySent.email); setVerifySent(null); setResend('idle'); setMode('signup'); setMessage(''); setError('') }}
               style={{ background:'transparent', border:'none', color:'var(--blue)', fontSize:'12px', cursor:'pointer', padding:0 }}
             >
-              {t('verifySent.backToLogin')}
+              ← Wrong email? Edit it and try again
             </button>
           </div>
         ) : (
