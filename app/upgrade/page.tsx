@@ -25,7 +25,10 @@ interface UsageData {
   }>
 }
 
-const PLAN_ORDER = ['founding', 'solo', 'group', 'chain', 'enterprise'] as const
+// Founding tier was retired 2026-05-25 — no longer offered to new customers
+// (PLANS.founding stays in lib/stripe/config.ts so existing founding
+// subscribers still resolve correctly). Solo is now the entry plan.
+const PLAN_ORDER = ['solo', 'group', 'chain', 'enterprise'] as const
 
 export default function UpgradePage() {
   const t            = useTranslations('upgrade')
@@ -207,7 +210,7 @@ export default function UpgradePage() {
           const plan      = PLANS[planKey]
           const isCurrent = currentPlan === planKey
           const isPopular = planKey === 'group'
-          const isBestVal = planKey === 'founding'
+          const isBestVal = false   // founding tier retired — no "best value" badge
 
           // Swedish-krona pricing is the source of truth — USD is a
           // fallback for customers abroad but the product is sold in SEK.

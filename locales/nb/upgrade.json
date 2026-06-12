@@ -5,14 +5,14 @@
   },
   "page": {
     "title":    "Velg abonnement",
-    "subtitle": "Betalt fra dag én — ingen gratis prøveperiode. Grunnleggernivået låser 995 kr/mnd i 24 måneder (kun 10 plasser).",
+    "subtitle": "Betalt fra dag én — ingen gratis prøveperiode. Velg abonnementet som passer hvor mange restauranter du driver.",
     "loading":  "Laster…"
   },
   "banner": {
     "success":      "🎉 Du er nå på {plan}-abonnementet. Alle funksjoner er låst opp.",
     "successPlanFallback": "nye",
     "cancelled":    "Ingen endringer gjort. Du kan oppgradere når som helst.",
-    "required":     "Velkommen til CommandCenter — velg et abonnement nedenfor for å låse opp dashbord, integrasjoner og AI. Vi anbefaler grunnleggernivået (10 plasser · 995 kr/mnd låst i 24 måneder).",
+    "required":     "Velkommen til CommandCenter — velg et abonnement nedenfor for å låse opp dashbord, integrasjoner og AI.",
     "pastDue":      "Den siste betalingen din gikk ikke gjennom. Oppdater fakturering nedenfor for å gjenopprette tilgang.",
     "trialEnded":   "Din eldre prøveperiode har utløpt. Velg et abonnement for å gjenopprette tilgang.",
     "trialDays":    "{days} dager igjen av din eldre prøveperiode. Velg et abonnement for å beholde dataene og integrasjonene dine.",

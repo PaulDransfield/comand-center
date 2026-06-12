@@ -5,14 +5,14 @@
   },
   "page": {
     "title":    "Välj ditt abonnemang",
-    "subtitle": "Betalt från dag ett — ingen gratis testperiod. Grundarnivån låser 995 kr/mån i 24 månader (endast 10 platser).",
+    "subtitle": "Betalt från dag ett — ingen gratis testperiod. Välj abonnemanget som matchar hur många restauranger du driver.",
     "loading":  "Laddar…"
   },
   "banner": {
     "success":      "🎉 Du är nu på {plan}-abonnemanget. Alla funktioner är upplåsta.",
     "successPlanFallback": "nya",
     "cancelled":    "Inga ändringar gjordes. Du kan uppgradera när som helst.",
-    "required":     "Välkommen till CommandCenter — välj ett abonnemang nedan för att låsa upp dashboard, integrationer och AI. Vi rekommenderar grundarnivån (10 platser · 995 kr/mån låst i 24 månader).",
+    "required":     "Välkommen till CommandCenter — välj ett abonnemang nedan för att låsa upp dashboard, integrationer och AI.",
     "pastDue":      "Din senaste betalning gick inte igenom. Uppdatera fakturering nedan för att återställa åtkomst.",
     "trialEnded":   "Din äldre testperiod har upphört. Välj ett abonnemang för att återställa åtkomst.",
     "trialDays":    "{days} dagar kvar på din äldre testperiod. Välj ett abonnemang för att behålla din data och integrationer.",
