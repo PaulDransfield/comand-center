@@ -26,14 +26,13 @@
   - **Per-line waste** — a "+ log waste" affordance on each row opens an inline qty + reason form that POSTs one event to `/api/inventory/waste` (with `prep_session_id`); shows "waste logged ✓" after.
 - **Fix:** `waste_log.created_by` was reading `auth.user?.id` (always null) → now `auth.userId`, so who logged waste is actually recorded (same class of bug as the stock-count `created_by`).
 
-## Phase 2 — owner/manager prep page (NEXT)
-The owner page (`app/inventory/recipes/prep/page.tsx`, ~3.3k lines) still works on per-dish lines (it consumes them per-row), but its display is not yet dish-grouped and it still uses the end-of-session waste modal. To finish the "both views" decision:
-- [ ] Group the saved-session line lists (`sessionComponents` / `sessionProducts`, and the mobile `currentLines`) under dish section headers — mirror the staff view's Dishes/Totals split.
-- [ ] Make the create-mode **preview** per-dish too (currently the aggregated engine `result`), so preview matches what's saved.
-- [ ] Replace the completion waste modal (`completeSession` / `wasteModal`) with the same per-line tap-to-log affordance; keep "Skip & complete" as a plain complete.
-- [ ] Surface per-dish "Prepped by X" in the owner view's session summary.
+## Phase 2 — owner/manager prep page ✅ SHIPPED (2026-06-12)
+- [x] **Dish section headers** in the saved-session line lists — both the desktop table (`sessionComponents` / `sessionProducts`) and the mobile cards (`currentLines`). Rendered via a shared `DishHeader` when the dish changes within the position-ordered list (lines are stored dish by dish, so no regrouping needed).
+- [x] **Per-dish "Prepped by X"** — each `DishHeader` shows `done/total` and, once every item under that dish is checked, the names of who prepped it.
 
-Lower urgency than Phase 1 because the owner page isn't the surface where multiple chefs work the list concurrently — that's the staff view, which is done.
+### Intentionally NOT changed on the owner page
+- **Per-line waste stays staff-only.** The owner page keeps its end-of-session waste modal (with "Skip & complete"). The "popup is hard when many chefs share the list" problem is specific to the staff tick-off view, which now has per-line tap-to-log. The owner completes the session solo, so the completion modal is fine there (it just lists per-dish rows now).
+- **Create-mode preview** stays aggregated (the engine `result`), and already shows each line's source dishes (`source_recipes` → names). It's a pre-save summary, not the working list, so per-dish grouping isn't needed there.
 
 ## Notes / gotchas
 - Quantities stay **frozen** at save (CLAUDE.md prep invariant) — the per-dish split is computed once at creation, not recomputed live.

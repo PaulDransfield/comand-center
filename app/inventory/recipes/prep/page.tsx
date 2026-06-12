@@ -11,7 +11,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AppShell from '@/components/AppShell'
 import { UXP, Z } from '@/lib/constants/tokens'
 import { ProductThumb } from '@/components/ui/ProductThumb'
@@ -120,6 +120,8 @@ interface PrepSessionLine {
   uncertain:         null | 'sub_no_yield' | 'unit_mismatch' | 'cycle'
   uncertain_reason:  string | null
   source_recipe_ids: string[]
+  dish_recipe_id?:    string | null   // M156 — the parent dish this line belongs to
+  dish_name_snapshot?: string | null
   checked_at:        string | null
   checked_by_name?:  string | null   // who completed it (M153 accountability)
   position:          number
@@ -160,6 +162,30 @@ const isDish = (r: any) =>
   (r.selling_price_ex_vat != null && Number(r.selling_price_ex_vat) > 0)
   || (r.menu_price != null && Number(r.menu_price) > 0)
   || (r.type && DISH_TYPES.has(String(r.type).toLowerCase()))
+
+// Per-dish section header for the prep line lists (M156). Lines are stored
+// dish by dish (continuous position), so we render this when the dish changes
+// within the mapped list. Shows the dish's done/total and — once every item
+// is checked — who prepped it (per-dish accountability).
+function DishHeader({ name, lines }: { name: string; lines: PrepSessionLine[] }) {
+  const dishLines = lines.filter(l => l.dish_name_snapshot === name)
+  const done = dishLines.filter(l => l.checked_at != null).length
+  const all  = dishLines.length
+  const allDone = all > 0 && done === all
+  const preppers = Array.from(new Set(dishLines.filter(l => l.checked_at && l.checked_by_name).map(l => l.checked_by_name as string)))
+  return (
+    <div style={{
+      padding: '8px 14px', background: UXP.subtleBg,
+      borderTop: `0.5px solid ${UXP.border}`,
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+    }}>
+      <span style={{ fontSize: 12, fontWeight: 700, color: UXP.ink1, textTransform: 'uppercase' as const, letterSpacing: '0.03em' }}>{name}</span>
+      <span style={{ fontSize: 11, fontWeight: 600, color: allDone ? UXP.greenDeep : UXP.ink3, whiteSpace: 'nowrap' as const }}>
+        {allDone && preppers.length ? `Prepped by ${preppers.join(', ')}` : `${done}/${all}`}
+      </span>
+    </div>
+  )
+}
 
 // Route by role: staff get the focused tick-off view (StaffPrepView); the
 // owner/manager page below handles the full create + manage flow. Splitting
@@ -976,13 +1002,15 @@ function PrepListPageInner() {
               )}
               {(tab === 'components' ? sessionComponents : sessionProducts).length > 0 && (
                 <div>
-                  {(tab === 'components' ? sessionComponents : sessionProducts).map(line => {
+                  {(tab === 'components' ? sessionComponents : sessionProducts).map((line, _i, _arr) => {
                     const f = formatPrepQty(line.total_qty, line.unit)
                     const checked = line.checked_at != null
                     const disabled = !!activeSession.completed_at
+                    const showDishHeader = !!line.dish_name_snapshot && (_i === 0 || _arr[_i - 1]?.dish_name_snapshot !== line.dish_name_snapshot)
                     return (
+                      <Fragment key={line.id}>
+                      {showDishHeader && <DishHeader name={line.dish_name_snapshot!} lines={_arr} />}
                       <div
-                        key={line.id}
                         style={{
                           display: 'grid',
                           gridTemplateColumns: '44px 1fr 130px',
@@ -1067,6 +1095,7 @@ function PrepListPageInner() {
                           {line.uncertain ? '—' : `${f.qty} ${f.unit}`}
                         </div>
                       </div>
+                      </Fragment>
                     )
                   })}
                 </div>
@@ -1212,12 +1241,19 @@ function PrepListPageInner() {
               )}
               {currentLines.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
-                  {currentLines.map(line => {
+                  {currentLines.map((line, _i, _arr) => {
                     const f = formatPrepQty(line.total_qty, line.unit)
                     const checked = line.checked_at != null
                     const disabled = !!activeSession.completed_at
+                    const showDishHeader = !!line.dish_name_snapshot && (_i === 0 || _arr[_i - 1]?.dish_name_snapshot !== line.dish_name_snapshot)
                     return (
-                      <div key={line.id}>
+                      <Fragment key={line.id}>
+                      {showDishHeader && (
+                        <div style={{ borderRadius: UXP.r_md, overflow: 'hidden' as const, marginTop: _i === 0 ? 0 : 4 }}>
+                          <DishHeader name={line.dish_name_snapshot!} lines={_arr} />
+                        </div>
+                      )}
+                      <div>
                         {/* Row */}
                         <div style={{
                           display: 'grid',
@@ -1311,6 +1347,7 @@ function PrepListPageInner() {
                           </div>
                         </div>
                       </div>
+                      </Fragment>
                     )
                   })}
                 </div>
