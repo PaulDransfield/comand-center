@@ -1270,8 +1270,9 @@ function MoneyFlowRow({ bankPos, cashFlow, recentInv, bizId }: any) {
   const absBalance   = bankPos?.summary?.absolute_balance != null ? Number(bankPos.summary.absolute_balance) : null
   const vatOwed      = bankPos?.summary?.vat_owed          != null ? Number(bankPos.summary.vat_owed)          : null
   const payables     = bankPos?.summary?.supplier_payables != null ? Number(bankPos.summary.supplier_payables) : null
+  const payrollTax   = bankPos?.summary?.payroll_tax_owed  != null ? Number(bankPos.summary.payroll_tax_owed)  : null
   const spendable    = bankPos?.summary?.spendable_cash    != null ? Number(bankPos.summary.spendable_cash)    : null
-  const hasCommitments = (vatOwed ?? 0) > 0 || (payables ?? 0) > 0
+  const hasCommitments = (vatOwed ?? 0) > 0 || (payables ?? 0) > 0 || (payrollTax ?? 0) > 0
 
   const cashFlowDays = Array.isArray(cashFlow?.daily) ? cashFlow.daily : []
   const cashFlowEnd  = cashFlowDays.length > 0 ? Number(cashFlowDays[cashFlowDays.length - 1].cumulative ?? 0) : null
@@ -1311,6 +1312,9 @@ function MoneyFlowRow({ bankPos, cashFlow, recentInv, bizId }: any) {
                 )}
                 {payables != null && payables > 0 && (
                   <CommitRow label="Supplier payables" value={payables} />
+                )}
+                {payrollTax != null && payrollTax > 0 && (
+                  <CommitRow label="Payroll tax owed" value={payrollTax} />
                 )}
                 {spendable != null && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 3, paddingTop: 6, borderTop: `0.5px solid ${UXP.borderSoft}` }}>

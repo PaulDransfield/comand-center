@@ -264,23 +264,33 @@ export async function GET(req: NextRequest) {
   // a net credit (negative) is owed. Payables (2440-2449) credit = owed.
   let vatOwed: number | null = null
   let supplierPayables: number | null = null
+  let payrollTaxOwed: number | null = null
   if (balanceFetchOk && absoluteBalance != null) {
     try {
-      const LIABILITY_ACCOUNTS = [2440, 2441, 2443, 2448, 2610, 2611, 2612, 2613, 2620, 2621, 2630, 2631, 2640, 2641, 2645, 2650]
+      // VAT (2600-2659), supplier payables (2440-2449), and payroll taxes owed
+      // to Skatteverket: employee withholding (2710), employer social fees
+      // (2730/2731), and special payroll tax on pension (2514).
+      const LIABILITY_ACCOUNTS = [
+        2440, 2441, 2443, 2448,
+        2610, 2611, 2612, 2613, 2620, 2621, 2630, 2631, 2640, 2641, 2645, 2650,
+        2514, 2710, 2730, 2731,
+      ]
       const liab = await fetchBankAccountBalances(db, auth.orgId, businessId, LIABILITY_ACCOUNTS)
-      let vatNet = 0, pay = 0, sawVat = false, sawPay = false
+      let vatNet = 0, pay = 0, payroll = 0, sawVat = false, sawPay = false, sawPayroll = false
       for (const [acc, b] of Object.entries(liab.balances)) {
         const n = Number(acc)
         const cur = Number((b as any).current_balance ?? 0)
-        if (n >= 2600 && n <= 2659)       { vatNet += cur; sawVat = true }
-        else if (n >= 2440 && n <= 2449)  { pay += -cur;   sawPay = true }
+        if (n >= 2600 && n <= 2659)                      { vatNet += cur; sawVat = true }
+        else if (n >= 2440 && n <= 2449)                 { pay += -cur;   sawPay = true }
+        else if (n === 2514 || (n >= 2710 && n <= 2739)) { payroll += -cur; sawPayroll = true }
       }
-      if (sawVat) vatOwed = vatNet < 0 ? Math.round(-vatNet) : 0   // net credit = owed; net debit = refund due
-      if (sawPay) supplierPayables = Math.max(0, Math.round(pay))
+      if (sawVat)     vatOwed         = vatNet < 0 ? Math.round(-vatNet) : 0   // net credit = owed; net debit = refund due
+      if (sawPay)     supplierPayables = Math.max(0, Math.round(pay))
+      if (sawPayroll) payrollTaxOwed   = Math.max(0, Math.round(payroll))
     } catch { /* soft-fail — tile just omits the breakdown */ }
   }
   const spendableCash = absoluteBalance != null
-    ? Math.round(absoluteBalance - (vatOwed ?? 0) - (supplierPayables ?? 0))
+    ? Math.round(absoluteBalance - (vatOwed ?? 0) - (supplierPayables ?? 0) - (payrollTaxOwed ?? 0))
     : null
 
   // ── Bookkeeping-lag detection ────────────────────────────────────────
@@ -333,6 +343,7 @@ export async function GET(req: NextRequest) {
       // What's already committed out of that balance + what's actually spendable.
       vat_owed:                   vatOwed,
       supplier_payables:          supplierPayables,
+      payroll_tax_owed:           payrollTaxOwed,
       spendable_cash:             spendableCash,
       opening_balance_by_account: balanceFetchOk ? openingBalancesByAccount : null,
       current_balance_by_account: balanceFetchOk ? currentBalancesByAccount : null,
