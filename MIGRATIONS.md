@@ -6,7 +6,11 @@
 
 ## Applied — 2026-06-12 (stock-count timing, scheduling feedback, per-dish prep + waste)
 
-> All four applied via the Supabase migration tool during the session (not the SQL editor), so the DB already has them. SQL files added afterwards for the repo record.
+> All applied via the Supabase migration tool during the session (not the SQL editor), so the DB already has them. SQL files added afterwards for the repo record.
+
+### M158 — waste_log.waste_date default ✅ applied 2026-06-12
+**File:** `sql/M158-WASTE-LOG-WASTE-DATE-DEFAULT.sql`
+**Purpose:** `waste_date` is NOT NULL with no default, so the per-dish prep waste prompt (which didn't send a date) hit "null value in column waste_date". Set `DEFAULT CURRENT_DATE` as belt-and-braces; the primary fix is the API now defaulting `waste_date` to today (Stockholm) — a column default only applies when the column is omitted, not on explicit NULL.
 
 ### M157 — waste_log recipe + prep-waste columns ✅ applied 2026-06-12
 **File:** `sql/M157-WASTE-LOG-RECIPE-PREP-COLUMNS.sql`

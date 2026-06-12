@@ -171,11 +171,15 @@ export async function POST(req: NextRequest) {
       continue
     }
     const notes = e.notes ? String(e.notes).trim().slice(0, 1000) : null
+    // waste_date is NOT NULL — default to today (Stockholm) when the caller
+    // doesn't supply one (e.g. the per-dish prep waste prompt logs "now").
+    const wasteDate = e.waste_date ? String(e.waste_date)
+      : new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Stockholm' }).format(new Date())
     validated.push({
       product_id:       productId,
       recipe_id:        recipeId,
       quantity, unit, reason, notes,
-      waste_date:       e.waste_date ?? null,
+      waste_date:       wasteDate,
       prep_session_id:  e.prep_session_id ?? null,
     })
   }
