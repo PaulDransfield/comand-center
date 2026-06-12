@@ -18,6 +18,15 @@ export async function POST(req: NextRequest) {
   // Build the update patch. org_number is optional + nullable; validate
   // checksum when present, allow null/empty to clear the field.
   const patch: Record<string, any> = { name, city, type }
+  // Onboarding stub-update: the connect-first flow creates a stub business at
+  // Fortnox-connect time, then fills the rest here. Only patch fields present.
+  if ('address' in body)           patch.address           = body.address?.trim() || null
+  if ('country' in body)           patch.country           = body.country || null
+  if ('opening_days' in body)      patch.opening_days      = body.opening_days
+  if ('business_stage' in body)    patch.business_stage    = body.business_stage || null
+  if ('target_food_pct' in body)   patch.target_food_pct   = Number(body.target_food_pct)   || null
+  if ('target_staff_pct' in body)  patch.target_staff_pct  = Number(body.target_staff_pct)  || null
+  if ('target_margin_pct' in body) patch.target_margin_pct = Number(body.target_margin_pct) || null
   if (Object.prototype.hasOwnProperty.call(body, 'org_number')) {
     const raw = body.org_number
     if (raw == null || String(raw).trim() === '') {

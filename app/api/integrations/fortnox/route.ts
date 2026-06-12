@@ -41,12 +41,12 @@ import { createHmac, timingSafeEqual } from 'crypto'
 // Incident: 2026-05-07 14:57 UTC — first OAuth callback that ever made it
 // past the page-button bug failed signature verification because the sig
 // happened to contain `+` chars.
-function signState(payload: { orgId: string; businessId: string; nonce: string }): string {
+function signState(payload: { orgId: string; businessId: string; nonce: string; returnTo?: string }): string {
   const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
   const sig  = createHmac('sha256', process.env.ADMIN_SECRET || '').update(body).digest('base64url')
   return `${body}.${sig}`
 }
-function verifyState(state: string): { orgId: string; businessId: string; nonce: string } | null {
+function verifyState(state: string): { orgId: string; businessId: string; nonce: string; returnTo?: string } | null {
   try {
     const [body, sig] = state.split('.')
     if (!body || !sig) return null
@@ -131,8 +131,12 @@ export async function GET(req: NextRequest) {
 
     // State is HMAC-signed so the callback can verify it originated from us.
     // Nonce makes replay attempts detectable if we ever cache recent states.
+    // returnTo lets the onboarding connect-first flow bring the user back to
+    // /onboarding (with the business prefilled) instead of /integrations.
     const nonce = Math.random().toString(36).slice(2, 14)
-    const state = signState({ orgId, businessId, nonce })
+    const returnToRaw = searchParams.get('return_to') ?? ''
+    const returnTo = returnToRaw === 'onboarding' ? 'onboarding' : undefined   // allow-list only
+    const state = signState({ orgId, businessId, nonce, returnTo })
     const params = new URLSearchParams({
       client_id:     clientId,
       redirect_uri:  `${appUrl}/api/integrations/fortnox?action=callback`,
@@ -190,6 +194,7 @@ async function handleCallback(req: NextRequest) {
   }
   const orgId      = verified.orgId
   const businessId = verified.businessId ?? ''
+  const returnTo   = verified.returnTo
   const clientId       = process.env.FORTNOX_CLIENT_ID!
   const clientSecret   = process.env.FORTNOX_CLIENT_SECRET!
   const redirectUri    = `${appUrl}/api/integrations/fortnox?action=callback`
@@ -284,9 +289,13 @@ async function handleCallback(req: NextRequest) {
   // Best-effort — failures don't block the OAuth flow (worker can be
   // re-run via /admin/v2/tools or the daily cron once that lands).
   if (businessId) {
-    (await import('@/lib/fortnox/company-identity'))
-      .syncBusinessIdentityFromFortnox(supabase, orgId, businessId)
+    const identityPromise = import('@/lib/fortnox/company-identity')
+      .then(m => m.syncBusinessIdentityFromFortnox(supabase, orgId, businessId))
       .catch(err => console.error('Failed to sync company identity from Fortnox:', err))
+    // Onboarding prefill reads the businesses row right after the redirect,
+    // so the identity must be written BEFORE we send the user back. Await it
+    // only for the onboarding flow; normal connect stays fire-and-forget.
+    if (returnTo === 'onboarding') { try { await identityPromise } catch {} }
 
     // Default VAT filing cadence to 'quarterly' if unset — the dominant
     // case for restaurants (1-40 MSEK turnover band ≈ 95 % of our market).
@@ -350,6 +359,11 @@ async function handleCallback(req: NextRequest) {
   //
   // No business_id means a no-business OAuth (admin-concierge link or
   // legacy flow) — fall back to the old integrations page in that case.
+  if (returnTo === 'onboarding' && businessId) {
+    // Back into the wizard — the restaurant step prefills from the now-
+    // populated businesses row and the backfill is already running.
+    return NextResponse.redirect(`${appUrl}/onboarding?fortnox=connected&business_id=${encodeURIComponent(businessId)}`)
+  }
   if (businessId) {
     return NextResponse.redirect(`${appUrl}/integrations/fortnox/verify?business_id=${encodeURIComponent(businessId)}`)
   }

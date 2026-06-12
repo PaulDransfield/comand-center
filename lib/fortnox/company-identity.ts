@@ -88,7 +88,7 @@ export interface IdentitySyncResult {
   fortnox_info_present: boolean
 }
 
-type IdentityField = 'org_number' | 'name' | 'legal_name' | 'city' | 'legal_city' | 'country'
+type IdentityField = 'org_number' | 'name' | 'legal_name' | 'city' | 'legal_city' | 'country' | 'address'
 
 interface FieldChange {
   field:        IdentityField
@@ -143,7 +143,7 @@ export async function syncBusinessIdentityFromFortnox(
   // 3. Load current business row
   const { data: biz, error: bizErr } = await db
     .from('businesses')
-    .select('id, name, org_number, city, country, legal_name, legal_city')
+    .select('id, name, org_number, city, country, legal_name, legal_city, address')
     .eq('id', businessId)
     .maybeSingle()
   if (bizErr || !biz) {
@@ -255,6 +255,18 @@ export async function syncBusinessIdentityFromFortnox(
       applied:  fortnoxCity,
       reason:   'auto_populated',
     })
+  }
+
+  // ── address: owner-controlled display value. Backfill only when ours is
+  //     empty (first-time onboarding prefill); never overwrite an address the
+  //     owner already entered. Folds in the zip code since we have no zip column.
+  const fortnoxAddress = (info.address ?? '').trim() || null
+  const ourAddress     = (biz.address ?? '').trim() || null
+  if (fortnoxAddress && !ourAddress) {
+    const zip = (info.zip_code ?? '').trim()
+    const composed = zip ? `${fortnoxAddress}, ${zip}` : fortnoxAddress
+    updates.address = composed
+    result.changes.push({ field: 'address', previous: null, applied: composed, reason: 'auto_populated' })
   }
 
   // ── country: same shape ──────────────────────────────────────────
