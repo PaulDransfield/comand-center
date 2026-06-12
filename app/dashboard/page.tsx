@@ -32,7 +32,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamicImport from 'next/dynamic'
@@ -218,6 +218,8 @@ function DashboardInner() {
   const [dataQuality,   setDataQuality]   = useState<any>(null)
   const [forecastRecent, setForecastRecent] = useState<any>(null)
   const [forecastByDay, setForecastByDay] = useState<Record<string, number>>({})
+  const [latestPeriod, setLatestPeriod] = useState<{ year: number; month: number } | null>(null)
+  const autoJumpedRef = useRef(false)
   const [loading,       setLoading]       = useState(true)
   const [showUpgrade,   setShowUpgrade]   = useState(false)
   const [upgradePlan,   setUpgradePlan]   = useState('')
@@ -306,6 +308,36 @@ function DashboardInner() {
   }, [bizId, viewMode, weekOffset, monthOffset])
 
   useEffect(() => { loadDashboard() }, [loadDashboard])
+
+  // ── Auto-land on the latest month WITH data ───────────────────────
+  // Businesses with no daily feed (Fortnox-only / Caspeco) have an empty
+  // current month, so the dashboard would land blank. Fetch the latest month
+  // that actually has data (closed Fortnox P&L or POS revenue) and jump there
+  // on first load — unless the URL pins a specific period.
+  useEffect(() => {
+    if (!bizId) return
+    autoJumpedRef.current = false
+    setLatestPeriod(null)
+    fetch(`/api/metrics/latest-period?business_id=${bizId}`, { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => setLatestPeriod(j?.latest ?? null))
+      .catch(() => {})
+  }, [bizId])
+
+  useEffect(() => {
+    if (!bizId || autoJumpedRef.current || !latestPeriod) return
+    autoJumpedRef.current = true
+    // Respect an explicit period chosen via the URL — don't override it.
+    const p = new URLSearchParams(window.location.search)
+    if (p.get('offset') != null) return
+    const now = new Date()
+    const isCurrent = latestPeriod.year === now.getFullYear() && latestPeriod.month === (now.getMonth() + 1)
+    if (isCurrent) return
+    const off = (latestPeriod.year - now.getFullYear()) * 12 + (latestPeriod.month - (now.getMonth() + 1))
+    setViewMode('month')
+    setMonthOffset(off)
+    writeUrl({ view: 'month', offset: off })
+  }, [bizId, latestPeriod])
 
   // ── Independent fetches ───────────────────────────────────────────
   useEffect(() => {
@@ -530,7 +562,7 @@ function DashboardInner() {
         )}
 
         {/* ── Performance chart ─────────────────────────────────── */}
-        <ChartCard days={days} loading={loading} />
+        <ChartCard days={days} loading={loading} monthlyOnly={fortnoxMonthly && !hasDailyShape} />
 
         {/* ── Forecast check (predicted vs actual) ──────────────── */}
         {forecastRecent?.n > 0 && (
@@ -791,7 +823,27 @@ function DemandOutlookStrip({ demand }: { demand: any }) {
 }
 
 // ── Chart card ───────────────────────────────────────────────────────
-function ChartCard({ days, loading }: { days: any[]; loading: boolean }) {
+function ChartCard({ days, loading, monthlyOnly }: { days: any[]; loading: boolean; monthlyOnly?: boolean }) {
+  // Fortnox-only month: there's no daily data to draw, so show a clear note
+  // instead of an empty 30-bar grid.
+  if (monthlyOnly) {
+    return (
+      <Card title="Revenue & labour" subtitle="Daily breakdown">
+        <div style={{
+          minHeight: 200, display: 'flex', flexDirection: 'column' as const, gap: 8,
+          alignItems: 'center', justifyContent: 'center', textAlign: 'center' as const,
+          color: UXP.ink3, fontSize: 13, lineHeight: 1.6, padding: '24px 16px',
+        }}>
+          <div style={{ fontWeight: 600, color: UXP.ink2 }}>No day-by-day breakdown for this month</div>
+          <div style={{ maxWidth: 460, fontSize: 12 }}>
+            The headline figures above are the <strong>closed Fortnox monthly P&amp;L</strong> — an official total,
+            not daily data. The day-by-day chart fills in once a POS / staff system feeds daily sales and labour.
+            Full monthly detail is on <a href="/financials/performance" style={{ color: UXP.lavText, fontWeight: 600 }}>Financials → Performance</a>.
+          </div>
+        </div>
+      </Card>
+    )
+  }
   // Colour scheme:
   //   - Revenue:        UXP.lav     (light lavender)
   //   - Labour (closed days): UXP.lavDeep (darker lavender — clear contrast vs revenue)
