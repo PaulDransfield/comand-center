@@ -37,6 +37,21 @@ function LoginForm() {
   // success screen instead of the form. Cleared when user navigates back
   // to the form.
   const [verifySent, setVerifySent] = useState<{ email: string; deliverable: boolean } | null>(null)
+  // Resend-confirmation state for the "check your inbox" screen.
+  const [resend, setResend] = useState<'idle' | 'sending' | 'sent'>('idle')
+
+  async function resendVerify() {
+    if (!verifySent || resend === 'sending') return
+    setResend('sending')
+    try {
+      await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: verifySent.email }),
+      })
+    } catch { /* generic — show sent regardless */ }
+    setResend('sent')
+  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -124,12 +139,29 @@ function LoginForm() {
                 {t('verifySent.deliveryWarn')}
               </div>
             )}
-            <p style={{ fontSize:'12px', color:'var(--ink-3)', lineHeight:1.5, marginBottom:'24px' }}>
+            <p style={{ fontSize:'12px', color:'var(--ink-3)', lineHeight:1.5, marginBottom:'18px' }}>
               {t('verifySent.checkSpam')}
             </p>
+
+            {/* Resend — for when the first email never arrives. */}
+            {resend === 'sent' ? (
+              <div style={{ background:'var(--green-lt)', border:'1px solid var(--green-mid)', borderRadius:'8px', padding:'10px 14px', fontSize:'12px', color:'var(--green)', marginBottom:'18px', lineHeight:1.5 }}>
+                ✓ Sent again to {verifySent.email}. Give it a minute, then check your inbox and spam.
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={resendVerify}
+                disabled={resend === 'sending'}
+                style={{ width:'100%', padding:'11px', background:'var(--navy)', color:'#fff', border:'none', borderRadius:'8px', fontSize:'13px', fontWeight:600, cursor: resend === 'sending' ? 'wait' : 'pointer', marginBottom:'12px', fontFamily:'var(--font)' }}
+              >
+                {resend === 'sending' ? 'Sending…' : "Didn't get it? Resend email"}
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={() => { setVerifySent(null); setMode('login'); setMessage(''); setError('') }}
+              onClick={() => { setVerifySent(null); setResend('idle'); setMode('login'); setMessage(''); setError('') }}
               style={{ background:'transparent', border:'none', color:'var(--blue)', fontSize:'12px', cursor:'pointer', padding:0 }}
             >
               {t('verifySent.backToLogin')}
