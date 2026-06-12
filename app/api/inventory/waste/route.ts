@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
   const db = createAdminClient()
   let q = db
     .from('waste_log')
-    .select('id, product_id, recipe_id, prep_session_id, waste_date, quantity, unit, unit_price_at_entry, value_at_entry, cost_estimate_sek, reason, notes, created_at, product:products(name, category, invoice_unit), recipe:recipes(name, type)')
+    .select('id, product_id, recipe_id, prep_session_id, waste_date, quantity, unit, unit_price_at_entry, value_at_entry, cost_estimate_sek, reason, notes, created_at, created_by, product:products(name, category, invoice_unit), recipe:recipes(name, type)')
     .eq('business_id', businessId)
     .order('waste_date', { ascending: false })
     .order('created_at', { ascending: false })
@@ -54,6 +54,14 @@ export async function GET(req: NextRequest) {
   if (to)   q = q.lte('waste_date', to)
   const { data, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Resolve who logged each entry (created_by → public.users) for accountability.
+  const loggerIds = Array.from(new Set((data ?? []).map((e: any) => e.created_by).filter(Boolean))) as string[]
+  const loggerById = new Map<string, string>()
+  if (loggerIds.length > 0) {
+    const { data: us } = await db.from('users').select('id, full_name, email').in('id', loggerIds)
+    for (const u of us ?? []) loggerById.set((u as any).id, (u as any).full_name || (u as any).email || 'Unknown')
+  }
 
   const entries = (data ?? []).map((e: any) => {
     // Cost surface for both paths — recipe rows store cost_estimate_sek,
@@ -83,6 +91,7 @@ export async function GET(req: NextRequest) {
       reason:         e.reason,
       notes:          e.notes,
       created_at:     e.created_at,
+      logged_by_name: e.created_by ? (loggerById.get(e.created_by) ?? null) : null,
     }
   })
 

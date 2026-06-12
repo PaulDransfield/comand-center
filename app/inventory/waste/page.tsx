@@ -14,17 +14,52 @@ import { fmtKr } from '@/lib/format'
 
 interface Entry {
   id:                  string
-  product_id:          string
-  product_name:        string
+  kind:                'product' | 'recipe'
+  product_id:          string | null
+  product_name:        string | null
+  recipe_id:           string | null
+  recipe_name:         string | null
   category:            string | null
   waste_date:          string
   quantity:            number
   unit:                string
-  unit_price_at_entry: number | null
-  value_at_entry:      number | null
+  value_sek:           number | null
   reason:              string
   notes:               string | null
   created_at:          string
+  logged_by_name:      string | null
+}
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const localDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+// Day / Week / Month bounds, navigable by offset (0 = current period).
+function periodBounds(gran: 'day' | 'week' | 'month', offset: number): { from: string; to: string; label: string } {
+  const now = new Date()
+  if (gran === 'day') {
+    const d = new Date(now); d.setDate(now.getDate() + offset)
+    return {
+      from: localDate(d), to: localDate(d),
+      label: offset === 0 ? 'Today' : offset === -1 ? 'Yesterday'
+        : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
+    }
+  }
+  if (gran === 'week') {
+    const d = new Date(now); const dow = d.getDay()
+    const mon = new Date(d); mon.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1) + offset * 7); mon.setHours(0, 0, 0, 0)
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
+    return {
+      from: localDate(mon), to: localDate(sun),
+      label: offset === 0 ? 'This week' : `${mon.getDate()} ${MONTHS[mon.getMonth()]} – ${sun.getDate()} ${MONTHS[sun.getMonth()]}`,
+    }
+  }
+  const d = new Date(now.getFullYear(), now.getMonth() + offset, 1)
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+  return {
+    from: localDate(d), to: localDate(last),
+    label: offset === 0 ? 'This month' : `${MONTHS[d.getMonth()]} ${d.getFullYear()}`,
+  }
 }
 interface Summary {
   total_value: number
@@ -33,12 +68,13 @@ interface Summary {
 }
 
 const REASONS = [
-  { value: 'spoilage',     label: 'Spoilage' },
-  { value: 'spill',        label: 'Spill' },
-  { value: 'over_portion', label: 'Over-portion' },
-  { value: 'staff_meal',   label: 'Staff meal' },
-  { value: 'comp',         label: 'Comp / re-fire' },
-  { value: 'other',        label: 'Other' },
+  { value: 'spoilage',       label: 'Spoilage' },
+  { value: 'overproduction', label: 'Over-prepped' },
+  { value: 'spill',          label: 'Spill' },
+  { value: 'over_portion',   label: 'Over-portion' },
+  { value: 'staff_meal',     label: 'Staff meal' },
+  { value: 'comp',           label: 'Comp / re-fire' },
+  { value: 'other',          label: 'Other' },
 ]
 const UNIT_OPTIONS = ['g', 'kg', 'ml', 'cl', 'dl', 'l', 'st', 'portion']
 
@@ -49,6 +85,9 @@ export default function WastePage() {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
   const [adding,  setAdding]  = useState(false)
+  const [gran,    setGran]    = useState<'day' | 'week' | 'month'>('week')
+  const [offset,  setOffset]  = useState(0)
+  const period = periodBounds(gran, offset)
 
   useEffect(() => {
     const s = localStorage.getItem('cc_selected_biz')
@@ -65,13 +104,14 @@ export default function WastePage() {
     if (!bizId) return
     setLoading(true); setError(null)
     try {
-      const r = await fetch(`/api/inventory/waste?business_id=${encodeURIComponent(bizId)}`, { cache: 'no-store' })
+      const { from, to } = periodBounds(gran, offset)
+      const r = await fetch(`/api/inventory/waste?business_id=${encodeURIComponent(bizId)}&from=${from}&to=${to}`, { cache: 'no-store' })
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
       const j = await r.json()
       setEntries(j.entries ?? [])
       setSummary(j.summary ?? null)
     } catch (e: any) { setError(e.message) } finally { setLoading(false) }
-  }, [bizId])
+  }, [bizId, gran, offset])
   useEffect(() => { if (bizId) load() }, [bizId, load])
 
   async function deleteEntry(id: string) {
@@ -95,6 +135,28 @@ export default function WastePage() {
           <button onClick={() => setAdding(true)} disabled={!bizId} style={primaryBtn}>+ Log waste</button>
         </div>
 
+        {/* Period picker — Day / Week / Month, navigable */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' as const }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {(['day', 'week', 'month'] as const).map(g => (
+              <button key={g} onClick={() => { setGran(g); setOffset(0) }} style={{
+                padding: '6px 14px', fontSize: 12, fontWeight: 600, textTransform: 'capitalize' as const,
+                background: gran === g ? UXP.lavFill : 'transparent',
+                color: gran === g ? UXP.lavText : UXP.ink3,
+                border: `0.5px solid ${gran === g ? UXP.lavMid : UXP.border}`,
+                borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
+              }}>{g}</button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 4 }}>
+            <button onClick={() => setOffset(o => o - 1)} aria-label="Previous"
+              style={navArrow}>‹</button>
+            <span style={{ fontSize: 13, fontWeight: 600, color: UXP.ink1, minWidth: 120, textAlign: 'center' as const }}>{period.label}</span>
+            <button onClick={() => setOffset(o => Math.min(0, o + 1))} disabled={offset >= 0} aria-label="Next"
+              style={{ ...navArrow, opacity: offset >= 0 ? 0.35 : 1, cursor: offset >= 0 ? 'default' : 'pointer' }}>›</button>
+          </div>
+        </div>
+
         {summary && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
             <Stat label="Entries" value={String(summary.count)} />
@@ -110,7 +172,7 @@ export default function WastePage() {
         )}
         {loading && <Empty label="Loading…" />}
         {!loading && entries.length === 0 && !error && (
-          <Empty label="No waste logged yet. Click + Log waste to add the first entry." />
+          <Empty label={`No waste logged for ${period.label.toLowerCase()}.`} />
         )}
 
         {!loading && entries.length > 0 && (
@@ -119,9 +181,10 @@ export default function WastePage() {
               <thead>
                 <tr style={{ background: UXP.subtleBg }}>
                   <Th label="Date" />
-                  <Th label="Product" />
+                  <Th label="Item" />
                   <Th label="Qty" align="right" />
                   <Th label="Reason" />
+                  <Th label="Logged by" />
                   <Th label="Value" align="right" />
                   <Th label="" />
                 </tr>
@@ -130,7 +193,9 @@ export default function WastePage() {
                 {entries.map(e => (
                   <tr key={e.id} style={{ borderTop: `0.5px solid ${UXP.borderSoft}` }}>
                     <td style={{ ...td(), color: UXP.ink3, fontSize: 11 }}>{e.waste_date}</td>
-                    <td style={{ ...td(), color: UXP.ink1, fontWeight: 500 }}>{e.product_name}
+                    <td style={{ ...td(), color: UXP.ink1, fontWeight: 500 }}>
+                      {e.kind === 'recipe' ? (e.recipe_name ?? 'Recipe') : (e.product_name ?? 'Product')}
+                      {e.kind === 'recipe' && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 600, color: UXP.lavText, background: UXP.lavFill, padding: '1px 5px', borderRadius: 3, textTransform: 'uppercase' as const }}>recipe</span>}
                       {e.notes && <span style={{ marginLeft: 6, fontSize: 10, color: UXP.ink4, fontStyle: 'italic' as const }}>· {e.notes}</span>}
                     </td>
                     <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: UXP.ink2 }}>
@@ -139,8 +204,9 @@ export default function WastePage() {
                     <td style={{ ...td(), color: UXP.ink3 }}>
                       {REASONS.find(r => r.value === e.reason)?.label ?? e.reason}
                     </td>
+                    <td style={{ ...td(), color: UXP.ink3, fontSize: 11 }}>{e.logged_by_name ?? '—'}</td>
                     <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: UXP.ink1, fontWeight: 500 }}>
-                      {e.value_at_entry != null ? fmtKr(e.value_at_entry) : '—'}
+                      {e.value_sek != null ? fmtKr(e.value_sek) : '—'}
                     </td>
                     <td style={{ ...td(), textAlign: 'right' as const }}>
                       <button onClick={() => deleteEntry(e.id)} aria-label="Delete"
@@ -334,6 +400,11 @@ const inputStyle: React.CSSProperties = {
 const primaryBtn: React.CSSProperties = {
   padding: '8px 18px', fontSize: 12, fontWeight: 600,
   background: UXP.lavDeep, color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
+}
+const navArrow: React.CSSProperties = {
+  width: 30, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  fontSize: 18, color: UXP.ink2, background: 'transparent',
+  border: `0.5px solid ${UXP.border}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1,
 }
 const secondaryBtn: React.CSSProperties = {
   padding: '8px 14px', fontSize: 12, fontWeight: 500,
