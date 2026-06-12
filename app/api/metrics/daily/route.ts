@@ -83,32 +83,35 @@ export async function GET(req: NextRequest) {
     worst_day: worstDay ? { date: worstDay.date, pct: worstDay.labour_pct, staff_cost: worstDay.staff_cost, revenue: worstDay.revenue } : null,
   }
 
-  // ── Fortnox monthly fallback ──────────────────────────────────────
-  // Businesses with Fortnox but no POS/staff feed (e.g. Caspeco-only) have
-  // NO daily_metrics rows, so the dashboard reads empty even though the
-  // monthly P&L exists. When the range is a whole calendar month (from =
-  // the 1st) and there's no daily revenue/cost, surface that month's
-  // Fortnox figure from monthly_metrics so the dashboard isn't blank.
-  // rows stay empty (no daily breakdown without a POS); summary.source
-  // flags the origin so the UI can label it.
+  // ── Closed-month principle: the official Fortnox P&L wins ─────────
+  // A calendar month that is CLOSED in Fortnox (a NON-provisional tracker_data
+  // P&L exists) has been officially reported with corrected numbers. Those
+  // figures are authoritative and SUPERSEDE the real-time daily POS sum (which
+  // can be provisional / pre-correction) for the headline totals — for every
+  // business, not just POS-less ones. The current/open month (no closed P&L
+  // yet) keeps the live daily figures. Caspeco-only businesses get their
+  // dashboard populated from this for every closed month.
+  // rows stay as the daily POS shape; summary.source flags the origin.
   ;(summary as any).source = 'daily'
-  if (totalRev === 0 && totalCost === 0 && /^\d{4}-\d{2}-01$/.test(from)) {
+  if (/^\d{4}-\d{2}-01$/.test(from)) {
     const y  = Number(from.slice(0, 4))
     const mo = Number(from.slice(5, 7))
-    const { data: mm } = await db
-      .from('monthly_metrics')
-      .select('revenue, staff_cost, covers, labour_pct')
+    const { data: td } = await db
+      .from('tracker_data')
+      .select('revenue, staff_cost')
       .eq('business_id', businessId)
-      .eq('year', y)
-      .eq('month', mo)
+      .eq('period_year', y)
+      .eq('period_month', mo)
+      .or('is_provisional.is.null,is_provisional.eq.false')   // closed/official only
       .maybeSingle()
-    if (mm && (Number(mm.revenue) > 0 || Number(mm.staff_cost) > 0)) {
-      summary.total_revenue    = Number(mm.revenue) || 0
-      summary.total_staff_cost = Number(mm.staff_cost) || 0
-      summary.total_covers     = Number(mm.covers) || 0
-      summary.avg_labour_pct   = mm.labour_pct != null ? Number(mm.labour_pct)
-        : (summary.total_revenue > 0 ? Math.round((summary.total_staff_cost / summary.total_revenue) * 1000) / 10 : null)
-      ;(summary as any).source = 'fortnox_monthly'
+    if (td && (Number(td.revenue) > 0 || Number(td.staff_cost) > 0)) {
+      summary.total_revenue    = Number(td.revenue)    || 0
+      summary.total_staff_cost = Number(td.staff_cost) || 0
+      summary.avg_labour_pct   = summary.total_revenue > 0
+        ? Math.round((summary.total_staff_cost / summary.total_revenue) * 1000) / 10
+        : null
+      // covers stay from POS — the Fortnox P&L doesn't carry a cover count.
+      ;(summary as any).source = 'fortnox_closed'
     }
   }
 
