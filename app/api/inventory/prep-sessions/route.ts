@@ -118,11 +118,15 @@ export async function POST(req: NextRequest) {
   const recipeIndex = await loadRecipeIndex(db, businessId)
   const { data: nameRows } = await db
     .from('recipes')
-    .select('id, name')
+    .select('id, name, type')
     .eq('business_id', businessId)
     .is('archived_at', null)
   const recipeNames = new Map<string, string | null>()
-  for (const r of nameRows ?? []) recipeNames.set(r.id, r.name ?? null)
+  const recipeTypes = new Map<string, string | null>()
+  for (const r of nameRows ?? []) {
+    recipeNames.set(r.id, r.name ?? null)
+    recipeTypes.set(r.id, (r as any).type ?? null)
+  }
 
   const safeItems = items.filter(i => recipeIndex.has(i.recipe_id))
   if (safeItems.length === 0) {
@@ -244,7 +248,15 @@ export async function POST(req: NextRequest) {
     .eq('session_id', session.id)
     .order('position')
 
-  return NextResponse.json({ session, lines: lines ?? [], flags: allFlags }, {
+  // Attach dish_type so the accordion's type pill shows immediately on create
+  // (the GET resolves this live too; here we mirror it so there's no "no pill
+  // until reload" gap right after creating a session).
+  const linesWithType = (lines ?? []).map(l => ({
+    ...l,
+    dish_type: (l as any).dish_recipe_id ? (recipeTypes.get((l as any).dish_recipe_id) ?? null) : null,
+  }))
+
+  return NextResponse.json({ session, lines: linesWithType, flags: allFlags }, {
     headers: { 'Cache-Control': 'no-store' },
   })
 }
