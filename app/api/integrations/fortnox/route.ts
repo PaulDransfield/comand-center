@@ -171,6 +171,14 @@ async function handleCallback(req: NextRequest) {
   if (error) {
     const errorDesc = searchParams.get('error_description') ?? ''
     console.error('Fortnox OAuth error:', error, errorDesc)
+    // Decode the state (best-effort) so a cancel/error during the connect-first
+    // onboarding flow returns to the wizard instead of /integrations.
+    const early = state ? verifyState(state) : null
+    if (early?.returnTo === 'onboarding') {
+      const p = new URLSearchParams({ fortnox_error: '1', fortnox_err: error })
+      if (early.businessId) p.set('business_id', early.businessId)   // let the wizard reuse the stub on retry
+      return NextResponse.redirect(`${appUrl}/onboarding?${p.toString()}`)
+    }
     // Surface the actual error code + description so the integrations
     // page can render something useful (was always showing "fortnox_denied"
     // even when the real cause was invalid_scope, server_error, etc.).
@@ -195,6 +203,16 @@ async function handleCallback(req: NextRequest) {
   const orgId      = verified.orgId
   const businessId = verified.businessId ?? ''
   const returnTo   = verified.returnTo
+  // Route any callback failure back to onboarding when the connect-first flow
+  // started it; otherwise to /integrations.
+  const failRedirect = (reason: string) => {
+    if (returnTo === 'onboarding') {
+      const p = new URLSearchParams({ fortnox_error: '1', fortnox_err: reason })
+      if (businessId) p.set('business_id', businessId)   // reuse the stub on retry
+      return NextResponse.redirect(`${appUrl}/onboarding?${p.toString()}`)
+    }
+    return NextResponse.redirect(`${appUrl}/integrations?error=${reason}`)
+  }
   const clientId       = process.env.FORTNOX_CLIENT_ID!
   const clientSecret   = process.env.FORTNOX_CLIENT_SECRET!
   const redirectUri    = `${appUrl}/api/integrations/fortnox?action=callback`
@@ -219,13 +237,13 @@ async function handleCallback(req: NextRequest) {
     if (!tokenRes.ok) {
       const err = await tokenRes.text()
       console.error('Fortnox token exchange failed:', err)
-      return NextResponse.redirect(`${appUrl}/integrations?error=fortnox_token_failed`)
+      return failRedirect('fortnox_token_failed')
     }
 
     tokenData = await tokenRes.json()
   } catch (err) {
     console.error('Fortnox token exchange error:', err)
-    return NextResponse.redirect(`${appUrl}/integrations?error=fortnox_network_error`)
+    return failRedirect('fortnox_network_error')
   }
 
   const { access_token, refresh_token, expires_in } = tokenData
@@ -270,7 +288,7 @@ async function handleCallback(req: NextRequest) {
 
   if (dbError) {
     console.error('Failed to save Fortnox credentials:', dbError)
-    return NextResponse.redirect(`${appUrl}/integrations?error=fortnox_save_failed`)
+    return failRedirect('fortnox_save_failed')
   }
 
   await recordAdminAction(supabase, {

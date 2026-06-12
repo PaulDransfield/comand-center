@@ -71,6 +71,19 @@ export default function OnboardingPage() {
   // into the businesses row and started the backfill — prefill the form from it.
   useEffect(() => {
     const p = new URLSearchParams(window.location.search)
+    // Came back from a cancelled / failed Fortnox connect → stay on the choice
+    // screen with a friendly message so they can retry or go manual.
+    if (p.get('fortnox_error')) {
+      const code = p.get('fortnox_err') || ''
+      const bid  = p.get('business_id')
+      if (bid) setBusinessId(bid)   // reuse the stub if they retry, no duplicate
+      setError(code === 'access_denied'
+        ? "Fortnox connection was cancelled. Try again, or enter your details manually."
+        : "Fortnox connection didn't complete. Try again, or enter your details manually.")
+      setMode('choose')
+      window.history.replaceState(null, '', '/onboarding')
+      return
+    }
     if (p.get('fortnox') !== 'connected') return
     const bid = p.get('business_id')
     if (!bid) return
@@ -103,14 +116,21 @@ export default function OnboardingPage() {
   async function connectFortnox() {
     setConnecting(true); setError('')
     try {
-      const r = await fetch('/api/businesses/add', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'New restaurant', country: form.country }),
-      })
-      const j = await r.json().catch(() => ({}))
-      if (!r.ok || !j?.id) throw new Error(j?.error || 'Could not start Fortnox setup')
+      // Reuse an existing stub (e.g. retry after a cancelled connect) so we
+      // don't leave behind duplicate "New restaurant" rows.
+      let bid = businessId
+      if (!bid) {
+        const r = await fetch('/api/businesses/add', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'New restaurant', country: form.country }),
+        })
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok || !j?.id) throw new Error(j?.error || 'Could not start Fortnox setup')
+        bid = j.id
+        setBusinessId(bid)
+      }
       window.location.href =
-        `/api/integrations/fortnox?action=connect&business_id=${encodeURIComponent(j.id)}&return_to=onboarding`
+        `/api/integrations/fortnox?action=connect&business_id=${encodeURIComponent(bid!)}&return_to=onboarding`
     } catch (e: any) {
       setError(e?.message || 'Something went wrong'); setConnecting(false)
     }
